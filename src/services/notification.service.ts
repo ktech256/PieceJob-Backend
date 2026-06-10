@@ -1,11 +1,18 @@
 import admin from 'firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
-import NotificationLog from '../models/Notification'; // Assuming I have this or will create it
+import NotificationLog from '../models/Notification';
 
-// Initialize Firebase Admin (Configuration should be in .env)
-// admin.initializeApp({
-//   credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!))
-// });
+// Initialize Firebase Admin only if service account is provided
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+        admin.initializeApp({
+            credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
+        });
+        console.log('Firebase Admin Initialized');
+    } catch (error) {
+        console.error('Firebase Initialization Failed:', error);
+    }
+}
 
 export const sendPushNotification = async (
     userId: string,
@@ -15,7 +22,7 @@ export const sendPushNotification = async (
     data: any = {}
 ) => {
     const eventId = uuidv4();
-    const payload = {
+    const payload: admin.messaging.Message = {
         notification: { title, body },
         data: {
             ...data,
@@ -26,31 +33,51 @@ export const sendPushNotification = async (
     };
 
     try {
-        // const response = await admin.messaging().send(payload);
-        console.log(`FCM Sent to ${userId} with eventId: ${eventId}`);
+        if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+            throw new Error('FIREBASE_SERVICE_ACCOUNT missing');
+        }
 
-        // Log notification for reliability tracking (Section 10.2)
-        // await NotificationLog.create({ userId, eventId, type: 'PUSH', status: 'SENT', payload });
+        const response = await admin.messaging().send(payload);
 
-        return { success: true, eventId };
+        console.log(`FCM Sent to ${userId} with messageId: ${response}`);
+
+        await NotificationLog.create({
+            userId,
+            title,
+            body,
+            type: 'PUSH',
+            status: 'SENT',
+            payload: { ...data, messageId: response }
+        });
+
+        return { success: true, messageId: response };
     } catch (error) {
         console.error('FCM Error:', error);
-        return { success: false, error };
+        await NotificationLog.create({
+            userId,
+            title,
+            body,
+            type: 'PUSH',
+            status: 'FAILED',
+            payload: { error: (error as Error).message, ...data }
+        });
+        return { success: false, error: (error as Error).message };
     }
 };
 
 export const broadcastToProviders = async (fcmTokens: string[], title: string, body: string, jobData: any) => {
     if (fcmTokens.length === 0) return;
 
-    const message = {
+    const message: admin.messaging.MulticastMessage = {
         notification: { title, body },
         data: jobData,
         tokens: fcmTokens
     };
 
     try {
-        // const response = await admin.messaging().sendMulticast(message);
-        console.log(`Broadcasted to ${fcmTokens.length} providers`);
+        const response = await admin.messaging().sendEachForMulticast(message);
+        console.log(`Broadcasted to ${response.successCount} providers. Failures: ${response.failureCount}`);
+        return response;
     } catch (error) {
         console.error('Broadcast Error:', error);
     }

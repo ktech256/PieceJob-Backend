@@ -16,6 +16,7 @@ export interface IUser extends Document {
   role: UserRole;
   countryCode: string; // ISO 3166-1 alpha-2
   deviceId?: string;
+  fcmToken?: string;
   isVerified: boolean;
   isBanned: boolean;
   referralCode: string;
@@ -35,6 +36,7 @@ const UserSchema: Schema = new Schema({
   role: { type: String, enum: Object.values(UserRole), default: UserRole.CUSTOMER },
   countryCode: { type: String, required: true },
   deviceId: { type: String },
+  fcmToken: { type: String },
   isVerified: { type: Boolean, default: false },
   isBanned: { type: Boolean, default: false },
   referralCode: { type: String, unique: true },

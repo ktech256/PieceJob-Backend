@@ -2,8 +2,11 @@ import Job, { JobStatus } from '../models/Job';
 import Provider from '../models/Provider';
 import User from '../models/User';
 
-export const fraudSenseAnalysis = async (userId: string, role: string) => {
+import * as settingsService from './settings.service';
+
+export const fraudSenseAnalysis = async (userId: string, role: string, countryCode: string = 'GLOBAL') => {
   // SECTION 15.1: FraudSense - Cancellation Pattern Detection
+  const settings = await settingsService.getSettings(countryCode);
   const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const recentCancellations = await Job.countDocuments({
@@ -13,10 +16,10 @@ export const fraudSenseAnalysis = async (userId: string, role: string) => {
   });
 
   if (role === 'PROVIDER' && recentCancellations >= 4) {
-    // SECTION 6: Anti-Abuse - 4 cancellations in 24h = 12h lockout
-    const suspensionEnd = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    // SECTION 6: Anti-Abuse - lockout based on settings
+    const suspensionEnd = new Date(Date.now() + settings.escrowCoolingPeriodHours * 60 * 60 * 1000);
     await Provider.findOneAndUpdate({ userId }, { suspendedUntil: suspensionEnd });
-    return { flagged: true, action: 'SUSPENDED_12H', reason: 'High cancellation rate' };
+    return { flagged: true, action: 'SUSPENDED', reason: `High cancellation rate. Locked for ${settings.escrowCoolingPeriodHours}h.` };
   }
 
   if (role === 'CUSTOMER' && recentCancellations >= 5) {

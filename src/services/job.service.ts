@@ -4,7 +4,10 @@ import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
 import { emitToUser } from '../socket/socket.service';
 
+import * as settingsService from './settings.service';
+
 export const findEligibleProviders = async (job: IJob, wave: number) => {
+  const settings = await settingsService.getSettings(job.countryCode);
   const query: any = {
     isOnline: true,
     verificationStatus: 'APPROVED',
@@ -13,13 +16,13 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     countryCode: job.countryCode
   };
 
-  let maxDistance = 10000; // Default 10km (Wave 3)
+  let maxDistance = settings.matchingRadiusKm * 2 * 1000; // Default 10km (Wave 3) if radius is 5
 
   if (wave === 1) {
-    maxDistance = 2000; // 2km
+    maxDistance = (settings.matchingRadiusKm / 2.5) * 1000; // ~2km
     query.tier = { $in: ['ELITE', 'PLATINUM'] };
   } else if (wave === 2) {
-    maxDistance = 5000; // 5km
+    maxDistance = settings.matchingRadiusKm * 1000; // 5km
     query.tier = { $in: ['GOLD', 'SILVER', 'ELITE', 'PLATINUM'] };
   }
 

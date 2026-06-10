@@ -1,17 +1,19 @@
 import Pricing from '../models/Pricing';
 import Job from '../models/Job';
 import { JobStatus } from '../models/Job';
+import * as settingsService from './settings.service';
 
 export const resolveDynamicPricing = async (serviceCode: string, countryCode: string, zoneId?: string) => {
   // SECTION 17: Pricing Resolver
   const pricing = await Pricing.findOne({ serviceCode, countryCode, zoneId });
+  const settings = await settingsService.getSettings(countryCode);
+
   if (!pricing) throw new Error('Pricing configuration not found');
 
   let finalBookingFee = pricing.bookingFee;
   let currentMultiplier = pricing.surgeMultiplier;
 
   // SECTION 26: AI Readiness - PriceBot - Demand Spike Detection
-  // Check active jobs in this zone vs online providers
   const activeJobsCount = await Job.countDocuments({
     serviceCode,
     countryCode,
@@ -19,9 +21,8 @@ export const resolveDynamicPricing = async (serviceCode: string, countryCode: st
     status: { $in: [JobStatus.BROADCASTED, JobStatus.ACCEPTED] }
   });
 
-  // If demand is high (e.g. > 10 active requests), apply dynamic surge
   if (activeJobsCount > 10) {
-    currentMultiplier = Math.min(pricing.surgeMultiplier + 0.5, 2.5); // Max surge cap 2.5 as per specification
+    currentMultiplier = Math.min(pricing.surgeMultiplier + 0.5, settings.surgeMultiplierMax);
   }
 
   // Section 11: Time Surcharges (Weekend check)

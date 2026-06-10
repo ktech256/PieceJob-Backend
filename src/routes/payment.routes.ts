@@ -1,10 +1,15 @@
 import { Router } from "express";
+import * as paymentAdminController from "../controllers/admin/payment.controller";
+import { authenticate, AuthRequest } from "../middleware/auth.middleware";
+import * as settingsService from "../services/settings.service";
 
 const router = Router();
 
-// Routes will be implemented in Phase 4/5
-router.get("/config", (req, res) => {
-  res.json({ success: true, message: "Payment config endpoint placeholder" });
+router.get("/config", authenticate, async (req: AuthRequest, res) => {
+  const settings = await settingsService.getSettings(req.user?.countryCode);
+  res.json({ success: true, config: { gateway: 'PAYSTACK', currency: settings.currency || 'USD' } });
 });
+
+router.patch("/job/:jobId/mark-paid", authenticate, paymentAdminController.markJobPaid);
 
 export default router;

@@ -78,15 +78,15 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
   }
 };
 
+import * as settingsService from './settings.service';
+
 export const releaseEscrowFunds = async () => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    // 12-hour window rule
-    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const settings = await settingsService.getSettings('GLOBAL'); // Or per-job country
+    const twelveHoursAgo = new Date(Date.now() - settings.escrowCoolingPeriodHours * 60 * 60 * 1000);
 
-    // Find jobs completed more than 12h ago that haven't been settled yet
-    // In a production system, we'd use a more robust 'settlementStatus' field
     const jobsToSettle = await Job.find({
       status: JobStatus.COMPLETED,
       completedAt: { $lt: twelveHoursAgo },
@@ -94,8 +94,7 @@ export const releaseEscrowFunds = async () => {
     });
 
     for (const job of jobsToSettle) {
-        // Logic to move funds from Escrow to Main wallet for the provider
-        // This requires fetching the specific amount from the Ledger or Job
+        const countrySettings = await settingsService.getSettings(job.countryCode);
         const ledgerEntry = await Ledger.findOne({ jobId: job._id, type: TransactionType.SERVICE_FEE });
         if (ledgerEntry && job.providerId) {
             const commissionEntry = await Ledger.findOne({ jobId: job._id, type: TransactionType.COMMISSION });
@@ -117,7 +116,7 @@ export const releaseEscrowFunds = async () => {
             if (customer && customer.referredBy && !customer.isReferralRewardClaimed) {
                 await Wallet.findOneAndUpdate(
                     { userId: customer.referredBy },
-                    { $inc: { balanceReferral: 10 } }, // Reward amount (configurable)
+                    { $inc: { balanceReferral: countrySettings.referralRewardAmount } },
                     { session }
                 );
                 customer.isReferralRewardClaimed = true;

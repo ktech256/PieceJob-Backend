@@ -47,11 +47,49 @@ export const verifyProvider = async (req: AuthRequest, res: Response) => {
   }
 };
 
+import Ledger from '../models/Ledger';
+import Wallet from '../models/Wallet';
+
 export const getFinancialOverview = async (req: AuthRequest, res: Response) => {
   try {
-    // Aggregation logic for revenue, payouts, etc.
-    res.status(200).json({ success: true, stats: { totalRevenue: 5000, pendingPayouts: 1200, activeEscrow: 800 } });
+    const query: any = { countryCode: req.user?.countryCode };
+
+    const revenueAgg = await Ledger.aggregate([
+        { $match: { ...query, status: 'COMPLETED' } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+
+    const escrowAgg = await Wallet.aggregate([
+        { $match: { countryCode: req.user?.countryCode } },
+        { $group: { _id: null, total: { $sum: "$balanceEscrow" } } }
+    ]);
+
+    const pendingPayoutsAgg = await Ledger.aggregate([
+        { $match: { ...query, status: 'PENDING', type: 'PAYOUT' } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+
+    res.status(200).json({
+        success: true,
+        stats: {
+            totalRevenue: revenueAgg[0]?.total || 0,
+            pendingPayouts: pendingPayoutsAgg[0]?.total || 0,
+            activeEscrow: escrowAgg[0]?.total || 0
+        }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch overview', error });
   }
+};
+
+export const getDetailedLedger = async (req: AuthRequest, res: Response) => {
+    try {
+        const query: any = { countryCode: req.user?.countryCode };
+        const logs = await Ledger.find(query)
+            .sort({ createdAt: -1 })
+            .limit(50);
+        res.status(200).json({ success: true, logs });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch ledger', error });
+    }
 };

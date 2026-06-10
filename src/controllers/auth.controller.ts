@@ -6,17 +6,51 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 
+import * as notificationQueue from '../services/notification.queue';
+
 export const requestOtp = async (req: Request, res: Response) => {
   try {
     const { phoneNumber } = req.body;
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins expiry
 
-    await OtpRequest.deleteMany({ phoneNumber }); // Clear previous
-    const otpRequest = new OtpRequest({ phoneNumber, otp, expiresAt });
+    // SECTION 15.1: OTP Abuse Protection
+    const existingRequest = await OtpRequest.findOne({ phoneNumber });
+    if (existingRequest) {
+        const timeSinceLastAttempt = Date.now() - existingRequest.lastAttemptAt.getTime();
+        if (timeSinceLastAttempt < 60 * 1000) { // 60s cooldown
+            return res.status(429).json({ success: false, message: 'Please wait before requesting another OTP' });
+        }
+        if (existingRequest.attempts >= 5) { // Max 5 attempts per session
+            return res.status(403).json({ success: false, message: 'Maximum OTP attempts reached' });
+        }
+        existingRequest.attempts += 1;
+        existingRequest.lastAttemptAt = new Date();
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        existingRequest.otp = otp;
+        existingRequest.expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        await existingRequest.save();
+
+        await notificationQueue.addNotificationToQueue({
+            type: 'SMS',
+            phoneNumber,
+            templateCode: 'AUTH_OTP',
+            templateData: { otp }
+        });
+
+        return res.status(200).json({ success: true, message: 'OTP sent successfully' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    const otpRequest = new OtpRequest({ phoneNumber, otp, expiresAt, attempts: 1 });
     await otpRequest.save();
 
-    console.log(`OTP for ${phoneNumber}: ${otp}`); // Placeholder for SMS provider
+    await notificationQueue.addNotificationToQueue({
+        type: 'SMS',
+        phoneNumber,
+        templateCode: 'AUTH_OTP',
+        templateData: { otp }
+    });
 
     res.status(200).json({ success: true, message: 'OTP sent successfully' });
   } catch (error) {

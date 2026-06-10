@@ -149,7 +149,14 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
 
           if (role === 'PROVIDER' && diffSeconds > 90) {
               // Apply Penalty Logic
-              console.log(`Provider ${userId} cancelled after 90s grace window.`);
+              // Audit Log entry should be created here
+              await AuditLog.create({
+                  action: 'JOB_AUTO_CANCEL',
+                  targetId: jobId,
+                  targetCollection: 'Jobs',
+                  newValue: { status: JobStatus.CANCELLED },
+                  ipAddress: 'System'
+              });
           } else if (role === 'CUSTOMER' && diffSeconds > 120) {
               // Apply Penalty Logic
               console.log(`Customer ${userId} cancelled after 2m grace window.`);
