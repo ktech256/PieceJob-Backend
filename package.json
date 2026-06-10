@@ -7,6 +7,7 @@
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
     "build": "tsc",
+    "postinstall": "npm run build",
     "lint": "eslint 'src/**/*.{js,ts}'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
