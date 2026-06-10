@@ -35,6 +35,8 @@ export interface IJob extends Document {
   startedAt?: Date;
   completedAt?: Date;
   version: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const JobSchema: Schema = new Schema({
