@@ -5,6 +5,7 @@ import * as jobService from '../services/job.service';
 import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
 import Provider from '../models/Provider';
+import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
 
 function calculateDistance(c1: number[], c2: number[]) {

@@ -22,8 +22,10 @@ export interface ILedger extends Document {
   currency: string;
   countryCode: string;
   type: TransactionType;
-  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
   metadata?: any;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const LedgerSchema: Schema = new Schema({
@@ -35,7 +37,7 @@ const LedgerSchema: Schema = new Schema({
   currency: { type: String, required: true },
   countryCode: { type: String, required: true },
   type: { type: String, enum: Object.values(TransactionType), required: true },
-  status: { type: String, enum: ['PENDING', 'COMPLETED', 'CANCELLED'], default: 'PENDING' },
+  status: { type: String, enum: ['PENDING', 'COMPLETED', 'CANCELLED', 'REFUNDED'], default: 'PENDING' },
   metadata: { type: Schema.Types.Mixed }
 }, { timestamps: true });
 
