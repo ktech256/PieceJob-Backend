@@ -4,6 +4,7 @@ import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import * as auditService from './audit.service';
 
 export const handleBookingFee = async (jobId: string, customerId: string, amount: number, currency: string, countryCode: string) => {
   const session = await mongoose.startSession();
@@ -63,11 +64,30 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
     }).save({ session });
 
     // 3. Move to Escrow
-    await Wallet.findOneAndUpdate(
+    const wallet = await Wallet.findOneAndUpdate(
       { userId: providerId },
       { $inc: { balanceEscrow: providerNet } },
-      { session, upsert: true }
+      { session, upsert: true, new: true }
     );
+
+    // Audit Log (Financial Mutation)
+    await auditService.logFinancialMutation({
+        countryCode,
+        userId: providerId,
+        action: 'ESCROW_CREDIT',
+        financialInfo: {
+            transactionId: `ESC-${jobId}`,
+            jobId,
+            walletType: 'balanceEscrow',
+            mutationType: 'CREDIT',
+            amountBase: providerNet,
+            amountUSD: providerNet,
+            currency,
+            previousBalance: (wallet?.balanceEscrow || 0) - providerNet,
+            newBalance: wallet?.balanceEscrow || 0
+        },
+        systemSource: 'API'
+    }, session);
 
     await session.commitTransaction();
   } catch (error) {
@@ -90,7 +110,8 @@ export const releaseEscrowFunds = async () => {
     const jobsToSettle = await Job.find({
       status: JobStatus.COMPLETED,
       completedAt: { $lt: twelveHoursAgo },
-      paymentStatus: 'PAID'
+      paymentStatus: 'PAID',
+      escrowStatus: { $ne: 'ESCROW_HOLD_REVIEW' }
     });
 
     for (const job of jobsToSettle) {

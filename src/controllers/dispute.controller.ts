@@ -26,6 +26,14 @@ export const raiseDispute = async (req: AuthRequest, res: Response) => {
     job.status = JobStatus.DISPUTED;
     await job.save();
 
+    // PAGE 7: Increment Provider Complaints if customer raised it
+    if (req.user?.role === 'CUSTOMER' && job.providerId) {
+        await Provider.findOneAndUpdate(
+            { userId: job.providerId },
+            { $inc: { 'performance.complaintsCount': 1 } }
+        );
+    }
+
     res.status(201).json({ success: true, disputeId: dispute.id });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to raise dispute', error });

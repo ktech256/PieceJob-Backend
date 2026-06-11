@@ -65,6 +65,14 @@ export const sendPushNotification = async (
     }
 };
 
+import User from '../models/User';
+
+export const notifyUser = async (userId: string, title: string, body: string, data: any = {}) => {
+    const user = await User.findById(userId);
+    if (!user || !user.fcmToken) return;
+    return await sendPushNotification(userId, user.fcmToken, title, body, data);
+};
+
 export const broadcastToProviders = async (fcmTokens: string[], title: string, body: string, jobData: any) => {
     if (fcmTokens.length === 0) return;
 

@@ -8,6 +8,7 @@ export interface IWallet extends Document {
   balanceEscrow: number;
   balanceCredit: number;
   balanceReferral: number;
+  balanceBonus: number;
 }
 
 const WalletSchema: Schema = new Schema({

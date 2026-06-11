@@ -4,8 +4,11 @@ import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.get('/active', authenticate, sosController.getActiveAlerts);
-router.post('/trigger', authenticate, sosController.triggerSos);
-router.patch('/:alertId/resolve', authenticate, sosController.resolveSos);
+router.use(authenticate);
+
+router.post('/trigger', sosController.triggerSos);
+router.post('/:id/audio', sosController.uploadAudio);
+router.post('/:id/photo', sosController.uploadPhoto);
+router.get('/status/:id', sosController.getIncidentDetail);
 
 export default router;

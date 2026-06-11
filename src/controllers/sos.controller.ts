@@ -1,103 +1,104 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
-import PanicAlert from '../models/PanicAlert';
-import Provider from '../models/Provider';
-import { emitToUser } from '../socket/socket.service';
+import SosIncident, { SosStatus } from '../models/SosIncident';
+import SosEvidence from '../models/SosEvidence';
+import SosTimeline from '../models/SosTimeline';
+import * as sosService from '../services/sos.service';
 
-import * as settingsService from '../services/settings.service';
-
-import User from '../models/User';
-
-export const getActiveAlerts = async (req: AuthRequest, res: Response) => {
+export const listIncidents = async (req: AuthRequest, res: Response) => {
     try {
-        const alerts = await PanicAlert.find({ status: 'ACTIVE' })
-            .populate('userId', 'firstName lastName phoneNumber email')
-            .populate('jobId')
-            .sort({ createdAt: -1 });
-        res.status(200).json({ success: true, alerts });
+        const { countryCode, status } = req.query;
+        const query: any = {};
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+        if (status) query.status = status;
+
+        const incidents = await SosIncident.find(query)
+            .populate('userId', 'firstName lastName phoneNumber')
+            .sort({ activatedAt: -1 });
+
+        res.status(200).json({ success: true, incidents });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch alerts', error });
+        res.status(500).json({ success: false, message: 'Failed to list incidents', error });
     }
 };
 
-import * as notificationQueue from '../services/notification.queue';
+export const getIncidentDetail = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const incident = await SosIncident.findById(id).populate('userId', 'firstName lastName phoneNumber');
+        if (!incident) return res.status(404).json({ success: false, message: 'Incident not found' });
+
+        const evidence = await SosEvidence.findOne({ incidentId: id });
+        const timeline = await SosTimeline.findOne({ incidentId: id });
+
+        res.status(200).json({ success: true, incident, evidence, timeline });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch details', error });
+    }
+};
 
 export const triggerSos = async (req: AuthRequest, res: Response) => {
-  try {
-    const { coordinates, jobId } = req.body;
-    const settings = await settingsService.getSettings(req.user?.countryCode);
+    try {
+        const { coordinates, jobId } = req.body;
+        const userId = req.user?.userId as string;
+        const userType = req.user?.role as 'CUSTOMER' | 'PROVIDER';
+        const countryCode = req.user?.countryCode as string;
 
-    const alert = new PanicAlert({
-      userId: req.user?.userId,
-      jobId,
-      location: {
-        type: 'Point',
-        coordinates
-      }
-    });
+        const incident = await sosService.activateSos(userId, userType, coordinates, countryCode, jobId);
 
-    await alert.save();
-
-    // 1. Find closest providers based on dynamic settings
-    const closestProviders = await Provider.find({
-      isOnline: true,
-      location: {
-        $near: {
-          $geometry: { type: 'Point', coordinates },
-          $maxDistance: settings.sosAlertRadiusKm * 1000
-        }
-      }
-    }).limit(10);
-
-    // 2. Fetch FCM tokens for notification targets
-    const providerUserIds = closestProviders.map(p => p.userId);
-    const usersWithTokens = await User.find({
-        _id: { $in: providerUserIds },
-        fcmToken: { $exists: true, $ne: null }
-    }).select('fcmToken');
-
-    const tokens = usersWithTokens.map(u => u.fcmToken!);
-
-    // 3. Notify providers (FCM + Socket)
-    closestProviders.forEach(p => {
-      emitToUser(p.userId.toString(), 'SOS_ALERT', { alertId: alert.id, coordinates });
-    });
-
-    if (tokens.length > 0) {
-        // Queue Push Notifications for all relevant tokens using template
-        for (const token of tokens) {
-            await notificationQueue.addNotificationToQueue({
-                type: 'PUSH',
-                fcmToken: token,
-                templateCode: 'SOS_ALERT',
-                templateData: {
-                    alertId: alert.id.toString(),
-                    coordinates: coordinates.join(',')
-                },
-                data: { alertId: alert.id, coordinates: JSON.stringify(coordinates) },
-                countryCode: req.user?.countryCode
-            });
-        }
+        res.status(201).json({ success: true, incidentId: incident.incidentId, _id: incident._id });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    res.status(201).json({ success: true, alertId: alert.id });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to trigger SOS', error });
-  }
 };
 
-export const resolveSos = async (req: AuthRequest, res: Response) => {
-  try {
-    const { alertId } = req.params;
-    const { status } = req.body; // RESOLVED or FALSE_ALARM
+export const updateStatus = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { status, reason } = req.body;
+        const adminId = req.user?.userId as string;
 
-    await PanicAlert.findByIdAndUpdate(alertId, {
-      status,
-      resolvedBy: req.user?.userId
-    });
+        let incident;
+        if (status === SosStatus.ARCHIVED) {
+            incident = await sosService.archiveIncident(id, adminId);
+        } else {
+            incident = await sosService.updateIncidentStatus(id, status as SosStatus, adminId, reason);
+        }
 
-    res.status(200).json({ success: true, message: 'SOS resolved' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Resolution failed', error });
-  }
+        res.status(200).json({ success: true, incident });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const uploadAudio = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { url, duration } = req.body; // Audio segment from app
+
+        await SosEvidence.findOneAndUpdate(
+            { incidentId: id },
+            { $push: { audioStream: { url, duration, timestamp: new Date() } } }
+        );
+
+        res.status(200).json({ success: true });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const uploadPhoto = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { url, coordinates } = req.body;
+
+        await SosEvidence.findOneAndUpdate(
+            { incidentId: id },
+            { $push: { photos: { url, gpsPosition: coordinates, timestamp: new Date() } } }
+        );
+
+        res.status(200).json({ success: true });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 };

@@ -7,6 +7,11 @@ import * as financialService from '../services/financial.service';
 import Provider from '../models/Provider';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
+import { emitAdminUpdate } from '../socket/socket.service';
+
+import * as performanceService from '../services/provider-performance.service';
+import * as zoneResolverService from '../services/zone-resolver.service';
+import * as fraudService from '../services/fraud.service';
 
 function calculateDistance(c1: number[], c2: number[]) {
   const R = 6371e3; // meters
@@ -25,13 +30,21 @@ function calculateDistance(c1: number[], c2: number[]) {
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
   try {
-    const { serviceCode, coordinates, address, zoneId } = req.body;
+    const { serviceCode, coordinates, address, isEmergency } = req.body;
+    let { zoneId } = req.body;
 
-    // SECTION 17: Pricing Resolver Integration
-    const pricingResult = await pricingService.resolveDynamicPricing(
+    // Automatic Zone Resolution
+    if (!zoneId && coordinates) {
+        const resolvedZone = await zoneResolverService.resolveZoneForLocation(coordinates, req.user!.countryCode);
+        if (resolvedZone) zoneId = resolvedZone._id;
+    }
+
+    // PAGE 4 – PRICING & RULES INTEGRATION
+    const pricingBreakdown = await pricingService.calculateJobPrice(
         serviceCode,
         req.user!.countryCode,
-        zoneId
+        zoneId,
+        isEmergency
     );
 
     const job = new Job({
@@ -44,12 +57,26 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
         coordinates,
         address
       },
-      bookingFee: pricingResult.bookingFee,
+      bookingFee: pricingBreakdown.bookingFee,
+      serviceFee: pricingBreakdown.totalAmount - pricingBreakdown.bookingFee,
+
+      // PRICING SNAPSHOT
+      pricingSnapshot: {
+          basePrice: pricingBreakdown.basePrice,
+          hourlyPrice: pricingBreakdown.hourlyPrice,
+          bookingFee: pricingBreakdown.bookingFee,
+          taxPercentage: pricingBreakdown.taxPercentage,
+          surcharges: pricingBreakdown.surcharges
+      },
+
       status: JobStatus.DRAFT
     });
 
     await job.save();
-    res.status(201).json({ success: true, job, pricing: pricingResult });
+
+    emitAdminUpdate('new_job_created', { jobId: job.id, countryCode: job.countryCode });
+
+    res.status(201).json({ success: true, job, pricing: pricingBreakdown });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -78,6 +105,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
     await job.save();
 
     jobService.broadcastJob(job.id);
+    emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
 
     res.status(200).json({ success: true, message: 'Payment successful, ledger updated', job });
   } catch (error) {
@@ -89,6 +117,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
   try {
     const { jobId } = req.params;
     const job = await jobService.acceptJob(jobId, req.user!.userId);
+    emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerId: req.user!.userId });
     res.status(200).json({ success: true, message: 'Job accepted', job });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
@@ -119,10 +148,46 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         job.startedAt = new Date();
     }
 
-    if (status === JobStatus.COMPLETED) job.completedAt = new Date();
+    if (status === JobStatus.ARRIVED) {
+        // PAGE 7: Increment Arrived on Time
+        if (job.providerId) {
+            await Provider.findOneAndUpdate(
+                { userId: job.providerId },
+                { $inc: { 'performance.arrivedOnTimeJobs': 1 } }
+            );
+        }
+    }
+
+    if (status === JobStatus.COMPLETED) {
+        job.completedAt = new Date();
+
+        // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
+        const totalAmount = (job.serviceFee || 0) + job.bookingFee;
+        const commissionRate = job.commissionRateSnapshot || 15;
+
+        await financialService.completeJobFinancials(
+            job.id,
+            job.providerId!.toString(),
+            totalAmount,
+            commissionRate,
+            'USD', // Should come from settings/snapshot
+            job.countryCode
+        );
+
+        // PAGE 7: Increment Completed Jobs
+        await Provider.findOneAndUpdate(
+            { userId: job.providerId },
+            { $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 } }
+        );
+
+        // PAGE 12: Fraud Analysis (Fake Completion)
+        fraudService.analyzeJobCompletion(job.id);
+    }
 
     job.status = status;
     await job.save();
+
+    emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
     res.status(200).json({ success: true, job });
   } catch (error) {
@@ -143,14 +208,11 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       const role = req.user?.role;
 
       // SECTION 4: Cancellation Grace Windows
-      // Provider: 90s post-acceptance. Customer: 2m post-acceptance.
       if (job.status === JobStatus.ACCEPTED || job.status === JobStatus.ARRIVED) {
           const acceptedTime = job.acceptedAt ? job.acceptedAt.getTime() : job.updatedAt.getTime();
           const diffSeconds = (now.getTime() - acceptedTime) / 1000;
 
           if (role === 'PROVIDER' && diffSeconds > 90) {
-              // Apply Penalty Logic
-              // Audit Log entry should be created here
               await AuditLog.create({
                   action: 'JOB_AUTO_CANCEL',
                   targetId: jobId,
@@ -158,9 +220,6 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
                   newValue: { status: JobStatus.CANCELLED },
                   ipAddress: 'System'
               });
-          } else if (role === 'CUSTOMER' && diffSeconds > 120) {
-              // Apply Penalty Logic
-              console.log(`Customer ${userId} cancelled after 2m grace window.`);
           }
       }
 
@@ -169,8 +228,44 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       job.cancellationReason = reason;
       await job.save();
 
+      emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
+
       res.status(200).json({ success: true, message: 'Job cancelled successfully' });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Cancellation failed', error });
     }
   };
+
+export const rateJob = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const { rating, comment } = req.body;
+
+        const job = await Job.findById(jobId);
+        if (!job || job.status !== JobStatus.COMPLETED) {
+            return res.status(400).json({ success: false, message: 'Invalid job state for rating' });
+        }
+
+        job.status = JobStatus.RATED;
+        // In a full implementation, we'd have a Review model.
+        // For now, we update the provider directly.
+        if (job.providerId) {
+            const provider = await Provider.findOne({ userId: job.providerId });
+            if (provider) {
+                const totalRating = (provider.ratingAvg * provider.jobsCompleted) + rating;
+                provider.ratingAvg = totalRating / (provider.jobsCompleted + 1);
+                // Note: jobsCompleted was incremented during status change to COMPLETED
+                await provider.save();
+
+                // PAGE 7: Trigger performance & tier evaluation
+                await performanceService.recalculateProviderMetrics(provider._id.toString());
+                await performanceService.evaluateTier(provider._id.toString());
+            }
+        }
+
+        await job.save();
+        res.status(200).json({ success: true, message: 'Thank you for your review' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Rating failed', error });
+    }
+};

@@ -9,5 +9,6 @@ router.post('/request', authenticate, authorize([UserRole.CUSTOMER]), jobControl
 router.post('/:jobId/pay', authenticate, authorize([UserRole.CUSTOMER]), jobController.payBookingFee);
 router.put('/:jobId/accept', authenticate, authorize([UserRole.PROVIDER]), jobController.acceptJob);
 router.patch('/:jobId/status', authenticate, jobController.updateJobStatus);
+router.post('/:jobId/rate', authenticate, authorize([UserRole.CUSTOMER]), jobController.rateJob);
 
 export default router;

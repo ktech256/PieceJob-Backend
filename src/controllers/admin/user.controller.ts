@@ -4,7 +4,7 @@ import User from '../../models/User';
 
 export const listUsers = async (req: AuthRequest, res: Response) => {
   try {
-    const countryCode = req.query.countryCode as string || req.user?.countryCode;
+    const countryCode = req.user?.countryCode;
     const query: any = {};
     if (countryCode && countryCode !== 'GLOBAL') {
       query.countryCode = countryCode;

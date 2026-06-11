@@ -6,5 +6,8 @@ const router = Router();
 
 router.get('/balance', authenticate, walletController.getWalletBalance);
 router.get('/history', authenticate, walletController.getTransactionHistory);
+router.get('/payouts', authenticate, walletController.getMyPayouts);
+router.get('/statements', authenticate, walletController.getMyStatements);
+router.get('/commission-rate', authenticate, walletController.getMyCommissionRate);
 
 export default router;

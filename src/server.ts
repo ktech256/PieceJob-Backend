@@ -1,6 +1,7 @@
 import http from 'http';
 import app from './app';
 import { initSocket } from './socket/socket.service';
+import { initSchedulers } from './services/scheduler.service';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 
@@ -11,6 +12,9 @@ const server = http.createServer(app);
 
 // Initialize Socket.io
 initSocket(server);
+
+// Initialize Schedulers
+initSchedulers();
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/piecejob';

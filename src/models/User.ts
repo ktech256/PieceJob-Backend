@@ -3,8 +3,15 @@ import mongoose, { Schema, Document } from 'mongoose';
 export enum UserRole {
   CUSTOMER = 'CUSTOMER',
   PROVIDER = 'PROVIDER',
-  ADMIN = 'ADMIN',
-  SUPER_ADMIN = 'SUPER_ADMIN'
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  COUNTRY_ADMIN = 'COUNTRY_ADMIN',
+  FINANCE_ADMIN = 'FINANCE_ADMIN',
+  VERIFICATION_ADMIN = 'VERIFICATION_ADMIN',
+  SUPPORT_ADMIN = 'SUPPORT_ADMIN',
+  READ_ONLY_ADMIN = 'READ_ONLY_ADMIN',
+  CORPORATE_OWNER = 'CORPORATE_OWNER',
+  CORPORATE_ADMIN = 'CORPORATE_ADMIN',
+  CORPORATE_EMPLOYEE = 'CORPORATE_EMPLOYEE'
 }
 
 export interface IUser extends Document {
@@ -14,8 +21,10 @@ export interface IUser extends Document {
   phoneNumber: string;
   passwordHash: string;
   role: UserRole;
+  companyId?: mongoose.Types.ObjectId;
   countryCode: string; // ISO 3166-1 alpha-2
   deviceId?: string;
+  hardwareId?: string;
   fcmToken?: string;
   isVerified: boolean;
   isBanned: boolean;
@@ -34,8 +43,10 @@ const UserSchema: Schema = new Schema({
   phoneNumber: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
   role: { type: String, enum: Object.values(UserRole), default: UserRole.CUSTOMER },
+  companyId: { type: Schema.Types.ObjectId, ref: 'Company' },
   countryCode: { type: String, required: true },
   deviceId: { type: String },
+  hardwareId: { type: String },
   fcmToken: { type: String },
   isVerified: { type: Boolean, default: false },
   isBanned: { type: Boolean, default: false },

@@ -1,4 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { VerificationLevel } from './Service';
+import { ProviderLifecycleState } from './ProviderLifecycleLog';
 
 export enum VerificationStatus {
   PENDING = 'PENDING',
@@ -22,11 +24,29 @@ export interface IProvider extends Document {
   idOrPassportNumber: string;
   servicesOffered: string[];
   verificationStatus: VerificationStatus;
+  verificationLevel: VerificationLevel;
+  lifecycleState: ProviderLifecycleState;
   tier: ProviderTier;
+  countryCode: string;
   isOnline: boolean;
+  isFeatured: boolean;
+  isShadowBanned: boolean;
+  shadowBannedUntil?: Date;
+  hardwareId?: string;
   lastHeartbeat?: Date;
+  lastGpsUpdate?: Date;
   ratingAvg: number;
   jobsCompleted: number;
+
+  performance: {
+    acceptanceRate: number;
+    completionRate: number;
+    arrivalRate: number;
+    complaintRate: number;
+    broadcastOpportunities: number;
+    acceptedJobs: number;
+  };
+
   location: {
     type: string;
     coordinates: number[];
@@ -47,11 +67,32 @@ const ProviderSchema: Schema = new Schema({
   idOrPassportNumber: { type: String, required: true },
   servicesOffered: [{ type: String }],
   verificationStatus: { type: String, enum: Object.values(VerificationStatus), default: VerificationStatus.PENDING },
+  verificationLevel: { type: String, enum: Object.values(VerificationLevel), default: VerificationLevel.STANDARD },
+  lifecycleState: { type: String, enum: Object.values(ProviderLifecycleState), default: ProviderLifecycleState.REGISTERED },
   tier: { type: String, enum: Object.values(ProviderTier), default: ProviderTier.BRONZE },
+  countryCode: { type: String, required: true },
   isOnline: { type: Boolean, default: false },
+  isFeatured: { type: Boolean, default: false },
+  isShadowBanned: { type: Boolean, default: false },
+  shadowBannedUntil: { type: Date },
+  hardwareId: { type: String },
   lastHeartbeat: { type: Date },
+  lastGpsUpdate: { type: Date },
   ratingAvg: { type: Number, default: 0 },
   jobsCompleted: { type: Number, default: 0 },
+
+  performance: {
+    acceptanceRate: { type: Number, default: 0 },
+    completionRate: { type: Number, default: 0 },
+    arrivalRate: { type: Number, default: 0 },
+    complaintRate: { type: Number, default: 0 },
+    broadcastOpportunities: { type: Number, default: 0 },
+    acceptedJobs: { type: Number, default: 0 },
+    completedJobs: { type: Number, default: 0 },
+    arrivedOnTimeJobs: { type: Number, default: 0 },
+    complaintsCount: { type: Number, default: 0 }
+  },
+
   location: {
     type: { type: String, default: 'Point' },
     coordinates: { type: [Number], index: '2dsphere' }
@@ -65,6 +106,7 @@ const ProviderSchema: Schema = new Schema({
 }, { timestamps: true });
 
 ProviderSchema.index({ userId: 1 });
+ProviderSchema.index({ countryCode: 1 });
 ProviderSchema.index({ isOnline: 1, servicesOffered: 1 });
 
 export default mongoose.model<IProvider>('Provider', ProviderSchema);

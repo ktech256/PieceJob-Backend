@@ -29,11 +29,28 @@ export interface IJob extends Document {
   bookingFee: number;
   serviceFee?: number;
   paymentStatus: 'PENDING' | 'PAID' | 'REFUNDED';
+  escrowStatus: 'PENDING' | 'HELD' | 'ESCROW_HOLD_REVIEW' | 'RELEASED' | 'REFUNDED';
+  fraudFlag?: string;
   cancellationReason?: string;
   cancelledBy?: mongoose.Types.ObjectId;
   acceptedAt?: Date;
+  arrivedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
+
+  // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
+  commissionRateSnapshot?: number;
+  pricingSnapshot?: {
+      basePrice: number;
+      hourlyPrice: number;
+      bookingFee: number;
+      taxPercentage: number;
+      surcharges: {
+          type: string;
+          amount: number;
+      }[];
+  };
+
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -54,11 +71,28 @@ const JobSchema: Schema = new Schema({
   bookingFee: { type: Number, required: true },
   serviceFee: { type: Number },
   paymentStatus: { type: String, enum: ['PENDING', 'PAID', 'REFUNDED'], default: 'PENDING' },
+  escrowStatus: { type: String, enum: ['PENDING', 'HELD', 'ESCROW_HOLD_REVIEW', 'RELEASED', 'REFUNDED'], default: 'PENDING' },
+  fraudFlag: { type: String },
   cancellationReason: { type: String },
   cancelledBy: { type: Schema.Types.ObjectId, ref: 'User' },
   acceptedAt: { type: Date },
+  arrivedAt: { type: Date },
   startedAt: { type: Date },
   completedAt: { type: Date },
+
+  // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
+  commissionRateSnapshot: { type: Number },
+  pricingSnapshot: {
+      basePrice: { type: Number },
+      hourlyPrice: { type: Number },
+      bookingFee: { type: Number },
+      taxPercentage: { type: Number },
+      surcharges: [{
+          type: { type: String },
+          amount: { type: Number }
+      }]
+  },
+
   version: { type: Number, default: 1 }
 }, { timestamps: true });
 

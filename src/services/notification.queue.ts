@@ -29,8 +29,9 @@ export interface NotificationJobData {
     countryCode?: string;
 }
 
-export const addNotificationToQueue = async (data: NotificationJobData) => {
+export const addNotificationToQueue = async (data: NotificationJobData, eventId?: string) => {
     await notificationQueue.add('send-notification', data, {
+        jobId: eventId, // BullMQ deduplication
         attempts: 3,
         backoff: {
             type: 'exponential',

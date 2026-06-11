@@ -14,9 +14,26 @@ export interface ISystemSettings extends Document {
   sosAlertRadiusKm: number;
   referralRewardAmount: number;
 
+  // PAGE 4.1 – COUNTRY PRICING
+  bookingFee: number;
+  platformFee: number;
+  minimumCharge: number;
+  calloutFee: number;
+  cancellationFee: number;
+
+  // Currency & Tax
+  currencyCode: string; // e.g. "ZAR"
+  currencySymbol: string; // e.g. "R"
+  currencyPrecision: number; // e.g. 2
+  taxName: string; // e.g. "VAT"
+  taxPercentage: number;
+  isTaxInclusive: boolean;
+
   // New fields from Phase 13 gate remediation
   nightFeeEnabled: boolean;
   nightFeePercentage: number;
+  nightFeeStart: string; // "22:00"
+  nightFeeEnd: string;   // "05:00"
   weekendFeeEnabled: boolean;
   weekendFeePercentage: number;
 
@@ -55,8 +72,24 @@ const SystemSettingsSchema: Schema = new Schema({
   sosAlertRadiusKm: { type: Number, default: 5 },
   referralRewardAmount: { type: Number, default: 10 },
 
+  // PAGE 4.1 – COUNTRY PRICING
+  bookingFee: { type: Number, default: 0 },
+  platformFee: { type: Number, default: 0 },
+  minimumCharge: { type: Number, default: 0 },
+  calloutFee: { type: Number, default: 0 },
+  cancellationFee: { type: Number, default: 0 },
+
+  currencyCode: { type: String, default: 'USD' },
+  currencySymbol: { type: String, default: '$' },
+  currencyPrecision: { type: Number, default: 2 },
+  taxName: { type: String, default: 'VAT' },
+  taxPercentage: { type: Number, default: 0 },
+  isTaxInclusive: { type: Boolean, default: true },
+
   nightFeeEnabled: { type: Boolean, default: false },
   nightFeePercentage: { type: Number, default: 0 },
+  nightFeeStart: { type: String, default: '22:00' },
+  nightFeeEnd: { type: String, default: '05:00' },
   weekendFeeEnabled: { type: Boolean, default: false },
   weekendFeePercentage: { type: Number, default: 0 },
 

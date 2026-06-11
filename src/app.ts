@@ -12,6 +12,9 @@ import notificationRoutes from './routes/notification.routes';
 import sosRoutes from './routes/sos.routes';
 import adminRoutes from './routes/admin.routes';
 import disputeRoutes from './routes/dispute.routes';
+import configRoutes from './routes/config.routes';
+import corporateRoutes from './routes/corporate.routes';
+import supportRoutes from './routes/support.routes';
 
 const app = express();
 
@@ -31,6 +34,9 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/sos', sosRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/disputes', disputeRoutes);
+app.use('/api/v1/config', configRoutes);
+app.use('/api/v1/corporate', corporateRoutes);
+app.use('/api/v1/support', supportRoutes);
 
 // Dashboard Aliases (Mounting under /api for dashboard lib/api/axios.ts)
 app.use('/api/auth', authRoutes);

@@ -4,13 +4,20 @@ import AuditLog from '../../models/AuditLog';
 
 export const listAuditLogs = async (req: AuthRequest, res: Response) => {
     try {
-        const { type } = req.query;
+        const { auditType, countryCode, userId, adminId, jobId, transactionId } = req.query;
         const query: any = {};
-        if (type) query.action = { $regex: type as string, $options: 'i' };
+
+        if (auditType) query.auditType = auditType;
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+        if (userId) query.userId = userId;
+        if (adminId) query.adminId = adminId;
+        if (jobId) query["financialInfo.jobId"] = jobId;
+        if (transactionId) query["financialInfo.transactionId"] = transactionId;
 
         const logs = await AuditLog.find(query)
             .populate('adminId', 'firstName lastName')
-            .sort({ createdAt: -1 })
+            .populate('userId', 'firstName lastName')
+            .sort({ timestampUTC: -1, createdAt: -1 })
             .limit(100);
 
         res.status(200).json({ success: true, logs });

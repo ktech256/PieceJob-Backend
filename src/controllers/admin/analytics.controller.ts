@@ -4,66 +4,66 @@ import User, { UserRole } from '../../models/User';
 import Provider from '../../models/Provider';
 import Job, { JobStatus } from '../../models/Job';
 import Ledger, { TransactionType } from '../../models/Ledger';
+import ExchangeRate from '../../models/ExchangeRate';
+import Country from '../../models/Country';
+import PanicAlert from '../../models/PanicAlert';
+import Dispute from '../../models/Dispute';
+import * as analyticsService from '../../services/analytics.service';
 
 export const getOperationalAnalytics = async (req: AuthRequest, res: Response) => {
   try {
     const countryCode = req.query.countryCode as string || req.user?.countryCode;
+    const isGlobal = countryCode === 'GLOBAL';
     const query: any = {};
-    if (countryCode && countryCode !== 'GLOBAL') {
+    if (!isGlobal) {
       query.countryCode = countryCode;
     }
 
+    let targetCurrency = 'USD';
+    if (!isGlobal) {
+        const country = await Country.findOne({ code: countryCode });
+        targetCurrency = country?.currency || 'USD';
+    }
+
+    const [growth, efficiency, financials, revenueTrends] = await Promise.all([
+        analyticsService.getGrowthAnalytics(countryCode),
+        analyticsService.getEfficiencyMetrics(countryCode),
+        analyticsService.getFinancialBreakdown(countryCode, targetCurrency),
+        analyticsService.getRevenueTrends(countryCode, targetCurrency)
+    ]);
+
     const now = new Date();
     const startOfToday = new Date(now.setHours(0, 0, 0, 0));
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    // Revenue Aggregations
-    const revenueStats = await Ledger.aggregate([
-      { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } } },
-      { $facet: {
-        total: [{ $group: { _id: null, sum: { $sum: "$amount" } } }],
-        today: [{ $match: { createdAt: { $gte: startOfToday } } }, { $group: { _id: null, sum: { $sum: "$amount" } } }],
-        week: [{ $match: { createdAt: { $gte: startOfWeek } } }, { $group: { _id: null, sum: { $sum: "$amount" } } }],
-        month: [{ $match: { createdAt: { $gte: startOfMonth } } }, { $group: { _id: null, sum: { $sum: "$amount" } } }]
-      }}
-    ]);
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     // Job Aggregations
     const jobStats = await Job.aggregate([
         { $match: query },
         { $facet: {
             counts: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
-            today: [{ $match: { createdAt: { $gte: startOfToday } } }, { $count: "count" }],
-            week: [{ $match: { createdAt: { $gte: startOfWeek } } }, { $count: "count" }],
-            month: [{ $match: { createdAt: { $gte: startOfMonth } } }, { $count: "count" }]
+            today: [{ $match: { createdAt: { $gte: startOfToday } } }, { $count: "count" }]
         }}
     ]);
 
     const jobsByStatus: Record<string, number> = {};
     jobStats[0].counts.forEach((c: any) => { jobsByStatus[c._id] = c.count; });
 
+    const revenueToday = revenueTrends.find(t => t.date === todayStr)?.amount || 0;
+
     const analytics = {
-        currency: "USD", // Should be fetched from country settings
+        currency: targetCurrency,
+        growth,
+        efficiency,
+        financials,
+        revenueTrends,
         business: {
             revenue: {
-                totalRevenue: revenueStats[0].total[0]?.sum || 0,
-                revenueToday: revenueStats[0].today[0]?.sum || 0,
-                revenueWeek: revenueStats[0].week[0]?.sum || 0,
-                revenueMonth: revenueStats[0].month[0]?.sum || 0,
-                insuranceRevenue: 0, // Placeholder for future insurance module integration
-                cashRevenue: revenueStats[0].total[0]?.sum || 0
-            },
-            payments: {
-                paymentsPaid: await Ledger.countDocuments({ ...query, status: 'COMPLETED' }),
-                paymentsPending: await Ledger.countDocuments({ ...query, status: 'PENDING' }),
-                paymentsRefunded: await Ledger.countDocuments({ ...query, type: TransactionType.REFUND })
+                totalRevenue: financials.grossRevenue,
+                revenueToday
             },
             jobs: {
                 totalJobs: await Job.countDocuments(query),
                 jobsToday: jobStats[0].today[0]?.count || 0,
-                jobsWeek: jobStats[0].week[0]?.count || 0,
-                jobsMonth: jobStats[0].month[0]?.count || 0,
                 jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
                 jobsCancelled: jobsByStatus[JobStatus.CANCELLED] || 0
             }
@@ -79,7 +79,8 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
                 pendingVerificationProviders: await Provider.countDocuments({ ...query, verificationStatus: 'PENDING' })
             },
             jobsByStatus,
-            avgCompletionMinutes: 0 // Logic to calculate avg time between STARTED and COMPLETED
+            sosCount: await PanicAlert.countDocuments(query),
+            disputeCount: await Dispute.countDocuments(query)
         }
     };
 
@@ -88,4 +89,102 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
     console.error('Analytics Error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch analytics', error });
   }
+};
+
+export const getLiveOpsData = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const query: any = {};
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+
+        const [providers, activeJobs] = await Promise.all([
+            Provider.find({ ...query, isOnline: true }).populate('userId', 'firstName lastName'),
+            Job.find({ ...query, status: { $in: [JobStatus.BROADCASTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED] } })
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                providers,
+                activeJobs
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Live Ops Fetch Failed', error });
+    }
+};
+
+export const getGlobalBreakdown = async (req: AuthRequest, res: Response) => {
+    try {
+        if (req.user?.role !== UserRole.SUPER_ADMIN) {
+            return res.status(403).json({ success: false, message: 'Access restricted to Super Admin' });
+        }
+
+        const rates = await ExchangeRate.find();
+        const getRate = (from: string) => rates.find(r => r.fromCurrency === from && r.toCurrency === 'USD')?.rate || 1;
+
+        // Revenue by Country
+        const revenueByCountry = await Ledger.aggregate([
+            { $match: { status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } } },
+            { $group: { _id: "$countryCode", total: { $sum: "$amount" }, currency: { $first: "$currency" } } }
+        ]);
+
+        const convertedByCountry = revenueByCountry.map(c => ({
+            countryCode: c._id,
+            totalUsd: c.total * getRate(c.currency)
+        }));
+
+        // Revenue by Category (requires joining with Jobs)
+        const revenueByCategory = await Ledger.aggregate([
+            { $match: { status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } } },
+            { $lookup: { from: 'jobs', localField: 'jobId', foreignField: '_id', as: 'job' } },
+            { $unwind: "$job" },
+            { $group: { _id: "$job.serviceCode", total: { $sum: "$amount" }, currency: { $first: "$currency" } } }
+        ]);
+
+        const convertedByCategory = revenueByCategory.map(cat => ({
+            category: cat._id,
+            totalUsd: cat.total * getRate(cat.currency)
+        }));
+
+        res.status(200).json({
+            success: true,
+            breakdown: {
+                byCountry: convertedByCountry,
+                byCategory: convertedByCategory
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Breakdown failed', error });
+    }
+};
+
+export const getHeatmapData = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const query: any = {};
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+
+        // Group jobs by coordinates (roughly rounding to 3 decimal places for clustering)
+        const density = await Job.aggregate([
+            { $match: query },
+            { $group: {
+                _id: {
+                    lat: { $round: [{ $arrayElemAt: ["$location.coordinates", 1] }, 3] },
+                    lng: { $round: [{ $arrayElemAt: ["$location.coordinates", 0] }, 3] }
+                },
+                weight: { $sum: 1 }
+            }},
+            { $project: {
+                lat: "$_id.lat",
+                lng: "$_id.lng",
+                weight: 1,
+                _id: 0
+            }}
+        ]);
+
+        res.status(200).json({ success: true, density });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Heatmap data failed', error });
+    }
 };

@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as notificationQueue from '../services/notification.queue';
+import * as fraudService from '../services/fraud.service';
 
 export const requestOtp = async (req: Request, res: Response) => {
   try {
@@ -184,7 +185,7 @@ export const registerProvider = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { identifier, password, deviceId } = req.body; // identifier can be email or phone
+    const { identifier, password, deviceId, hardwareId } = req.body; // identifier can be email or phone
 
     const user = await User.findOne({ $or: [{ email: identifier }, { phoneNumber: identifier }] });
     if (!user) {
@@ -200,11 +201,14 @@ export const login = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Account is banned' });
     }
 
-    // Update deviceId for binding
-    if (deviceId) {
-      user.deviceId = deviceId;
-      await user.save();
+    // Update device identifiers
+    if (deviceId) user.deviceId = deviceId;
+    if (hardwareId) {
+        user.hardwareId = hardwareId;
+        // PAGE 12: Device Integrity & Multi-account Check
+        await fraudService.logDeviceAccess(user._id.toString(), hardwareId, req.ip || '0.0.0.0');
     }
+    await user.save();
 
     const token = jwt.sign(
       { userId: user._id, role: user.role, countryCode: user.countryCode },

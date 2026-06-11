@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
+    "verify:workspace": "ts-node src/scripts/verify-workspace.ts",
+    "seed:countries": "ts-node src/scripts/seed-countries.ts",
+    "seed:analytics": "ts-node src/scripts/seed-analytics.ts",
     "build": "tsc",
     "postinstall": "npm run build",
     "lint": "eslint 'src/**/*.{js,ts}'",

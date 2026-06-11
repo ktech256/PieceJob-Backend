@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User';
+import * as auditService from '../services/audit.service';
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -16,12 +17,27 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
-    const { firstName, lastName } = req.body;
+    const { firstName, lastName, email } = req.body;
+    const oldUser = await User.findById(req.user?.userId);
     const user = await User.findByIdAndUpdate(
       req.user?.userId,
-      { firstName, lastName },
+      { firstName, lastName, email },
       { new: true }
     ).select('-passwordHash');
+
+    if (user && oldUser) {
+        await auditService.logUserModification({
+            countryCode: user.countryCode,
+            userId: user.id,
+            action: 'PROFILE_UPDATE',
+            modificationType: 'Personal Info',
+            beforeState: { firstName: oldUser.firstName, lastName: oldUser.lastName, email: oldUser.email },
+            afterState: { firstName: user.firstName, lastName: user.lastName, email: user.email },
+            triggeredBy: 'USER',
+            ipAddress: req.ip,
+            systemSource: 'API'
+        });
+    }
 
     res.status(200).json({ success: true, user });
   } catch (error) {
