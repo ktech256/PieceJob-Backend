@@ -45,6 +45,9 @@ export interface IProvider extends Document {
     complaintRate: number;
     broadcastOpportunities: number;
     acceptedJobs: number;
+    completedJobs: number;
+    arrivedOnTimeJobs: number;
+    complaintsCount: number;
   };
 
   location: {

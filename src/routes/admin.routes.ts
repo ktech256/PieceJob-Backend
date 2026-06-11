@@ -36,7 +36,7 @@ const router = Router();
 
 router.use(authenticate);
 router.use(tenantContext);
-router.use(authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]));
+router.use(authorize([UserRole.COUNTRY_ADMIN, UserRole.SUPER_ADMIN, UserRole.ADMIN]));
 
 // Analytics
 router.get('/analytics/summary', analyticsController.getOperationalAnalytics);

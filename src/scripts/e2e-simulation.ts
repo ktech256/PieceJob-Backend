@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import User, { UserRole } from '../models/User';
 import Provider, { ProviderTier, VerificationStatus } from '../models/Provider';
 import Job, { JobStatus } from '../models/Job';
-import Pricing from '../models/Pricing';
+import PricingRule, { PricingLevel } from '../models/PricingRule';
 import * as jobService from '../services/job.service';
 import * as financialService from '../services/financial.service';
 
@@ -40,9 +40,9 @@ async function runE2ESimulation() {
             { upsert: true, new: true }
         );
 
-        await Pricing.findOneAndUpdate(
-            { serviceCode: 'HDS-01', countryCode: 'ZA' },
-            { bookingFee: 50, currency: 'ZAR', surgeMultiplier: 1.0 },
+        await PricingRule.findOneAndUpdate(
+            { serviceCode: 'HDS-01', countryCode: 'ZA', level: PricingLevel.SERVICE },
+            { basePrice: 200, hourlyPrice: 100, surgeMultiplier: 1.0, priority: 10, isActive: true },
             { upsert: true }
         );
 

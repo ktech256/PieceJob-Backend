@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import FraudAlert, { FraudRiskType, FraudStatus } from '../models/FraudAlert';
 import Job, { JobStatus } from '../models/Job';
 import Provider from '../models/Provider';
+import User from '../models/User';
 import ServiceExpectedDuration from '../models/ServiceExpectedDuration';
 import { v4 as uuidv4 } from 'uuid';
 import { emitAdminUpdate } from '../socket/socket.service';
@@ -82,15 +83,26 @@ export const checkReferralAbuse = async (referrerId: string, referredId: string)
     const referrer = await Provider.findOne({ userId: referrerId });
     const referred = await User.findById(referredId);
 
-    // If both users have the same hardware ID (assuming we track User hardwareId too)
-    // For now, check if same IP or some shared identifier
+    if (referrer?.hardwareId && referred?.hardwareId && referrer.hardwareId === referred.hardwareId) {
+        const alert = new FraudAlert({
+            fraudEventId: `REF-${uuidv4().slice(0, 8).toUpperCase()}`,
+            countryCode: referred.countryCode || 'ZA',
+            userId: referredId as any,
+            riskType: FraudRiskType.REFERRAL_ABUSE,
+            riskScore: 100,
+            severity: 'CRITICAL',
+            evidence: { referrerId, referredId, type: 'SAME_DEVICE', hardwareId: referrer.hardwareId }
+        });
+        await alert.save();
+        return;
+    }
 
     // 2. Circular Referral Check (A invites B, B invites A)
     const circular = await User.findOne({ _id: referrerId, referredBy: referredId });
     if (circular) {
          const alert = new FraudAlert({
             fraudEventId: `REF-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
+            countryCode: circular.countryCode || 'ZA',
             userId: referredId as any,
             riskType: FraudRiskType.REFERRAL_ABUSE,
             riskScore: 100,
@@ -103,7 +115,7 @@ export const checkReferralAbuse = async (referrerId: string, referredId: string)
 
 export const logDeviceAccess = async (userId: string, hardwareId: string, ipAddress: string) => {
     // 1. Multi-account detection for any user type
-    const overlaps = await mongoose.model('User').find({
+    const overlaps = await User.find({
         hardwareId,
         _id: { $ne: new mongoose.Types.ObjectId(userId) }
     });
@@ -132,9 +144,10 @@ export const checkMultiAccountDevice = async (providerId: string, hardwareId: st
 
     if (duplicates.length > 0) {
         const fraudEventId = `DEV-${uuidv4().slice(0, 8).toUpperCase()}`;
+        const provider = await Provider.findById(providerId);
         const alert = new FraudAlert({
             fraudEventId,
-            countryCode: 'ZA', // Simplified
+            countryCode: provider?.countryCode || 'ZA',
             providerId: providerId as any,
             riskType: FraudRiskType.MULTI_ACCOUNT,
             riskScore: 75,
@@ -147,53 +160,8 @@ export const checkMultiAccountDevice = async (providerId: string, hardwareId: st
             alertId: alert.id,
             type: 'MULTI_ACCOUNT',
             providerId,
-            countryCode: 'ZA'
+            countryCode: provider?.countryCode || 'ZA'
         });
-    }
-};
-
-export const checkReferralAbuse = async (referrerId: string, referredId: string) => {
-    // 1. Check if on same device/hardware
-    const referrer = await Provider.findOne({ userId: referrerId });
-    const referred = await User.findById(referredId);
-
-    // If both users have the same hardware ID (assuming we track User hardwareId too)
-    // For now, check if same IP or some shared identifier
-
-    // 2. Circular Referral Check (A invites B, B invites A)
-    const circular = await User.findOne({ _id: referrerId, referredBy: referredId });
-    if (circular) {
-         const alert = new FraudAlert({
-            fraudEventId: `REF-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
-            userId: referredId as any,
-            riskType: FraudRiskType.REFERRAL_ABUSE,
-            riskScore: 100,
-            severity: 'CRITICAL',
-            evidence: { referrerId, referredId, type: 'CIRCULAR' }
-        });
-        await alert.save();
-    }
-};
-
-export const logDeviceAccess = async (userId: string, hardwareId: string, ipAddress: string) => {
-    // 1. Multi-account detection for any user type
-    const overlaps = await mongoose.model('User').find({
-        hardwareId,
-        _id: { $ne: new mongoose.Types.ObjectId(userId) }
-    });
-
-    if (overlaps.length > 0) {
-        const alert = new FraudAlert({
-            fraudEventId: `ACC-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
-            userId: userId as any,
-            riskType: FraudRiskType.MULTI_ACCOUNT,
-            riskScore: 60,
-            severity: 'MEDIUM',
-            evidence: { hardwareId, ipAddress, overlappedUsers: overlaps.map(u => u._id) }
-        });
-        await alert.save();
     }
 };
 
@@ -211,7 +179,6 @@ export const checkGpsIntegrity = async (providerId: string, currentCoords: numbe
     const distanceKm = R * c;
 
     // If movement > 2km in 1s (unrealistic speed)
-    const speedKmS = distanceKm / timeDiffSec;
     if (distanceKm > 2 && timeDiffSec <= 1) {
         await applyShadowBan(providerId, 'Impossible movement detected (GPS integrity violation)');
     }
@@ -258,9 +225,10 @@ export const analyzeTextForAbuse = async (userId: string, text: string, jobId?: 
     const found = hostileKeywords.filter(k => text.toLowerCase().includes(k));
 
     if (found.length > 0) {
+        const user = await User.findById(userId);
         const alert = new FraudAlert({
             fraudEventId: `QC-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA', // Ideally from user
+            countryCode: user?.countryCode || 'ZA',
             userId: userId as any,
             jobId: jobId as any,
             riskType: FraudRiskType.QUALICHECK_ABUSE,
@@ -274,127 +242,7 @@ export const analyzeTextForAbuse = async (userId: string, text: string, jobId?: 
             alertId: alert.id,
             type: 'QUALICHECK',
             userId,
-            countryCode: 'ZA'
+            countryCode: user?.countryCode || 'ZA'
         });
-    }
-};
-
-export const checkReferralAbuse = async (referrerId: string, referredId: string) => {
-    // 1. Check if on same device/hardware
-    const referrer = await Provider.findOne({ userId: referrerId });
-    const referred = await User.findById(referredId);
-
-    // If both users have the same hardware ID (assuming we track User hardwareId too)
-    // For now, check if same IP or some shared identifier
-
-    // 2. Circular Referral Check (A invites B, B invites A)
-    const circular = await User.findOne({ _id: referrerId, referredBy: referredId });
-    if (circular) {
-         const alert = new FraudAlert({
-            fraudEventId: `REF-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
-            userId: referredId as any,
-            riskType: FraudRiskType.REFERRAL_ABUSE,
-            riskScore: 100,
-            severity: 'CRITICAL',
-            evidence: { referrerId, referredId, type: 'CIRCULAR' }
-        });
-        await alert.save();
-    }
-};
-
-export const logDeviceAccess = async (userId: string, hardwareId: string, ipAddress: string) => {
-    // 1. Multi-account detection for any user type
-    const overlaps = await mongoose.model('User').find({
-        hardwareId,
-        _id: { $ne: new mongoose.Types.ObjectId(userId) }
-    });
-
-    if (overlaps.length > 0) {
-        const alert = new FraudAlert({
-            fraudEventId: `ACC-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
-            userId: userId as any,
-            riskType: FraudRiskType.MULTI_ACCOUNT,
-            riskScore: 60,
-            severity: 'MEDIUM',
-            evidence: { hardwareId, ipAddress, overlappedUsers: overlaps.map(u => u._id) }
-        });
-        await alert.save();
-    }
-};
-
-export const checkMultiAccountDevice = async (providerId: string, hardwareId: string) => {
-    if (!hardwareId) return;
-
-    const duplicates = await Provider.find({
-        hardwareId,
-        _id: { $ne: new mongoose.Types.ObjectId(providerId) }
-    });
-
-    if (duplicates.length > 0) {
-        const fraudEventId = `DEV-${uuidv4().slice(0, 8).toUpperCase()}`;
-        const alert = new FraudAlert({
-            fraudEventId,
-            countryCode: 'ZA', // Simplified
-            providerId: providerId as any,
-            riskType: FraudRiskType.MULTI_ACCOUNT,
-            riskScore: 75,
-            severity: 'HIGH',
-            evidence: { hardwareId, linkedProviders: duplicates.map(d => d._id) }
-        });
-        await alert.save();
-
-        emitAdminUpdate('fraud_alert', {
-            alertId: alert.id,
-            type: 'MULTI_ACCOUNT',
-            providerId,
-            countryCode: 'ZA'
-        });
-    }
-};
-
-export const checkReferralAbuse = async (referrerId: string, referredId: string) => {
-    // 1. Check if on same device/hardware
-    const referrer = await Provider.findOne({ userId: referrerId });
-    const referred = await User.findById(referredId);
-
-    // If both users have the same hardware ID (assuming we track User hardwareId too)
-    // For now, check if same IP or some shared identifier
-
-    // 2. Circular Referral Check (A invites B, B invites A)
-    const circular = await User.findOne({ _id: referrerId, referredBy: referredId });
-    if (circular) {
-         const alert = new FraudAlert({
-            fraudEventId: `REF-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
-            userId: referredId as any,
-            riskType: FraudRiskType.REFERRAL_ABUSE,
-            riskScore: 100,
-            severity: 'CRITICAL',
-            evidence: { referrerId, referredId, type: 'CIRCULAR' }
-        });
-        await alert.save();
-    }
-};
-
-export const logDeviceAccess = async (userId: string, hardwareId: string, ipAddress: string) => {
-    // 1. Multi-account detection for any user type
-    const overlaps = await mongoose.model('User').find({
-        hardwareId,
-        _id: { $ne: new mongoose.Types.ObjectId(userId) }
-    });
-
-    if (overlaps.length > 0) {
-        const alert = new FraudAlert({
-            fraudEventId: `ACC-${uuidv4().slice(0, 8).toUpperCase()}`,
-            countryCode: 'ZA',
-            userId: userId as any,
-            riskType: FraudRiskType.MULTI_ACCOUNT,
-            riskScore: 60,
-            severity: 'MEDIUM',
-            evidence: { hardwareId, ipAddress, overlappedUsers: overlaps.map(u => u._id) }
-        });
-        await alert.save();
     }
 };

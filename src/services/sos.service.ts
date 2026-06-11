@@ -47,7 +47,7 @@ export const activateSos = async (
         await incident.save({ session });
 
         // 2. Create Evidence Record
-        let chatSnapshot = [];
+        let chatSnapshot: any[] = [];
         if (jobId) {
             chatSnapshot = await Chat.find({ jobId }).session(session);
         }

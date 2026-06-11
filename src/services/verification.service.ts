@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import VerificationRequest, { VerificationRequestStatus } from '../models/VerificationRequest';
-import Provider from '../models/Provider';
+import Provider, { VerificationStatus } from '../models/Provider';
 import { VerificationLevel } from '../models/Service';
 import AuditLog, { AuditType } from '../models/AuditLog';
 import { notifyUser } from './notification.service';
@@ -74,11 +74,12 @@ export const reviewRequest = async (
 
         // PAGE 8 Section 6: Double Approval for HIGH VETTING
         if (request.type === VerificationLevel.HIGH_VETTING && status === VerificationRequestStatus.APPROVED) {
-            if (!request.approvalControls?.officerApproved) {
-                request.approvalControls = { ...request.approvalControls, officerApproved: true, officerId: adminId as any };
+            const controls = request.approvalControls || { officerApproved: false, supervisorApproved: false };
+            if (!controls.officerApproved) {
+                request.approvalControls = { ...controls, officerApproved: true, officerId: adminId as any };
                 request.status = VerificationRequestStatus.UNDER_REVIEW; // Keep in queue for supervisor
-            } else if (!request.approvalControls?.supervisorApproved) {
-                request.approvalControls = { ...request.approvalControls, supervisorApproved: true, supervisorId: adminId as any };
+            } else if (!controls.supervisorApproved) {
+                request.approvalControls = { ...controls, supervisorApproved: true, supervisorId: adminId as any };
                 request.status = VerificationRequestStatus.APPROVED;
             }
         }
@@ -100,12 +101,12 @@ export const reviewRequest = async (
             const provider = await Provider.findById(request.providerId).session(session);
             if (provider) {
                 provider.verificationLevel = request.type;
-                provider.verificationStatus = 'APPROVED';
+                provider.verificationStatus = VerificationStatus.APPROVED;
                 await provider.save({ session });
             }
         } else if (status === VerificationRequestStatus.REJECTED) {
              await Provider.findByIdAndUpdate(request.providerId, {
-                verificationStatus: 'REJECTED'
+                verificationStatus: VerificationStatus.REJECTED
             }).session(session);
         }
 

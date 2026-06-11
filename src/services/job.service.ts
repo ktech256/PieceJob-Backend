@@ -1,5 +1,5 @@
 import Job, { JobStatus } from '../models/Job';
-import Provider from '../models/Provider';
+import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';

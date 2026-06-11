@@ -44,7 +44,7 @@ export const runFullReconciliation = async (countryCode: string) => {
     results.scannedJobs = jobs.length;
 
     for (const job of jobs) {
-        const res = await reconcileJob(job._id as string);
+        const res = await reconcileJob((job._id as any).toString());
         if (!res.success) {
             results.errors.push(res);
         }

@@ -6,7 +6,7 @@ import { UserRole } from '../models/User';
 const router = Router();
 
 router.post('/', authenticate, disputeController.raiseDispute);
-router.get('/', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), disputeController.getDisputes);
-router.patch('/:disputeId', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), disputeController.updateDisputeStatus);
+router.get('/', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.COUNTRY_ADMIN, UserRole.SUPPORT_ADMIN]), disputeController.getDisputes);
+router.patch('/:disputeId', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.COUNTRY_ADMIN, UserRole.SUPPORT_ADMIN]), disputeController.updateDisputeStatus);
 
 export default router;

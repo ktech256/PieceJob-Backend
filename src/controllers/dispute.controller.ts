@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Dispute, { DisputeStatus } from '../models/Dispute';
 import Job, { JobStatus } from '../models/Job';
+import Provider from '../models/Provider';
 import AuditLog from '../models/AuditLog';
 
 export const raiseDispute = async (req: AuthRequest, res: Response) => {
