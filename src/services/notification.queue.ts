@@ -22,7 +22,7 @@ const connection = REDIS_URL ? new IORedis(REDIS_URL, { maxRetriesPerRequest: nu
   }
 });
 
-connection.on('error', (err) => {
+connection.on('error', (err: any) => {
     if (err.code === 'ECONNREFUSED') {
         // Suppress noisy logs if it's just a missing local redis
     } else {
@@ -30,7 +30,7 @@ connection.on('error', (err) => {
     }
 });
 
-export const notificationQueue = new Queue('notifications', { connection });
+export const notificationQueue = new Queue('notifications', { connection: connection as any });
 
 export interface NotificationJobData {
     type: 'PUSH' | 'SMS' | 'EMAIL';
@@ -92,7 +92,7 @@ const worker = new Worker('notifications', async (job: Job<NotificationJobData>)
         console.error(`Error in notification worker for job ${job.id}:`, error);
         throw error; // Let BullMQ handle retries
     }
-}, { connection });
+}, { connection: connection as any });
 
 worker.on('completed', job => {
   console.log(`Notification job ${job.id} completed successfully`);
