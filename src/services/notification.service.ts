@@ -73,7 +73,7 @@ export const notifyUser = async (userId: string, title: string, body: string, da
     return await sendPushNotification(userId, user.fcmToken, title, body, data);
 };
 
-export const broadcastToProviders = async (fcmTokens: string[], title: string, body: string, jobData: any) => {
+export const broadcastToProviders = async (fcmTokens: string[], title: string, body: string, jobData: any): Promise<admin.messaging.BatchResponse | undefined> => {
     if (fcmTokens.length === 0) return;
 
     const message: admin.messaging.MulticastMessage = {
