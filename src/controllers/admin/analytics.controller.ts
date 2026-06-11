@@ -9,9 +9,14 @@ import Country from '../../models/Country';
 import PanicAlert from '../../models/PanicAlert';
 import Dispute from '../../models/Dispute';
 import * as analyticsService from '../../services/analytics.service';
+import mongoose from 'mongoose';
 
 export const getOperationalAnalytics = async (req: AuthRequest, res: Response) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({ success: false, message: 'Database connection not established. Neural Link offline.' });
+    }
+
     const countryCode = req.query.countryCode as string || req.user?.countryCode;
     const isGlobal = countryCode === 'GLOBAL';
     const query: any = {};

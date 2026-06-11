@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import mongoose from 'mongoose';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import providerRoutes from './routes/provider.routes';
@@ -47,8 +48,14 @@ app.use('/api/providers', providerRoutes);
 app.use('/api/customers', userRoutes);
 app.use('/api/payments', paymentRoutes);
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'PieceJob API is running' });
+app.get('/health', async (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED';
+  res.status(200).json({
+      status: 'OK',
+      message: 'PieceJob API is running',
+      database: dbStatus,
+      timestamp: new Date().toISOString()
+  });
 });
 
 export default app;
