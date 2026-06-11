@@ -6,11 +6,28 @@ import * as templateService from './notification-template.service';
 
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379');
+const REDIS_URL = process.env.REDIS_URL;
 
-const connection = new IORedis({
+const connection = REDIS_URL ? new IORedis(REDIS_URL, { maxRetriesPerRequest: null }) : new IORedis({
   host: REDIS_HOST,
   port: REDIS_PORT,
   maxRetriesPerRequest: null,
+  retryStrategy: (times) => {
+      // If we are on Render and no Redis is provided, don't keep retrying forever
+      if (times > 3 && !process.env.REDIS_HOST) {
+          console.warn('⚠️ Redis not found at localhost:6379. Queues will be disabled.');
+          return null;
+      }
+      return Math.min(times * 50, 2000);
+  }
+});
+
+connection.on('error', (err) => {
+    if (err.code === 'ECONNREFUSED') {
+        // Suppress noisy logs if it's just a missing local redis
+    } else {
+        console.error('Redis Connection Error:', err);
+    }
 });
 
 export const notificationQueue = new Queue('notifications', { connection });
@@ -30,14 +47,19 @@ export interface NotificationJobData {
 }
 
 export const addNotificationToQueue = async (data: NotificationJobData, eventId?: string) => {
-    await notificationQueue.add('send-notification', data, {
-        jobId: eventId, // BullMQ deduplication
-        attempts: 3,
-        backoff: {
-            type: 'exponential',
-            delay: 1000,
-        },
-    });
+    try {
+        await notificationQueue.add('send-notification', data, {
+            jobId: eventId, // BullMQ deduplication
+            attempts: 3,
+            backoff: {
+                type: 'exponential',
+                delay: 1000,
+            },
+        });
+    } catch (e) {
+        console.error('Failed to add to notification queue (Redis might be down):', e);
+        // Fallback or just ignore for now to prevent crash
+    }
 };
 
 const worker = new Worker('notifications', async (job: Job<NotificationJobData>) => {

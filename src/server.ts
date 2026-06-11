@@ -18,9 +18,16 @@ initSchedulers();
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/piecejob';
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+console.log(`Attempting MongoDB connection to: ${MONGO_URI.split('@')[1] || 'localhost'}`);
+
+mongoose.connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 5000,
+})
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch((err) => {
+      console.error('❌ MongoDB connection error:', err.message);
+      console.error('Please verify your MONGO_URI in Render environment variables.');
+  });
 
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
