@@ -8,6 +8,7 @@ import { UserRole } from '../models/User';
  */
 const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     [UserRole.SUPER_ADMIN]: ['*'], // Master Clearance
+    [UserRole.ADMIN]: ['*'], // Legacy General Admin
 
     [UserRole.COUNTRY_ADMIN]: [
         'MANAGE_PROVIDERS',

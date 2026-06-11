@@ -32,3 +32,25 @@ export const reissueInvoice = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+export const createCreditNote = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { amount } = req.body;
+        const note = await invoiceService.createCreditNote(id, amount, req.user?.userId as string);
+        res.status(200).json({ success: true, invoice: note });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const createDebitNote = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { amount } = req.body;
+        const note = await invoiceService.createDebitNote(id, amount, req.user?.userId as string);
+        res.status(200).json({ success: true, invoice: note });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
