@@ -12,6 +12,7 @@ import { emitAdminUpdate } from '../socket/socket.service';
 import * as performanceService from '../services/provider-performance.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 import * as fraudService from '../services/fraud.service';
+import * as notificationService from '../services/notification.service';
 
 function calculateDistance(c1: number[], c2: number[]) {
   const R = 6371e3; // meters
@@ -118,6 +119,14 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const { jobId } = req.params;
     const job = await jobService.acceptJob(jobId, req.user!.userId);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerId: req.user!.userId });
+
+    // Notify Customer
+    await notificationService.notifyUser(
+        job.customerId.toString(),
+        'Job Accepted',
+        'A provider has accepted your request and is on the way.'
+    );
+
     res.status(200).json({ success: true, message: 'Job accepted', job });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
@@ -155,6 +164,13 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
                 { userId: job.providerId },
                 { $inc: { 'performance.arrivedOnTimeJobs': 1 } }
             );
+
+            // Notify Customer
+            await notificationService.notifyUser(
+                job.customerId.toString(),
+                'Provider Arrived',
+                'Your provider has arrived at the location.'
+            );
         }
     }
 
@@ -178,6 +194,13 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         await Provider.findOneAndUpdate(
             { userId: job.providerId },
             { $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 } }
+        );
+
+        // Notify Customer
+        await notificationService.notifyUser(
+            job.customerId.toString(),
+            'Job Completed',
+            'Your job has been marked as completed. Please rate your provider.'
         );
 
         // PAGE 12: Fraud Analysis (Fake Completion)
@@ -227,6 +250,16 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       job.cancelledBy = new mongoose.Types.ObjectId(userId);
       job.cancellationReason = reason;
       await job.save();
+
+      // Notify other party
+      const notifyTargetId = role === 'PROVIDER' ? job.customerId.toString() : job.providerId?.toString();
+      if (notifyTargetId) {
+          await notificationService.notifyUser(
+              notifyTargetId,
+              'Job Cancelled',
+              `The job has been cancelled by the ${role?.toLowerCase()}.`
+          );
+      }
 
       emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
 

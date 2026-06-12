@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Message from '../models/Chat';
-import { UserRole } from '../models/User';
+import User, { UserRole } from '../models/User';
+import * as notificationService from '../services/notification.service';
 
 export const getJobMessages = async (req: AuthRequest, res: Response) => {
     try {
@@ -35,6 +36,14 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         });
 
         await message.save();
+
+        // Notify Receiver
+        await notificationService.notifyUser(
+            receiverId,
+            'New Message',
+            text || 'You received a new message'
+        );
+
         res.status(201).json({ success: true, message });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to send message', error });

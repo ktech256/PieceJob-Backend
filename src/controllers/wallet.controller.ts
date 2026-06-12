@@ -33,6 +33,7 @@ export const getTransactionHistory = async (req: AuthRequest, res: Response) => 
 
 import Payout from '../models/Payout';
 import Statement from '../models/Statement';
+import Invoice from '../models/Invoice';
 
 export const getMyPayouts = async (req: AuthRequest, res: Response) => {
   try {
@@ -50,6 +51,17 @@ export const getMyStatements = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch statements', error });
   }
+};
+
+export const getMyInvoices = async (req: AuthRequest, res: Response) => {
+    try {
+        const invoices = await Invoice.find({
+            $or: [{ customerId: req.user?.userId }, { providerId: req.user?.userId }]
+        }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: invoices });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch invoices', error });
+    }
 };
 
 export const getMyCommissionRate = async (req: AuthRequest, res: Response) => {

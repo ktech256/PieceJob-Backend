@@ -2,6 +2,7 @@ import http from 'http';
 import app from './app';
 import { initSocket } from './socket/socket.service';
 import { initSchedulers } from './services/scheduler.service';
+import * as jobService from './services/job.service';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 
@@ -23,7 +24,11 @@ console.log(`Attempting MongoDB connection to: ${MONGO_URI.split('@')[1] || 'loc
 mongoose.connect(MONGO_URI, {
     serverSelectionTimeoutMS: 5000,
 })
-  .then(() => console.log('✅ Connected to MongoDB'))
+  .then(async () => {
+      console.log('✅ Connected to MongoDB');
+      // Resume interrupted broadcasts
+      await jobService.resumeBroadcasts();
+  })
   .catch((err) => {
       console.error('❌ MongoDB connection error:', err.message);
       console.error('Please verify your MONGO_URI in Render environment variables.');

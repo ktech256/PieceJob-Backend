@@ -4,6 +4,8 @@ import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
 import { emitToUser } from '../socket/socket.service';
+import * as broadcastQueue from './job-broadcast.queue';
+import * as notificationService from './notification.service';
 
 import * as settingsService from './settings.service';
 import * as pricingService from './pricing.service';
@@ -86,38 +88,52 @@ export const broadcastJob = async (jobId: string) => {
   const job = await Job.findById(jobId);
   if (!job || job.status !== JobStatus.BROADCASTED) return;
 
-  const runWave = async (wave: number) => {
-    // Re-fetch job to check if already accepted
-    const currentJob = await Job.findById(jobId);
-    if (!currentJob || currentJob.status !== JobStatus.BROADCASTED) return;
+  await broadcastQueue.addJobToBroadcastQueue(jobId, 1);
+};
 
-    console.log(`Broadcasting Job ${jobId} - Wave ${wave} started`);
-    const providers = await findEligibleProviders(currentJob, wave);
+export const resumeBroadcasts = async () => {
+    const jobs = await Job.find({ status: JobStatus.BROADCASTED });
+    console.log(`Resuming broadcasts for ${jobs.length} jobs...`);
+    for (const job of jobs) {
+        await broadcastQueue.addJobToBroadcastQueue(job._id.toString(), 1);
+    }
+};
 
-    // PAGE 7: Track Broadcast Opportunities
+export const executeBroadcastWave = async (jobId: string, wave: number): Promise<number | null> => {
+    const job = await Job.findById(jobId);
+    if (!job || job.status !== JobStatus.BROADCASTED) return null;
+
+    console.log(`Executing Broadcast Wave ${wave} for Job ${jobId}`);
+    const providers = await findEligibleProviders(job, wave);
+
+    // Track Broadcast Opportunities
     await Provider.updateMany(
         { _id: { $in: providers.map(p => p._id) } },
         { $inc: { 'performance.broadcastOpportunities': 1 } }
     );
 
     providers.forEach(p => {
-      // Emit socket and push notification
       emitToUser(p.userId.toString(), 'NEW_JOB_BROADCAST', {
-        jobId: currentJob.id,
-        serviceCode: currentJob.serviceCode,
-        location: currentJob.location
+        jobId: job.id,
+        serviceCode: job.serviceCode,
+        location: job.location
       });
+
+      // FCM Notification
+      notificationService.notifyUser(
+          p.userId.toString(),
+          'New Job Available',
+          `A new ${job.serviceCode} request is nearby.`
+      );
     });
 
-    if (wave < 4 && providers.length < 10) {
-      // Waves: Wave 1 (0s), Wave 2 (5s), Wave 3 (10s), Wave 4 (25s)
-      const delays = [0, 5000, 5000, 15000];
-      const nextDelay = delays[wave] || 15000;
-      setTimeout(() => runWave(wave + 1), nextDelay);
+    // Determine if we need another wave
+    // Spec: 4 waves total
+    if (wave < 4) {
+        return wave + 1;
     }
-  };
 
-  runWave(1);
+    return null;
 };
 
 export const acceptJob = async (jobId: string, providerId: string) => {

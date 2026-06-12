@@ -1,10 +1,14 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import * as notificationController from "../controllers/notification.controller";
+import { authenticate, authorize } from "../middleware/auth.middleware";
+import { UserRole } from "../models/User";
 
 const router = Router();
 
-// Routes for FCM token registration etc.
-router.post("/token", (req: Request, res: Response) => {
-  res.json({ success: true, message: "FCM token registered" });
-});
+router.get("/", authenticate, notificationController.getMyNotifications);
+router.patch("/:id/read", authenticate, notificationController.markAsRead);
+
+// Admin
+router.get("/logs", authenticate, authorize([UserRole.SUPER_ADMIN, UserRole.COUNTRY_ADMIN]), notificationController.getDeliveryLogs);
 
 export default router;

@@ -16,6 +16,7 @@ import disputeRoutes from './routes/dispute.routes';
 import configRoutes from './routes/config.routes';
 import corporateRoutes from './routes/corporate.routes';
 import supportRoutes from './routes/support.routes';
+import analyticsRoutes from './routes/v1/analytics.routes';
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use('/api/v1/disputes', disputeRoutes);
 app.use('/api/v1/config', configRoutes);
 app.use('/api/v1/corporate', corporateRoutes);
 app.use('/api/v1/support', supportRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
 
 // Dashboard Aliases (Mounting under /api for dashboard lib/api/axios.ts)
 app.use('/api/auth', authRoutes);
@@ -50,10 +52,21 @@ app.use('/api/payments', paymentRoutes);
 
 app.get('/health', async (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED';
+  const dbName = mongoose.connection.db?.databaseName;
+
+  // Quick count audit
+  const countryCount = await mongoose.model('Country').countDocuments();
+  const serviceCount = await mongoose.model('Service').countDocuments();
+
   res.status(200).json({
       status: 'OK',
       message: 'PieceJob API is running',
-      database: dbStatus,
+      database: {
+          status: dbStatus,
+          name: dbName,
+          countries: countryCount,
+          services: serviceCount
+      },
       timestamp: new Date().toISOString()
   });
 });

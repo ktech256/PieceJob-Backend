@@ -230,6 +230,19 @@ export const login = async (req: Request, res: Response) => {
 
     res.status(200).json({
       success: true,
+      data: {
+        token,
+        refreshToken,
+        user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+            countryCode: user.countryCode,
+            referralCode: user.referralCode
+        }
+      },
+      // Legacy root fields for dashboard compatibility
       token,
       refreshToken,
       user: {

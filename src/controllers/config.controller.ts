@@ -55,7 +55,11 @@ export const getPublicServices = async (req: Request, res: Response) => {
             isActive: true
         }).sort({ category: 1, code: 1 });
 
-        res.status(200).json({ success: true, services });
+        res.status(200).json({
+            success: true,
+            data: services,
+            services: services // Dual key
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch services', error });
     }
@@ -73,7 +77,7 @@ export const getPriceEstimate = async (req: Request, res: Response) => {
             isEmergency === 'true'
         );
 
-        res.status(200).json({ success: true, estimate });
+        res.status(200).json({ success: true, data: estimate });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -89,8 +93,44 @@ export const resolveZone = async (req: Request, res: Response) => {
             countryCode
         );
 
-        res.status(200).json({ success: true, zone });
+        res.status(200).json({ success: true, data: zone });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getCountries = async (req: Request, res: Response) => {
+    try {
+        const countries = await Country.find({ isActive: true }).sort({ name: 1 });
+        console.log(`[API] Returning ${countries.length} countries to client`);
+        res.status(200).json({
+            success: true,
+            data: countries,
+            countries: countries // Keep legacy key for dashboard compatibility
+        });
+    } catch (error) {
+        console.error('[API] Error fetching countries:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch countries', error });
+    }
+};
+
+export const getLanguages = async (req: Request, res: Response) => {
+    try {
+        const languages = [
+            { code: 'en', name: 'English' },
+            { code: 'af', name: 'Afrikaans' },
+            { code: 'zu', name: 'Zulu' },
+            { code: 'xh', name: 'Xhosa' },
+            { code: 'tn', name: 'Tswana' },
+            { code: 'fr', name: 'French' },
+            { code: 'pt', name: 'Portuguese' }
+        ];
+        res.status(200).json({
+            success: true,
+            data: languages,
+            languages: languages // Keep legacy key
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch languages', error });
     }
 };
