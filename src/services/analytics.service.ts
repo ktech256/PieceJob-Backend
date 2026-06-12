@@ -30,22 +30,21 @@ export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
     const getRate = (from: string) => rates.find(r => r.fromCurrency === from && r.toCurrency === 'USD')?.rate || 1;
 
     const financialStats = await Ledger.aggregate([
-        { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] }, createdAt: { $gte: startOfLastMonth } } },
-        { $project: {
-            amountUsd: { $multiply: ["$amount", getRate("$currency")] }, // This won't work in aggregate like this, need a more complex lookup if multiple currencies
-            amount: 1,
-            currency: 1,
-            createdAt: 1
-        }},
-        { $facet: {
-            current: [{ $match: { createdAt: { $gte: startOfCurrentMonth } } }, { $group: { _id: null, total: { $sum: "$amount" }, currency: { $first: "$currency" } } }],
-            last: [{ $match: { createdAt: { $lt: startOfCurrentMonth } } }, { $group: { _id: null, total: { $sum: "$amount" }, currency: { $first: "$currency" } } }]
-        }}
+        { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.COMMISSION, TransactionType.BOOKING_FEE] }, createdAt: { $gte: startOfLastMonth } } },
+        { $group: { _id: { isCurrent: { $gte: ["$createdAt", startOfCurrentMonth] }, currency: "$currency" }, total: { $sum: "$amount" } } }
     ]);
 
-    // Simplified financial growth for now assuming USD or single currency per workspace
-    const currentRev = financialStats[0].current[0]?.total || 0;
-    const lastRev = financialStats[0].last[0]?.total || 0;
+    let currentRevUsd = 0;
+    let lastRevUsd = 0;
+
+    financialStats.forEach(stat => {
+        const usdAmount = stat.total * getRate(stat._id.currency);
+        if (stat._id.isCurrent) {
+            currentRevUsd += usdAmount;
+        } else {
+            lastRevUsd += usdAmount;
+        }
+    });
 
     const calculateGrowth = (current: number, last: number) => {
         if (last === 0) return current > 0 ? 100 : 0;
@@ -69,9 +68,9 @@ export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
             percentage: calculateGrowth(currentMonthJobs, lastMonthJobs)
         },
         revenueGrowth: {
-            current: currentRev,
-            last: lastRev,
-            percentage: calculateGrowth(currentRev, lastRev)
+            current: currentRevUsd,
+            last: lastRevUsd,
+            percentage: calculateGrowth(currentRevUsd, lastRevUsd)
         }
     };
 };
@@ -88,7 +87,7 @@ export const getEfficiencyMetrics = async (countryCode: string = 'GLOBAL') => {
                 _id: null,
                 avgAcceptanceTime: { $avg: { $subtract: ["$acceptedAt", "$createdAt"] } },
                 avgArrivalTime: { $avg: { $subtract: ["$arrivedAt", "$acceptedAt"] } },
-                avgCompletionTime: { $avg: { $subtract: ["$completedAt", "$startedAt"] } }
+                avgCompletionTime: { $avg: { $subtract: ["$completedAt", "$arrivedAt"] } }
             }
         }
     ];

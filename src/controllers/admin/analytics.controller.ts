@@ -196,12 +196,24 @@ export const getHeatmapData = async (req: AuthRequest, res: Response) => {
             }}
         ]);
 
+        // Calculate real growth trend (last 7 days vs previous 7 days)
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+        const currentWeekCount = await Job.countDocuments({ ...query, createdAt: { $gte: sevenDaysAgo } });
+        const previousWeekCount = await Job.countDocuments({ ...query, createdAt: { $gte: fourteenDaysAgo, $lt: sevenDaysAgo } });
+
+        const growthTrend = previousWeekCount === 0
+            ? (currentWeekCount > 0 ? 100 : 0)
+            : ((currentWeekCount - previousWeekCount) / previousWeekCount) * 100;
+
         res.status(200).json({
             success: true,
             density,
             stats: {
                 totalPoints: density.length,
-                growthTrend: 0, // Should calculate compared to last week
+                growthTrend,
                 surgeRecommendation: density.length > 10 ? 1.2 : 1.0
             }
         });
