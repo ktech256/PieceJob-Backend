@@ -7,6 +7,7 @@
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
     "verify:workspace": "ts-node src/scripts/verify-workspace.ts",
+    "forensic:wipe": "ts-node src/scripts/forensic-wipe.ts",
     "seed:countries": "ts-node src/scripts/seed-countries.ts",
     "seed:analytics": "ts-node src/scripts/seed-analytics.ts",
     "build": "tsc",
