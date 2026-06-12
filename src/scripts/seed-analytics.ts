@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/piecejob';
+const MONGODB_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/piecejob';
 
 const seedAnalytics = async () => {
   try {
@@ -28,55 +28,70 @@ const seedAnalytics = async () => {
       // Create some Users
       const customers = [];
       for (let i = 0; i < 10; i++) {
-        const user = new User({
-          firstName: `Customer_${code}_${i}`,
-          lastName: 'Test',
-          email: `customer_${code}_${i}@example.com`,
-          phoneNumber: `+${code === 'ZA' ? '27' : code === 'BW' ? '267' : '264'}1234567${i}`,
-          passwordHash: 'hashed',
-          role: UserRole.CUSTOMER,
-          countryCode: code,
-          isVerified: true
-        });
-        await user.save();
+        const email = `customer_${code}_${i}@example.com`;
+        const user = await User.findOneAndUpdate(
+            { email },
+            {
+                firstName: `Customer_${code}_${i}`,
+                lastName: 'Test',
+                phoneNumber: `+${code === 'ZA' ? '27' : code === 'BW' ? '267' : '264'}1234567${i}`,
+                passwordHash: 'hashed',
+                role: UserRole.CUSTOMER,
+                countryCode: code,
+                isVerified: true,
+                $setOnInsert: { referralCode: `CUST-${code}-${i}-${uuidv4().slice(0, 4).toUpperCase()}` }
+            },
+            { upsert: true, new: true }
+        );
         customers.push(user);
       }
 
       // Create some Providers
       const providers = [];
       for (let i = 0; i < 5; i++) {
-        const user = new User({
-          firstName: `Provider_${code}_${i}`,
-          lastName: 'Test',
-          email: `provider_${code}_${i}@example.com`,
-          phoneNumber: `+${code === 'ZA' ? '27' : code === 'BW' ? '267' : '264'}9876543${i}`,
-          passwordHash: 'hashed',
-          role: UserRole.PROVIDER,
-          countryCode: code,
-          isVerified: true
-        });
-        await user.save();
+        const email = `provider_${code}_${i}@example.com`;
+        const user = await User.findOneAndUpdate(
+            { email },
+            {
+                firstName: `Provider_${code}_${i}`,
+                lastName: 'Test',
+                phoneNumber: `+${code === 'ZA' ? '27' : code === 'BW' ? '267' : '264'}9876543${i}`,
+                passwordHash: 'hashed',
+                role: UserRole.PROVIDER,
+                countryCode: code,
+                isVerified: true,
+                $setOnInsert: { referralCode: `PROV-${code}-${i}-${uuidv4().slice(0, 4).toUpperCase()}` }
+            },
+            { upsert: true, new: true }
+        );
 
-        const provider = new Provider({
-          userId: user._id,
-          gender: i % 2 === 0 ? 'M' : 'W',
-          dob: new Date(1990, 1, 1),
-          nationalityType: 'Citizen',
-          idOrPassportNumber: `ID${i}${code}`,
-          servicesOffered: [services[i % services.length]],
-          verificationStatus: VerificationStatus.APPROVED,
-          tier: ProviderTier.GOLD,
-          isOnline: true,
-          location: {
-            type: 'Point',
-            coordinates: [28.0473 + (Math.random() * 0.1), -26.2041 + (Math.random() * 0.1)]
-          }
-        });
-        await provider.save();
+        const provider = await Provider.findOneAndUpdate(
+            { userId: user._id },
+            {
+                gender: i % 2 === 0 ? 'M' : 'W',
+                dob: new Date(1990, 1, 1),
+                nationalityType: 'Citizen',
+                idOrPassportNumber: `ID${i}${code}`,
+                servicesOffered: [services[i % services.length]],
+                verificationStatus: VerificationStatus.APPROVED,
+                tier: ProviderTier.GOLD,
+                isOnline: true,
+                location: {
+                    type: 'Point',
+                    coordinates: [28.0473 + (Math.random() * 0.1), -26.2041 + (Math.random() * 0.1)]
+                },
+                countryCode: code
+            },
+            { upsert: true, new: true }
+        );
         providers.push({ user, provider });
       }
 
       // Create some Jobs (Historical and Active)
+      // Since jobs don't have a unique natural key in this script, we'll clear them first for this seed run
+      await Job.deleteMany({ countryCode: code });
+      await Ledger.deleteMany({ countryCode: code });
+
       for (let i = 0; i < 20; i++) {
         const customer = customers[i % customers.length];
         const { provider, user: providerUser } = providers[i % providers.length];

