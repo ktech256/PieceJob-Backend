@@ -34,6 +34,9 @@ export interface IUser extends Document {
   referralFraudScore: number;
   isReferralRewardClaimed: boolean;
   isTestUser: boolean;
+  gender?: string;
+  dob?: string;
+  idOrPassportNumber?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +56,9 @@ const UserSchema: Schema = new Schema({
   isVerified: { type: Boolean, default: false },
   isBanned: { type: Boolean, default: false },
   isTestUser: { type: Boolean, default: false },
+  gender: { type: String },
+  dob: { type: String },
+  idOrPassportNumber: { type: String },
   referralCode: { type: String, unique: true },
   referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
   referralFraudScore: { type: Number, default: 0 },

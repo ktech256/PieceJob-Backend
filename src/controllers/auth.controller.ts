@@ -99,7 +99,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
 export const registerCustomer = async (req: Request, res: Response) => {
   try {
-    const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId } = req.body;
+    const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId, gender, dob, idNumber } = req.body;
 
     // SECTION 15.1: Referral Abuse Prevention - Device Uniqueness
     if (deviceId) {
@@ -130,6 +130,9 @@ export const registerCustomer = async (req: Request, res: Response) => {
       role: UserRole.CUSTOMER,
       countryCode,
       deviceId,
+      gender,
+      dob,
+      idOrPassportNumber: idNumber,
       isTestUser: testUserService.isTestNumber(phoneNumber),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       referredBy
@@ -147,7 +150,7 @@ export const registerProvider = async (req: Request, res: Response) => {
   try {
     const {
       firstName, lastName, email, phoneNumber, password, countryCode,
-      gender, dob, nationalityType, idOrPassportNumber, servicesOffered,
+      gender, dob, nationalityType, idNumber, servicesOffered,
       referralCode, deviceId
     } = req.body;
 
@@ -180,6 +183,9 @@ export const registerProvider = async (req: Request, res: Response) => {
       role: UserRole.PROVIDER,
       countryCode,
       deviceId,
+      gender,
+      dob,
+      idOrPassportNumber: idNumber,
       isTestUser: testUserService.isTestNumber(phoneNumber),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       referredBy
@@ -192,7 +198,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       gender,
       dob,
       nationalityType,
-      idOrPassportNumber,
+      idOrPassportNumber: idNumber,
       servicesOffered,
       location: { coordinates: [0, 0] } // Initial location
     });
