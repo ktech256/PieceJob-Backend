@@ -173,4 +173,7 @@ router.get('/users/corporate/:id/schedules', hasPermission('MANAGE_CUSTOMERS'), 
 router.patch('/users/corporate/:id/documents/:docId', hasPermission('MANAGE_CUSTOMERS'), corporateAdminController.updateDocumentStatus);
 router.post('/users/wallet/mutate', hasPermission('MANAGE_WALLETS'), walletAdminController.manualWalletMutation);
 
+// Test Seeding & Cleanup
+router.delete('/maintenance/test-users', authorize([UserRole.SUPER_ADMIN]), adminController.cleanupTestUsers);
+
 export default router;

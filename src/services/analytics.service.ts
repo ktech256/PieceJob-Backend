@@ -9,8 +9,11 @@ import Dispute from '../models/Dispute';
 
 export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
     const isGlobal = countryCode === 'GLOBAL';
-    const query: any = {};
+    const query: any = { isTestUser: { $ne: true } }; // EXCLUDE TEST USERS
     if (!isGlobal) query.countryCode = countryCode;
+
+    const jobQuery: any = { isTestJob: { $ne: true } }; // EXCLUDE TEST JOBS
+    if (!isGlobal) jobQuery.countryCode = countryCode;
 
     const now = new Date();
     const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -21,16 +24,19 @@ export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
         User.countDocuments({ ...query, role: UserRole.CUSTOMER, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } }),
         User.countDocuments({ ...query, role: UserRole.PROVIDER, createdAt: { $gte: startOfCurrentMonth } }),
         User.countDocuments({ ...query, role: UserRole.PROVIDER, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } }),
-        Job.countDocuments({ ...query, createdAt: { $gte: startOfCurrentMonth } }),
-        Job.countDocuments({ ...query, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } })
+        Job.countDocuments({ ...jobQuery, createdAt: { $gte: startOfCurrentMonth } }),
+        Job.countDocuments({ ...jobQuery, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } })
     ]);
 
     // Financial Growth
     const rates = await ExchangeRate.find();
     const getRate = (from: string) => rates.find(r => r.fromCurrency === from && r.toCurrency === 'USD')?.rate || 1;
 
+    const ledgerQuery: any = { isTestTransaction: { $ne: true } };
+    if (!isGlobal) ledgerQuery.countryCode = countryCode;
+
     const financialStats = await Ledger.aggregate([
-        { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.COMMISSION, TransactionType.BOOKING_FEE] }, createdAt: { $gte: startOfLastMonth } } },
+        { $match: { ...ledgerQuery, status: 'COMPLETED', type: { $in: [TransactionType.COMMISSION, TransactionType.BOOKING_FEE] }, createdAt: { $gte: startOfLastMonth } } },
         { $group: { _id: { isCurrent: { $gte: ["$createdAt", startOfCurrentMonth] }, currency: "$currency" }, total: { $sum: "$amount" } } }
     ]);
 
@@ -77,7 +83,7 @@ export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
 
 export const getEfficiencyMetrics = async (countryCode: string = 'GLOBAL') => {
     const isGlobal = countryCode === 'GLOBAL';
-    const query: any = {};
+    const query: any = { isTestJob: { $ne: true } };
     if (!isGlobal) query.countryCode = countryCode;
 
     const pipeline = [
@@ -115,7 +121,7 @@ export const getEfficiencyMetrics = async (countryCode: string = 'GLOBAL') => {
 
 export const getFinancialBreakdown = async (countryCode: string = 'GLOBAL', targetCurrency: string = 'USD') => {
     const isGlobal = countryCode === 'GLOBAL';
-    const query: any = {};
+    const query: any = { isTestTransaction: { $ne: true } };
     if (!isGlobal) query.countryCode = countryCode;
 
     const rates = await ExchangeRate.find();
@@ -174,7 +180,11 @@ export const getFinancialBreakdown = async (countryCode: string = 'GLOBAL', targ
 
 export const getRevenueTrends = async (countryCode: string = 'GLOBAL', targetCurrency: string = 'USD') => {
     const isGlobal = countryCode === 'GLOBAL';
-    const query: any = { status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } };
+    const query: any = {
+        status: 'COMPLETED',
+        type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] },
+        isTestTransaction: { $ne: true }
+    };
     if (!isGlobal) query.countryCode = countryCode;
 
     const rates = await ExchangeRate.find();

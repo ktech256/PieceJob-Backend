@@ -8,10 +8,24 @@ import { v4 as uuidv4 } from 'uuid';
 
 import * as notificationQueue from '../services/notification.queue';
 import * as fraudService from '../services/fraud.service';
+import * as testUserService from '../services/test-user.service';
 
 export const requestOtp = async (req: Request, res: Response) => {
   try {
     const { phoneNumber } = req.body;
+
+    // SECTION: Test User Seeding Logic
+    const isTest = testUserService.isTestNumber(phoneNumber);
+    if (isTest) {
+        const otp = '123456';
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        await OtpRequest.findOneAndUpdate(
+            { phoneNumber },
+            { otp, expiresAt, attempts: 1, lastAttemptAt: new Date(), isUsed: false },
+            { upsert: true, new: true }
+        );
+        return res.status(200).json({ success: true, message: 'OTP sent successfully (Test Range)' });
+    }
 
     // SECTION 15.1: OTP Abuse Protection
     const existingRequest = await OtpRequest.findOne({ phoneNumber });
@@ -116,6 +130,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
       role: UserRole.CUSTOMER,
       countryCode,
       deviceId,
+      isTestUser: testUserService.isTestNumber(phoneNumber),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       referredBy
     });
@@ -165,6 +180,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       role: UserRole.PROVIDER,
       countryCode,
       deviceId,
+      isTestUser: testUserService.isTestNumber(phoneNumber),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       referredBy
     });

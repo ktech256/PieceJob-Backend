@@ -5,9 +5,15 @@ import User from '../../models/User';
 export const listUsers = async (req: AuthRequest, res: Response) => {
   try {
     const countryCode = req.user?.countryCode;
+    const { isTestUser } = req.query;
+
     const query: any = {};
     if (countryCode && countryCode !== 'GLOBAL') {
       query.countryCode = countryCode;
+    }
+
+    if (isTestUser !== undefined) {
+      query.isTestUser = isTestUser === 'true';
     }
 
     const users = await User.find(query).select('-passwordHash').sort({ createdAt: -1 });

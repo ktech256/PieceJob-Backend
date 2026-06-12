@@ -33,6 +33,7 @@ export interface IUser extends Document {
   referredBy?: mongoose.Types.ObjectId;
   referralFraudScore: number;
   isReferralRewardClaimed: boolean;
+  isTestUser: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +52,7 @@ const UserSchema: Schema = new Schema({
   fcmToken: { type: String },
   isVerified: { type: Boolean, default: false },
   isBanned: { type: Boolean, default: false },
+  isTestUser: { type: Boolean, default: false },
   referralCode: { type: String, unique: true },
   referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
   referralFraudScore: { type: Number, default: 0 },

@@ -12,10 +12,15 @@ import mongoose from 'mongoose';
 export const listCustomers = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.user?.countryCode;
+        const { isTestUser } = req.query;
         const query: any = { role: UserRole.CUSTOMER };
 
         if (countryCode && countryCode !== 'GLOBAL') {
             query.countryCode = countryCode;
+        }
+
+        if (isTestUser !== undefined) {
+            query.isTestUser = isTestUser === 'true';
         }
 
         const users = await User.find(query).select('-passwordHash').sort({ createdAt: -1 });

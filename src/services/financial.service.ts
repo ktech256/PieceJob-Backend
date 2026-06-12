@@ -5,11 +5,14 @@ import User from '../models/User';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import * as auditService from './audit.service';
+import * as testUserService from './test-user.service';
 
 export const handleBookingFee = async (jobId: string, customerId: string, amount: number, currency: string, countryCode: string) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const isTest = await testUserService.isTestUser(customerId);
+
     // 1. Create Ledger entry for Platform Revenue (Booking Fee)
     const ledger = new Ledger({
       transactionId: uuidv4(),
@@ -19,7 +22,8 @@ export const handleBookingFee = async (jobId: string, customerId: string, amount
       currency,
       countryCode,
       type: TransactionType.BOOKING_FEE,
-      status: 'COMPLETED'
+      status: 'COMPLETED',
+      isTestTransaction: isTest
     });
     await ledger.save({ session });
 
@@ -36,6 +40,7 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const isTest = await testUserService.isTestUser(providerId);
     const commissionAmount = totalAmount * (commissionRate / 100);
     const providerNet = totalAmount - commissionAmount;
 
@@ -48,7 +53,8 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
       currency,
       countryCode,
       type: TransactionType.SERVICE_FEE,
-      status: 'COMPLETED'
+      status: 'COMPLETED',
+      isTestTransaction: isTest
     }).save({ session });
 
     // 2. Commission Ledger
@@ -60,7 +66,8 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
       currency,
       countryCode,
       type: TransactionType.COMMISSION,
-      status: 'COMPLETED'
+      status: 'COMPLETED',
+      isTestTransaction: isTest
     }).save({ session });
 
     // 3. Move to Escrow

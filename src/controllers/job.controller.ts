@@ -13,6 +13,7 @@ import * as performanceService from '../services/provider-performance.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 import * as fraudService from '../services/fraud.service';
 import * as notificationService from '../services/notification.service';
+import * as testUserService from '../services/test-user.service';
 
 function calculateDistance(c1: number[], c2: number[]) {
   const R = 6371e3; // meters
@@ -70,6 +71,7 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
           surcharges: pricingBreakdown.surcharges
       },
 
+      isTestJob: await testUserService.isTestUser(req.user?.userId as string),
       status: JobStatus.DRAFT
     });
 

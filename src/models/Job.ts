@@ -51,6 +51,7 @@ export interface IJob extends Document {
       }[];
   };
 
+  isTestJob: boolean;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -93,6 +94,7 @@ const JobSchema: Schema = new Schema({
       }]
   },
 
+  isTestJob: { type: Boolean, default: false },
   version: { type: Number, default: 1 }
 }, { timestamps: true });
 

@@ -5,6 +5,17 @@ import PanicAlert from '../models/PanicAlert';
 import Job from '../models/Job';
 import AuditLog from '../models/AuditLog';
 
+import * as testUserService from '../services/test-user.service';
+
+export const cleanupTestUsers = async (req: AuthRequest, res: Response) => {
+    try {
+        const result = await testUserService.deleteTestUsers();
+        res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Cleanup failed', error });
+    }
+};
+
 export const getPendingVerifications = async (req: AuthRequest, res: Response) => {
   try {
     const providers = await Provider.find({
@@ -52,7 +63,10 @@ import Wallet from '../models/Wallet';
 
 export const getFinancialOverview = async (req: AuthRequest, res: Response) => {
   try {
-    const query: any = { countryCode: req.user?.countryCode };
+    const query: any = {
+        countryCode: req.user?.countryCode,
+        isTestTransaction: { $ne: true } // EXCLUDE TEST DATA
+    };
 
     const revenueAgg = await Ledger.aggregate([
         { $match: { ...query, status: 'COMPLETED' } },
@@ -61,6 +75,11 @@ export const getFinancialOverview = async (req: AuthRequest, res: Response) => {
 
     const escrowAgg = await Wallet.aggregate([
         { $match: { countryCode: req.user?.countryCode } },
+        // To strictly exclude test escrow, we'd need to join with User.isTestUser
+        // For simplicity, we ensure test user wallets are flagged or just filtered by countryCode if test users use a fake code.
+        // But the requirement says flag them.
+        { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
+        { $match: { 'user.isTestUser': { $ne: true } } },
         { $group: { _id: null, total: { $sum: "$balanceEscrow" } } }
     ]);
 
