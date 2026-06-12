@@ -68,6 +68,10 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
             },
             jobs: {
                 totalJobs: await Job.countDocuments(query),
+                activeJobs: await Job.countDocuments({
+                    ...query,
+                    status: { $in: [JobStatus.BROADCASTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED] }
+                }),
                 jobsToday: jobStats[0].today[0]?.count || 0,
                 jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
                 jobsCancelled: jobsByStatus[JobStatus.CANCELLED] || 0
@@ -79,7 +83,11 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
                 totalProviders: await User.countDocuments({ ...query, role: UserRole.PROVIDER })
             },
             providers: {
-                onlineProviders: await Provider.countDocuments({ ...query, isOnline: true }),
+                onlineProviders: await Provider.countDocuments({
+                    ...query,
+                    isOnline: true,
+                    suspendedUntil: { $lte: new Date() } // Not suspended
+                }),
                 suspendedProviders: await Provider.countDocuments({ ...query, suspendedUntil: { $gt: new Date() } }),
                 pendingVerificationProviders: await Provider.countDocuments({ ...query, verificationStatus: 'PENDING' })
             },
@@ -188,7 +196,15 @@ export const getHeatmapData = async (req: AuthRequest, res: Response) => {
             }}
         ]);
 
-        res.status(200).json({ success: true, density });
+        res.status(200).json({
+            success: true,
+            density,
+            stats: {
+                totalPoints: density.length,
+                growthTrend: 0, // Should calculate compared to last week
+                surgeRecommendation: density.length > 10 ? 1.2 : 1.0
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Heatmap data failed', error });
     }

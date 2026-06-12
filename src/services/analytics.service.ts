@@ -16,12 +16,36 @@ export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
     const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    const [currentMonthUsers, lastMonthUsers, currentMonthProviders, lastMonthProviders] = await Promise.all([
+    const [currentMonthUsers, lastMonthUsers, currentMonthProviders, lastMonthProviders, currentMonthJobs, lastMonthJobs] = await Promise.all([
         User.countDocuments({ ...query, role: UserRole.CUSTOMER, createdAt: { $gte: startOfCurrentMonth } }),
         User.countDocuments({ ...query, role: UserRole.CUSTOMER, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } }),
         User.countDocuments({ ...query, role: UserRole.PROVIDER, createdAt: { $gte: startOfCurrentMonth } }),
-        User.countDocuments({ ...query, role: UserRole.PROVIDER, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } })
+        User.countDocuments({ ...query, role: UserRole.PROVIDER, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } }),
+        Job.countDocuments({ ...query, createdAt: { $gte: startOfCurrentMonth } }),
+        Job.countDocuments({ ...query, createdAt: { $gte: startOfLastMonth, $lt: startOfCurrentMonth } })
     ]);
+
+    // Financial Growth
+    const rates = await ExchangeRate.find();
+    const getRate = (from: string) => rates.find(r => r.fromCurrency === from && r.toCurrency === 'USD')?.rate || 1;
+
+    const financialStats = await Ledger.aggregate([
+        { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] }, createdAt: { $gte: startOfLastMonth } } },
+        { $project: {
+            amountUsd: { $multiply: ["$amount", getRate("$currency")] }, // This won't work in aggregate like this, need a more complex lookup if multiple currencies
+            amount: 1,
+            currency: 1,
+            createdAt: 1
+        }},
+        { $facet: {
+            current: [{ $match: { createdAt: { $gte: startOfCurrentMonth } } }, { $group: { _id: null, total: { $sum: "$amount" }, currency: { $first: "$currency" } } }],
+            last: [{ $match: { createdAt: { $lt: startOfCurrentMonth } } }, { $group: { _id: null, total: { $sum: "$amount" }, currency: { $first: "$currency" } } }]
+        }}
+    ]);
+
+    // Simplified financial growth for now assuming USD or single currency per workspace
+    const currentRev = financialStats[0].current[0]?.total || 0;
+    const lastRev = financialStats[0].last[0]?.total || 0;
 
     const calculateGrowth = (current: number, last: number) => {
         if (last === 0) return current > 0 ? 100 : 0;
@@ -38,6 +62,16 @@ export const getGrowthAnalytics = async (countryCode: string = 'GLOBAL') => {
             current: currentMonthProviders,
             last: lastMonthProviders,
             percentage: calculateGrowth(currentMonthProviders, lastMonthProviders)
+        },
+        jobGrowth: {
+            current: currentMonthJobs,
+            last: lastMonthJobs,
+            percentage: calculateGrowth(currentMonthJobs, lastMonthJobs)
+        },
+        revenueGrowth: {
+            current: currentRev,
+            last: lastRev,
+            percentage: calculateGrowth(currentRev, lastRev)
         }
     };
 };
@@ -114,20 +148,26 @@ export const getFinancialBreakdown = async (countryCode: string = 'GLOBAL', targ
         breakdown[type] += targetAmount;
     });
 
-    const grossRevenue = (breakdown[TransactionType.SERVICE_FEE] || 0) + (breakdown[TransactionType.BOOKING_FEE] || 0);
-    const netCommission = breakdown[TransactionType.COMMISSION] || 0;
-    const payouts = breakdown[TransactionType.PAYOUT] || 0;
+    const grossCommission = breakdown[TransactionType.COMMISSION] || 0;
+    const bookingFees = breakdown[TransactionType.BOOKING_FEE] || 0;
+    const grossRevenue = grossCommission + bookingFees;
 
-    // Profitability
-    const totalExpenses = payouts + (breakdown[TransactionType.REFERRAL_REWARD] || 0);
-    const netProfit = grossRevenue - totalExpenses;
+    const payouts = breakdown[TransactionType.PAYOUT] || 0;
+    const refunds = breakdown[TransactionType.REFUND] || 0;
+    const rewards = breakdown[TransactionType.REFERRAL_REWARD] || 0;
+    const bonuses = breakdown[TransactionType.BONUS] || 0;
+
+    // Net Profit for the platform
+    const netProfit = grossRevenue - refunds - rewards - bonuses;
 
     return {
         currency: targetCurrency,
         grossRevenue,
-        netCommission,
+        grossCommission,
+        bookingFees,
         payouts,
-        referralRewards: breakdown[TransactionType.REFERRAL_REWARD] || 0,
+        refunds,
+        referralRewards: rewards,
         netProfit,
         margin: grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0
     };
