@@ -1,7 +1,7 @@
 import User from '../models/User';
 import Wallet from '../models/Wallet';
 import Job from '../models/Job';
-import Message from '../models/Message';
+import Message from '../models/Chat';
 import Invoice from '../models/Invoice';
 import Notification from '../models/Notification';
 import Ledger from '../models/Ledger';
@@ -59,7 +59,7 @@ export const deleteTestUsers = async () => {
     return {
         success: true,
         usersRemoved: userIds.length,
-        totalRecordsRemoved: results.reduce((acc, curr) => acc + (curr.deletedCount || 0), 0)
+        totalRecordsRemoved: results.reduce((acc: number, curr: any) => acc + (curr.deletedCount || 0), 0)
     };
 };
 
