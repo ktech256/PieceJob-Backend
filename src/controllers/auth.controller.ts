@@ -128,7 +128,10 @@ export const registerCustomer = async (req: Request, res: Response) => {
     if (existingUser) {
         await session.abortTransaction();
         session.endSession();
-        return res.status(400).json({ success: false, message: 'User already exists.' });
+        return res.status(400).json({
+            success: false,
+            message: 'This email or phone number is already registered. Please login or use different details.'
+        });
     }
 
     let referredBy: any = null;
@@ -167,7 +170,11 @@ export const registerCustomer = async (req: Request, res: Response) => {
     }
     session.endSession();
     console.error('[REGISTRATION_CRASH]', error);
-    res.status(500).json({ success: false, message: 'Registration failed internal error', error: error.message });
+    res.status(500).json({
+        success: false,
+        message: 'Something went wrong during registration. Please try again later.',
+        error: error.message
+    });
   }
 };
 
@@ -203,7 +210,10 @@ export const registerProvider = async (req: Request, res: Response) => {
     if (existingUser) {
         await session.abortTransaction();
         session.endSession();
-        return res.status(400).json({ success: false, message: 'User already exists.' });
+        return res.status(400).json({
+            success: false,
+            message: 'This email or phone number is already registered. Please login or use different details.'
+        });
     }
 
     // 3. Pre-validation: Gender Rule (403)
@@ -267,7 +277,11 @@ export const registerProvider = async (req: Request, res: Response) => {
     }
     session.endSession();
     console.error('[REGISTRATION_CRASH]', error);
-    res.status(500).json({ success: false, message: 'Registration failed internal error', error: error.message });
+    res.status(500).json({
+        success: false,
+        message: 'Something went wrong during registration. Please try again later.',
+        error: error.message
+    });
   }
 };
 
@@ -285,7 +299,7 @@ export const login = async (req: Request, res: Response) => {
 
     const user = await User.findOne({
         $or: [
-            { email: { $regex: new RegExp('^' + cleanIdentifier + '$', 'i') } },
+            { email: cleanIdentifier },
             { phoneNumber: identifier.trim() }
         ]
     });
@@ -354,8 +368,13 @@ export const login = async (req: Request, res: Response) => {
         referralCode: user.referralCode
       }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Login failed', error });
+  } catch (error: any) {
+    console.error('[LOGIN_ERROR]', error);
+    res.status(500).json({
+        success: false,
+        message: 'Something went wrong during login. Please try again later.',
+        error: error.message
+    });
   }
 };
 
