@@ -172,9 +172,18 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
         const requirements: any = {};
 
         for (const s of services) {
-            // Gender Check
-            if (s.genderRule !== 'BOTH' && (s.genderRule as string) !== (provider.gender as string)) {
-                continue; // Skip restricted
+            // Gender Check (RC-2 Rule Alignment - Strict Enforcement)
+            if (s.genderRule === 'MEN_ONLY' && provider.gender !== 'M') {
+                return res.status(403).json({
+                    success: false,
+                    message: `Service '${s.name}' is currently unavailable for your provider profile.`
+                });
+            }
+            if (s.genderRule === 'WOMEN_ONLY' && provider.gender !== 'F') {
+                return res.status(403).json({
+                    success: false,
+                    message: `Service '${s.name}' is currently unavailable for your provider profile.`
+                });
             }
 
             // Level Check
