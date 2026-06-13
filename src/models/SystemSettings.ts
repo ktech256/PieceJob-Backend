@@ -37,6 +37,9 @@ export interface ISystemSettings extends Document {
   weekendFeeEnabled: boolean;
   weekendFeePercentage: number;
 
+  // PAGE 12: Fraud & Security
+  deviceLockEnabled: boolean;
+
   integrations: {
       paymentGateway?: string;
       paymentPublicKey?: string;
@@ -92,6 +95,9 @@ const SystemSettingsSchema: Schema = new Schema({
   nightFeeEnd: { type: String, default: '05:00' },
   weekendFeeEnabled: { type: Boolean, default: false },
   weekendFeePercentage: { type: Number, default: 0 },
+
+  // PAGE 12: Fraud & Security
+  deviceLockEnabled: { type: Boolean, default: true },
 
   integrations: {
       paymentGateway: { type: String },

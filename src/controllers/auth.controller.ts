@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as notificationQueue from '../services/notification.queue';
 import * as fraudService from '../services/fraud.service';
 import * as testUserService from '../services/test-user.service';
+import * as settingsService from '../services/settings.service';
 
 export const requestOtp = async (req: Request, res: Response) => {
   try {
@@ -106,8 +107,10 @@ export const registerCustomer = async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId, gender, dob, idNumber } = req.body;
 
+    const settings = await settingsService.getSettings(countryCode);
+
     // 1. Pre-validation: Device Lock (403)
-    if (deviceId) {
+    if (deviceId && settings.deviceLockEnabled) {
         const deviceUser = await User.findOne({ deviceId, role: UserRole.CUSTOMER });
         if (deviceUser) {
             await session.abortTransaction();
@@ -177,8 +180,10 @@ export const registerProvider = async (req: Request, res: Response) => {
 
     const actualIdNumber = idOrPassportNumber || idNumber;
 
+    const settings = await settingsService.getSettings(countryCode);
+
     // 1. Pre-validation: Device Lock (403)
-    if (deviceId) {
+    if (deviceId && settings.deviceLockEnabled) {
         const deviceUser = await User.findOne({ deviceId, role: UserRole.PROVIDER });
         if (deviceUser) {
             await session.abortTransaction();
