@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import User, { UserRole } from '../models/User';
 import Provider from '../models/Provider';
 import Service, { GenderRule } from '../models/Service';
