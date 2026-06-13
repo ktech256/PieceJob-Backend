@@ -52,6 +52,26 @@ export const getDisputes = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getMyDisputes = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        // Find disputes where the provider is either the one who raised it, or the provider on the job
+        const jobs = await Job.find({ providerId: userId });
+        const jobIds = jobs.map(j => j._id);
+
+        const disputes = await Dispute.find({
+            $or: [
+                { raisedBy: userId },
+                { jobId: { $in: jobIds } }
+            ]
+        }).sort({ createdAt: -1 });
+
+        res.status(200).json({ success: true, disputes });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch your disputes', error });
+    }
+};
+
 export const updateDisputeStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { disputeId } = req.params;

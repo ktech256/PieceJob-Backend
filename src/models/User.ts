@@ -39,6 +39,7 @@ export interface IUser extends Document {
   idOrPassportNumber?: string;
   profilePhoto?: string;
   city?: string;
+  province?: string;
   address?: string;
   emergencyContact?: {
     name: string;
@@ -69,6 +70,7 @@ const UserSchema: Schema = new Schema({
   idOrPassportNumber: { type: String },
   profilePhoto: { type: String },
   city: { type: String },
+  province: { type: String },
   address: { type: String },
   emergencyContact: {
     name: { type: String },

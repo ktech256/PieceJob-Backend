@@ -54,3 +54,25 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, message: 'Failed to update FCM token', error });
   }
 };
+
+export const getReferralStats = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const user = await User.findById(userId);
+
+        const referrals = await User.find({ referredBy: userId }).select('firstName lastName createdAt isVerified');
+
+        res.status(200).json({
+            success: true,
+            data: {
+                referralCode: user?.referralCode,
+                totalReferrals: referrals.length,
+                pendingRewards: 0, // Logic for pending
+                paidRewards: 0, // Logic for paid
+                history: referrals
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch referral stats', error });
+    }
+};

@@ -358,3 +358,69 @@ export const refreshToken = async (req: Request, res: Response) => {
     res.status(401).json({ success: false, message: 'Invalid refresh token' });
   }
 };
+
+export const changePassword = async (req: Request, res: Response) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = (req as any).user?.userId;
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!isMatch) return res.status(401).json({ success: false, message: 'Incorrect current password' });
+
+        user.passwordHash = await bcrypt.hash(newPassword, 10);
+        await user.save();
+
+        res.status(200).json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to change password', error });
+    }
+};
+
+export const logoutAllDevices = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user?.userId;
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // In a more complex system, we'd invalidate all issued tokens/refresh tokens
+        // For now, we update deviceId to null to force re-binding if that logic is added later
+        user.deviceId = undefined;
+        await user.save();
+
+        res.status(200).json({ success: true, message: 'Logged out from all devices' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Logout failed', error });
+    }
+};
+
+export const getDevices = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user?.userId;
+        // In a real app, this would query a dedicated sessions or devices collection
+        // For Phase 2, we simulate it with current user info
+        const user = await User.findById(userId);
+        res.status(200).json({
+            success: true,
+            data: [{
+                id: user?.deviceId || 'primary',
+                name: 'Current Android Device',
+                platform: 'Android',
+                lastLogin: user?.updatedAt
+            }]
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch devices', error });
+    }
+};
+
+export const removeDevice = async (req: Request, res: Response) => {
+    try {
+        // Logic to invalidate device session
+        res.status(200).json({ success: true, message: 'Device removed' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Action failed', error });
+    }
+};

@@ -107,18 +107,41 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
         const { serviceCodes } = req.body;
         const userId = req.user?.userId;
 
+        const provider = await Provider.findOne({ userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
         const services = await Service.find({ code: { $in: serviceCodes } });
-        if (services.length !== serviceCodes.length) {
-            return res.status(400).json({ success: false, message: 'Invalid service codes provided' });
+
+        const approved: string[] = [];
+        const pending: string[] = [];
+
+        for (const s of services) {
+            // Gender Check
+            if (s.genderRule !== 'BOTH' && s.genderRule !== provider.gender) {
+                continue; // Skip restricted
+            }
+
+            // Level Check
+            const levels = ['STANDARD', 'PROFESSIONAL', 'TRADE', 'HIGH_VETTING'];
+            const provLevelIdx = levels.indexOf(provider.verificationLevel);
+            const servLevelIdx = levels.indexOf(s.verificationLevel);
+
+            if (provLevelIdx >= servLevelIdx) {
+                approved.push(s.code);
+            } else {
+                pending.push(s.code);
+            }
         }
 
-        const provider = await Provider.findOneAndUpdate(
-            { userId },
-            { servicesOffered: serviceCodes },
-            { new: true }
-        );
+        provider.servicesOffered = approved;
+        provider.pendingServices = pending;
+        await provider.save();
 
-        res.status(200).json({ success: true, message: 'Services updated', data: provider.servicesOffered });
+        res.status(200).json({
+            success: true,
+            message: 'Services updated. Some may require further verification.',
+            data: { approved, pending }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update services', error });
     }
@@ -147,6 +170,52 @@ export const addEquipment = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const getCertifications = async (req: AuthRequest, res: Response) => {
+    try {
+        const provider = await Provider.findOne({ userId: req.user?.userId });
+        res.status(200).json({ success: true, data: provider?.certifications || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch certifications', error });
+    }
+};
+
+export const addCertification = async (req: AuthRequest, res: Response) => {
+    try {
+        const { name, institution, certificateNumber, expiryDate, photoUrl } = req.body;
+        const provider = await Provider.findOneAndUpdate(
+            { userId: req.user?.userId },
+            { $push: { certifications: { name, institution, certificateNumber, expiryDate, photoUrl, status: VerificationStatus.PENDING } } },
+            { new: true }
+        );
+        res.status(201).json({ success: true, data: provider?.certifications });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to add certification', error });
+    }
+};
+
+export const getExperience = async (req: AuthRequest, res: Response) => {
+    try {
+        const provider = await Provider.findOne({ userId: req.user?.userId });
+        res.status(200).json({ success: true, data: provider?.workExperience || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch experience', error });
+    }
+};
+
+export const addExperience = async (req: AuthRequest, res: Response) => {
+    try {
+        const { companyName, role, startDate, endDate, description, referenceName, referencePhone } = req.body;
+        const provider = await Provider.findOneAndUpdate(
+            { userId: req.user?.userId },
+            { $push: { workExperience: { companyName, role, startDate, endDate, description, referenceName, referencePhone } } },
+            { new: true }
+        );
+        res.status(201).json({ success: true, data: provider?.workExperience });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to add experience', error });
+    }
+};
+
 export const getBankDetails = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
@@ -158,8 +227,7 @@ export const getBankDetails = async (req: AuthRequest, res: Response) => {
 
 export const updateBankDetails = async (req: AuthRequest, res: Response) => {
     try {
-        const { bankName, accountHolder, accountNumber, branchCode } = req.body;
-        // In real app, encrypt accountNumber here
+        const { bankName, accountHolder, accountNumber, branchCode, accountType, bankConfirmationUrl } = req.body;
         const provider = await Provider.findOneAndUpdate(
             { userId: req.user?.userId },
             {
@@ -168,14 +236,44 @@ export const updateBankDetails = async (req: AuthRequest, res: Response) => {
                     accountHolder,
                     accountNumberEncrypted: accountNumber,
                     branchCode,
+                    accountType,
+                    bankConfirmationUrl,
                     isVerified: false
                 }
             },
             { new: true }
         );
-        res.status(200).json({ success: true, message: 'Bank details updated', data: provider?.bankDetails });
+        res.status(200).json({ success: true, message: 'Bank details updated for review', data: provider?.bankDetails });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update bank details', error });
+    }
+};
+
+export const updateWalletSettings = async (req: AuthRequest, res: Response) => {
+    try {
+        const { frequency, method } = req.body;
+        const provider = await Provider.findOneAndUpdate(
+            { userId: req.user?.userId },
+            { payoutPreferences: { frequency, method } },
+            { new: true }
+        );
+        res.status(200).json({ success: true, data: provider?.payoutPreferences });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to update wallet settings', error });
+    }
+};
+
+export const updateNotificationSettings = async (req: AuthRequest, res: Response) => {
+    try {
+        const settings = req.body;
+        const provider = await Provider.findOneAndUpdate(
+            { userId: req.user?.userId },
+            { notificationSettings: settings },
+            { new: true }
+        );
+        res.status(200).json({ success: true, data: provider?.notificationSettings });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to update notification settings', error });
     }
 };
 

@@ -6,6 +6,7 @@ const router = Router();
 
 router.get('/profile', authenticate, userController.getProfile);
 router.put('/profile', authenticate, userController.updateProfile);
+router.get('/referrals', authenticate, userController.getReferralStats);
 router.patch('/fcm-token', authenticate, userController.updateFcmToken);
 
 export default router;

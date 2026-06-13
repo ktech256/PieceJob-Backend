@@ -23,6 +23,7 @@ export interface IProvider extends Document {
   nationalityType: 'Citizen' | 'Other';
   idOrPassportNumber: string;
   servicesOffered: string[];
+  pendingServices: string[];
   verificationStatus: VerificationStatus;
   verificationLevel: VerificationLevel;
   lifecycleState: ProviderLifecycleState;
@@ -82,6 +83,8 @@ export interface IProvider extends Document {
     accountHolder: string;
     accountNumberEncrypted: string;
     branchCode: string;
+    accountType: string;
+    bankConfirmationUrl?: string;
     isVerified: boolean;
   };
 
@@ -109,6 +112,7 @@ const ProviderSchema: Schema = new Schema({
   nationalityType: { type: String, enum: ['Citizen', 'Other'], required: true },
   idOrPassportNumber: { type: String, required: true },
   servicesOffered: [{ type: String }],
+  pendingServices: [{ type: String }],
   verificationStatus: { type: String, enum: Object.values(VerificationStatus), default: VerificationStatus.PENDING },
   verificationLevel: { type: String, enum: Object.values(VerificationLevel), default: VerificationLevel.STANDARD },
   lifecycleState: { type: String, enum: Object.values(ProviderLifecycleState), default: ProviderLifecycleState.REGISTERED },
@@ -168,12 +172,24 @@ const ProviderSchema: Schema = new Schema({
     accountHolder: { type: String },
     accountNumberEncrypted: { type: String },
     branchCode: { type: String },
+    accountType: { type: String },
+    bankConfirmationUrl: { type: String },
     isVerified: { type: Boolean, default: false }
   },
 
   payoutPreferences: {
     frequency: { type: String, enum: ['WEEKLY', 'MONTHLY'], default: 'WEEKLY' },
     method: { type: String, enum: ['BANK_TRANSFER', 'WALLET_TRANSFER'], default: 'BANK_TRANSFER' }
+  },
+
+  notificationSettings: {
+    jobBroadcasts: { type: Boolean, default: true },
+    chatMessages: { type: Boolean, default: true },
+    walletAlerts: { type: Boolean, default: true },
+    payoutAlerts: { type: Boolean, default: true },
+    verificationUpdates: { type: Boolean, default: true },
+    marketing: { type: Boolean, default: false },
+    sosAlerts: { type: Boolean, default: true }
   },
 
   location: {
