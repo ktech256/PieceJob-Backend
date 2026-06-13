@@ -15,9 +15,13 @@ export const getProviderProfile = async (req: AuthRequest, res: Response) => {
     if (!provider) {
       return res.status(404).json({ success: false, message: 'Provider profile not found' });
     }
+
+    // Ensure dob is formatted as string if needed, or let client handle it
+    const profile = provider.toObject();
+
     res.status(200).json({
       success: true,
-      data: provider
+      data: profile
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch provider profile', error });
@@ -137,8 +141,17 @@ export const getMyServices = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        const services = await Service.find({ code: { $in: provider.servicesOffered } });
-        res.status(200).json({ success: true, data: services });
+        // Populate both approved and pending services
+        const approved = await Service.find({ code: { $in: provider.servicesOffered } });
+        const pending = await Service.find({ code: { $in: provider.pendingServices } });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                approved,
+                pending
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch services', error });
     }
@@ -173,9 +186,26 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
                 approved.push(s.code);
             } else {
                 pending.push(s.code);
+
+                // PAGE 8: Verification Matrix Enforcement
+                let requiredDocs: string[] = [];
+                switch(s.verificationLevel) {
+                    case 'PROFESSIONAL':
+                        requiredDocs = ['GOVERNMENT_ID', 'SELFIE', 'PROFESSIONAL_CERT'];
+                        break;
+                    case 'TRADE':
+                        requiredDocs = ['TRADE_LICENSE', 'EQUIPMENT_PROOF', 'EXPERIENCE_DOC'];
+                        break;
+                    case 'HIGH_VETTING':
+                        requiredDocs = ['CRIMINAL_CHECK', 'DETAILED_CV', 'REFERENCE_LETTER'];
+                        break;
+                    default:
+                        requiredDocs = ['GOVERNMENT_ID', 'SELFIE'];
+                }
+
                 requirements[s.code] = {
                     level: s.verificationLevel,
-                    docs: s.verificationLevel === 'TRADE' ? ['TRADE_CERTIFICATE', 'TOOL_PROOF'] : ['EXPERIENCE_DOC']
+                    docs: requiredDocs
                 };
             }
         }
@@ -362,6 +392,64 @@ export const rejectAddressChange = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: 'Address change rejected' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to reject address change', error });
+    }
+};
+
+export const listPendingAddressChanges = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.user?.countryCode;
+        const query: any = { 'pendingAddress.status': 'PENDING' };
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+
+        const users = await User.find(query).select('firstName lastName email pendingAddress countryCode');
+        res.status(200).json({ success: true, queue: users });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch address queue', error });
+    }
+};
+
+export const listPendingBankDetails = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.user?.countryCode;
+        const query: any = { 'bankDetails.isVerified': false, 'bankDetails.accountNumberEncrypted': { $exists: true, $ne: null } };
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+
+        const providers = await Provider.find(query)
+            .populate('userId', 'firstName lastName email phoneNumber')
+            .select('bankDetails userId countryCode');
+
+        res.status(200).json({ success: true, queue: providers });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch banking queue', error });
+    }
+};
+
+export const approveBankDetails = async (req: AuthRequest, res: Response) => {
+    try {
+        const { providerId } = req.params;
+        const provider = await Provider.findByIdAndUpdate(
+            providerId,
+            { 'bankDetails.isVerified': true },
+            { new: true }
+        );
+        res.status(200).json({ success: true, message: 'Banking details approved', data: provider?.bankDetails });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to approve banking details', error });
+    }
+};
+
+export const rejectBankDetails = async (req: AuthRequest, res: Response) => {
+    try {
+        const { providerId } = req.params;
+        // In real app, we might set bankDetails to null or flag it
+        const provider = await Provider.findByIdAndUpdate(
+            providerId,
+            { 'bankDetails.isVerified': false, 'bankDetails.accountNumberEncrypted': null },
+            { new: true }
+        );
+        res.status(200).json({ success: true, message: 'Banking details rejected' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to reject banking details', error });
     }
 };
 

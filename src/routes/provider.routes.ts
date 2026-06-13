@@ -24,6 +24,7 @@ router.patch('/:providerId/address/approve', authenticate, authorize([UserRole.A
 router.patch('/:providerId/address/reject', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), providerController.rejectAddressChange);
 router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), providerController.getDashboardStats);
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);
+router.get('/verification/requirements', authenticate, authorize([UserRole.PROVIDER]), verificationController.getRequirements);
 router.post('/verification/submit', authenticate, authorize([UserRole.PROVIDER]), verificationController.submitMyVerification);
 router.patch('/status', authenticate, authorize([UserRole.PROVIDER]), providerController.updateStatus);
 router.post('/heartbeat', authenticate, authorize([UserRole.PROVIDER]), providerController.handleHeartbeat);
