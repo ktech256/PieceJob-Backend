@@ -99,20 +99,28 @@ export const verifyOtp = async (req: Request, res: Response) => {
 };
 
 export const registerCustomer = async (req: Request, res: Response) => {
+  console.log('[DEBUG] registerCustomer Body:', JSON.stringify(req.body, null, 2));
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId, gender, dob, idNumber } = req.body;
 
-    // SECTION 15.1: Referral Abuse Prevention - Device Uniqueness
+    // 1. Pre-validation: Device Lock (403)
     if (deviceId) {
         const deviceUser = await User.findOne({ deviceId, role: UserRole.CUSTOMER });
         if (deviceUser) {
-            return res.status(403).json({ success: false, message: 'Device already associated with an account' });
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(403).json({ success: false, message: 'REG_ERR_DEVICE_LOCKED: Device already associated with a customer account.' });
         }
     }
 
+    // 2. Pre-validation: User Existence (400)
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: 'User already exists' });
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ success: false, message: 'User already exists.' });
     }
 
     let referredBy: any = null;
@@ -139,18 +147,27 @@ export const registerCustomer = async (req: Request, res: Response) => {
       referredBy
     });
 
-    await user.save();
+    await user.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.status(201).json({ success: true, message: 'Customer registered successfully' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Registration failed', error });
+  } catch (error: any) {
+    if (session.inTransaction()) {
+        await session.abortTransaction();
+    }
+    session.endSession();
+    console.error('[REGISTRATION_CRASH]', error);
+    res.status(500).json({ success: false, message: 'Registration failed internal error', error: error.message });
   }
 };
 
 export const registerProvider = async (req: Request, res: Response) => {
+  console.log('[DEBUG] registerProvider Body:', JSON.stringify(req.body, null, 2));
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    console.log('[DEBUG] registerProvider Payload:', JSON.stringify(req.body, null, 2));
-
     const {
       firstName, lastName, email, phoneNumber, password, countryCode,
       gender, dob, nationalityType, idNumber, idOrPassportNumber, servicesOffered,
@@ -159,26 +176,42 @@ export const registerProvider = async (req: Request, res: Response) => {
 
     const actualIdNumber = idOrPassportNumber || idNumber;
 
-    // SECTION 15.1: Device Uniqueness for Providers
+    // 1. Pre-validation: Device Lock (403)
     if (deviceId) {
         const deviceUser = await User.findOne({ deviceId, role: UserRole.PROVIDER });
         if (deviceUser) {
-            console.log('[403] Device already associated. DeviceId:', deviceId);
-            return res.status(403).json({ success: false, message: 'Device already associated with an account' });
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(403).json({ success: false, message: 'REG_ERR_DEVICE_LOCKED: Device already associated with a provider account.' });
         }
     }
 
+    // 2. Pre-validation: User Existence (400)
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: 'User already exists' });
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ success: false, message: 'User already exists.' });
     }
 
-    let referredBy: any = null;
-    if (referralCode) {
-      const referrer = await User.findOne({ referralCode });
-      if (referrer) referredBy = referrer._id;
+    // 3. Pre-validation: Gender Rule (403)
+    if (servicesOffered && servicesOffered.length > 0) {
+        const services = await Service.find({ code: { $in: servicesOffered } });
+        for (const s of services) {
+            if (s.genderRule === 'MEN_ONLY' && gender !== 'M') {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(403).json({ success: false, message: `REG_ERR_GENDER_VIOLATION: ${s.name} is for Male providers only.` });
+            }
+            if (s.genderRule === 'WOMEN_ONLY' && gender !== 'F') {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(403).json({ success: false, message: `REG_ERR_GENDER_VIOLATION: ${s.name} is for Female providers only.` });
+            }
+        }
     }
 
+    // 4. Persistence: User
     const passwordHash = await bcrypt.hash(password, 10);
     const user = new User({
       firstName,
@@ -194,44 +227,35 @@ export const registerProvider = async (req: Request, res: Response) => {
       idOrPassportNumber: actualIdNumber,
       isTestUser: testUserService.isTestNumber(phoneNumber),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-      referredBy
     });
 
-    const savedUser = await user.save();
+    const savedUser = await user.save({ session });
 
-    // SECTION: Gender Rule Enforcement for Selected Services
-    if (servicesOffered && servicesOffered.length > 0) {
-        const services = await Service.find({ code: { $in: servicesOffered } });
-        console.log(`[DEBUG] Validating ${services.length} services for gender: ${gender}`);
-
-        for (const s of services) {
-            console.log(`[DEBUG] Service: ${s.code}, Rule: ${s.genderRule}, ProviderGender: ${gender}`);
-            if (s.genderRule === GenderRule.MEN_ONLY && gender !== 'M') {
-                console.log(`[403] Gender Violation: Male only service ${s.code} selected by ${gender}`);
-                return res.status(403).json({ success: false, message: `Service ${s.name} is restricted to Male providers.` });
-            }
-            if (s.genderRule === GenderRule.WOMEN_ONLY && gender !== 'F') {
-                console.log(`[403] Gender Violation: Female only service ${s.code} selected by ${gender}`);
-                return res.status(403).json({ success: false, message: `Service ${s.name} is restricted to Female providers.` });
-            }
-        }
-    }
-
+    // 5. Persistence: Provider Profile
     const provider = new Provider({
       userId: savedUser._id,
       gender,
       dob,
-      nationalityType,
+      nationalityType: nationalityType || 'Citizen',
       idOrPassportNumber: actualIdNumber,
       servicesOffered,
-      location: { coordinates: [0, 0] } // Initial location
+      countryCode: countryCode || 'ZA',
+      location: { coordinates: [0, 0] }
     });
 
-    await provider.save();
+    await provider.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.status(201).json({ success: true, message: 'Provider registered successfully' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Registration failed', error });
+  } catch (error: any) {
+    if (session.inTransaction()) {
+        await session.abortTransaction();
+    }
+    session.endSession();
+    console.error('[REGISTRATION_CRASH]', error);
+    res.status(500).json({ success: false, message: 'Registration failed internal error', error: error.message });
   }
 };
 
