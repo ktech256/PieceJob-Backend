@@ -43,7 +43,7 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   if (service.genderRule === GenderRule.MEN_ONLY) {
       query.gender = 'M';
   } else if (service.genderRule === GenderRule.WOMEN_ONLY) {
-      query.gender = 'W';
+      query.gender = 'F';
   }
 
   // Verification Level Enforcement
@@ -145,6 +145,17 @@ export const acceptJob = async (jobId: string, providerId: string) => {
 
     const job = await Job.findOne({ _id: jobId, providerId: null, status: JobStatus.BROADCASTED }).session(session);
     if (!job) throw new Error('Job already accepted or unavailable');
+
+    // SECTION: AUTHORITATIVE GENDER RULE ENFORCEMENT (RC-2 CRITICAL)
+    const service = await Service.findOne({ code: job.serviceCode });
+    if (service) {
+        if (service.genderRule === GenderRule.MEN_ONLY && provider.gender !== 'M') {
+            throw new Error('Gender rule violation: Service restricted to Men.');
+        }
+        if (service.genderRule === GenderRule.WOMEN_ONLY && provider.gender !== 'F') {
+            throw new Error('Gender rule violation: Service restricted to Women.');
+        }
+    }
 
     // PAGE 4.6 – COMMISSION LOCK SNAPSHOT
     const commissionRate = await pricingService.getCommissionRate(job.countryCode, provider.tier);

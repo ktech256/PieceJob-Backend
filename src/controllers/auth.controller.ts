@@ -193,6 +193,19 @@ export const registerProvider = async (req: Request, res: Response) => {
 
     const savedUser = await user.save();
 
+    // SECTION: Gender Rule Enforcement for Selected Services
+    if (servicesOffered && servicesOffered.length > 0) {
+        const services = await Service.find({ code: { $in: servicesOffered } });
+        for (const s of services) {
+            if (s.genderRule === GenderRule.MEN_ONLY && gender !== 'M') {
+                return res.status(403).json({ success: false, message: `Service ${s.name} is restricted to Male providers.` });
+            }
+            if (s.genderRule === GenderRule.WOMEN_ONLY && gender !== 'F') {
+                return res.status(403).json({ success: false, message: `Service ${s.name} is restricted to Female providers.` });
+            }
+        }
+    }
+
     const provider = new Provider({
       userId: savedUser._id,
       gender,
