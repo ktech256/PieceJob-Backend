@@ -417,20 +417,133 @@ export const logoutAllDevices = async (req: Request, res: Response) => {
     }
 };
 
+export const requestPhoneChange = async (req: Request, res: Response) => {
+    try {
+        const { newPhoneNumber } = req.body;
+        const userId = (req as any).user?.userId;
+
+        // Check if number already exists
+        const exists = await User.findOne({ phoneNumber: newPhoneNumber });
+        if (exists) return res.status(400).json({ success: false, message: 'Phone number already in use' });
+
+        // Reuse OTP logic
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        await OtpRequest.findOneAndUpdate(
+            { phoneNumber: newPhoneNumber },
+            { otp, expiresAt, attempts: 1, lastAttemptAt: new Date(), isUsed: false },
+            { upsert: true, new: true }
+        );
+
+        await notificationQueue.addNotificationToQueue({
+            type: 'SMS',
+            phoneNumber: newPhoneNumber,
+            templateCode: 'AUTH_OTP',
+            templateData: { otp }
+        });
+
+        res.status(200).json({ success: true, message: 'OTP sent to new number' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to request phone change', error });
+    }
+};
+
+export const verifyPhoneChange = async (req: Request, res: Response) => {
+    try {
+        const { newPhoneNumber, otp } = req.body;
+        const userId = (req as any).user?.userId;
+
+        const otpRecord = await OtpRequest.findOne({ phoneNumber: newPhoneNumber, otp, isUsed: false });
+        if (!otpRecord || otpRecord.expiresAt < new Date()) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+        }
+
+        otpRecord.isUsed = true;
+        await otpRecord.save();
+
+        await User.findByIdAndUpdate(userId, { phoneNumber: newPhoneNumber });
+
+        res.status(200).json({ success: true, message: 'Phone number updated successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Verification failed', error });
+    }
+};
+
+export const requestEmailChange = async (req: Request, res: Response) => {
+    try {
+        const { newEmail } = req.body;
+        const userId = (req as any).user?.userId;
+
+        const exists = await User.findOne({ email: newEmail.toLowerCase() });
+        if (exists) return res.status(400).json({ success: false, message: 'Email already in use' });
+
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        // Use OtpRequest as generic verification store
+        await OtpRequest.findOneAndUpdate(
+            { phoneNumber: `EMAIL_${newEmail.toLowerCase()}` },
+            { otp: code, expiresAt: new Date(Date.now() + 30 * 60 * 1000), attempts: 1, lastAttemptAt: new Date(), isUsed: false },
+            { upsert: true, new: true }
+        );
+
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: newEmail,
+            templateCode: 'EMAIL_VERIFICATION',
+            templateData: { code }
+        });
+
+        res.status(200).json({ success: true, message: 'Verification code sent to new email' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to request email change', error });
+    }
+};
+
+export const verifyEmailChange = async (req: Request, res: Response) => {
+    try {
+        const { newEmail, code } = req.body;
+        const userId = (req as any).user?.userId;
+
+        const otpRecord = await OtpRequest.findOne({ phoneNumber: `EMAIL_${newEmail.toLowerCase()}`, otp: code, isUsed: false });
+        if (!otpRecord || otpRecord.expiresAt < new Date()) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired code' });
+        }
+
+        otpRecord.isUsed = true;
+        await otpRecord.save();
+
+        await User.findByIdAndUpdate(userId, { email: newEmail.toLowerCase() });
+
+        res.status(200).json({ success: true, message: 'Email updated successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Verification failed', error });
+    }
+};
+
 export const getDevices = async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user?.userId;
-        // In a real app, this would query a dedicated sessions or devices collection
-        // For Phase 2, we simulate it with current user info
-        const user = await User.findById(userId);
+        const logs = await LoginLog.find({ userId })
+            .sort({ timestamp: -1 })
+            .limit(10);
+
+        // Map unique devices
+        const uniqueDevices = new Map();
+        for (const log of logs) {
+            if (!uniqueDevices.has(log.deviceId)) {
+                uniqueDevices.set(log.deviceId, {
+                    id: log.deviceId,
+                    name: log.userAgent || 'Unknown Device',
+                    platform: 'Mobile',
+                    lastLogin: log.timestamp
+                });
+            }
+        }
+
         res.status(200).json({
             success: true,
-            data: [{
-                id: user?.deviceId || 'primary',
-                name: 'Current Android Device',
-                platform: 'Android',
-                lastLogin: user?.updatedAt
-            }]
+            data: Array.from(uniqueDevices.values())
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch devices', error });

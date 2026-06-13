@@ -41,6 +41,14 @@ export interface IUser extends Document {
   city?: string;
   province?: string;
   address?: string;
+  pendingAddress?: {
+    province: string;
+    city: string;
+    address: string;
+    proofOfResidenceUrl: string;
+    submittedAt: Date;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  };
   emergencyContact?: {
     name: string;
     phone: string;
@@ -72,6 +80,14 @@ const UserSchema: Schema = new Schema({
   city: { type: String },
   province: { type: String },
   address: { type: String },
+  pendingAddress: {
+    province: { type: String },
+    city: { type: String },
+    address: { type: String },
+    proofOfResidenceUrl: { type: String },
+    submittedAt: { type: Date },
+    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'] }
+  },
   emergencyContact: {
     name: { type: String },
     phone: { type: String },

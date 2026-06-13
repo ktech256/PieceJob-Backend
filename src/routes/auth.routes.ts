@@ -12,6 +12,10 @@ router.post('/login', authController.login);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/change-password', authenticate, authController.changePassword);
 router.post('/logout-all', authenticate, authController.logoutAllDevices);
+router.post('/request-phone-change', authenticate, authController.requestPhoneChange);
+router.post('/verify-phone-change', authenticate, authController.verifyPhoneChange);
+router.post('/request-email-change', authenticate, authController.requestEmailChange);
+router.post('/verify-email-change', authenticate, authController.verifyEmailChange);
 router.get('/devices', authenticate, authController.getDevices);
 router.delete('/devices/:id', authenticate, authController.removeDevice);
 

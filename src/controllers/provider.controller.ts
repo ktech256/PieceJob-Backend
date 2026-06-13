@@ -28,18 +28,60 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
         const {
-            firstName, lastName, gender, dob, profilePhoto, city, address, emergencyContact
+            firstName, lastName, gender, dob, profilePhoto, city, province, address, emergencyContact, proofOfResidenceUrl
         } = req.body;
 
-        // Update User Model (PII)
-        await User.findByIdAndUpdate(userId, {
-            firstName, lastName, gender, dob, profilePhoto, city, address, emergencyContact
-        });
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // Fetch fresh profile
-        const provider = await Provider.findOne({ userId }).populate('userId', '-passwordHash');
+        const provider = await Provider.findOne({ userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        res.status(200).json({ success: true, message: 'Profile updated successfully', data: provider });
+        const isVerified = provider.verificationStatus === 'APPROVED';
+
+        // 1. Lock Verified Fields (Section 1)
+        if (isVerified) {
+            // These fields cannot be changed if verified
+            // We ignore any attempts to change them
+        } else {
+            if (firstName) user.firstName = firstName;
+            if (lastName) user.lastName = lastName;
+            if (gender) user.gender = gender;
+            if (dob) user.dob = dob;
+        }
+
+        // 2. Address Reverification Logic (Section 1)
+        if (city || province || address) {
+            if (isVerified) {
+                // If verified, address changes go to pending
+                user.pendingAddress = {
+                    province: province || user.province || '',
+                    city: city || user.city || '',
+                    address: address || user.address || '',
+                    proofOfResidenceUrl: proofOfResidenceUrl || '',
+                    submittedAt: new Date(),
+                    status: 'PENDING'
+                };
+
+                // PAGE 12: Audit Log for address change request
+                console.log(`[AUDIT] Address change requested for verified provider ${userId}`);
+            } else {
+                // Not verified yet, can change directly
+                if (city) user.city = city;
+                if (province) user.province = province;
+                if (address) user.address = address;
+            }
+        }
+
+        if (profilePhoto) user.profilePhoto = profilePhoto;
+        if (emergencyContact) user.emergencyContact = emergencyContact;
+
+        await user.save();
+
+        // Refresh and return
+        const updatedProvider = await Provider.findOne({ userId }).populate('userId', '-passwordHash');
+
+        res.status(200).json({ success: true, message: 'Profile updated successfully', data: updatedProvider });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update profile', error });
     }
@@ -114,6 +156,7 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
 
         const approved: string[] = [];
         const pending: string[] = [];
+        const requirements: any = {};
 
         for (const s of services) {
             // Gender Check
@@ -130,6 +173,10 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
                 approved.push(s.code);
             } else {
                 pending.push(s.code);
+                requirements[s.code] = {
+                    level: s.verificationLevel,
+                    docs: s.verificationLevel === 'TRADE' ? ['TRADE_CERTIFICATE', 'TOOL_PROOF'] : ['EXPERIENCE_DOC']
+                };
             }
         }
 
@@ -139,8 +186,8 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({
             success: true,
-            message: 'Services updated. Some may require further verification.',
-            data: { approved, pending }
+            message: pending.length > 0 ? 'Some services require further verification.' : 'Services updated successfully.',
+            data: { approved, pending, requirements }
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update services', error });
@@ -274,6 +321,47 @@ export const updateNotificationSettings = async (req: AuthRequest, res: Response
         res.status(200).json({ success: true, data: provider?.notificationSettings });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update notification settings', error });
+    }
+};
+
+export const approveAddressChange = async (req: AuthRequest, res: Response) => {
+    try {
+        const { providerId } = req.params;
+        const provider = await Provider.findById(providerId);
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const user = await User.findById(provider.userId);
+        if (!user || !user.pendingAddress) return res.status(400).json({ success: false, message: 'No pending address change' });
+
+        user.province = user.pendingAddress.province;
+        user.city = user.pendingAddress.city;
+        user.address = user.pendingAddress.address;
+        user.pendingAddress = undefined;
+        await user.save();
+
+        res.status(200).json({ success: true, message: 'Address change approved' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to approve address change', error });
+    }
+};
+
+export const rejectAddressChange = async (req: AuthRequest, res: Response) => {
+    try {
+        const { providerId } = req.params;
+        const { reason } = req.body;
+        const provider = await Provider.findById(providerId);
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const user = await User.findById(provider.userId);
+        if (!user || !user.pendingAddress) return res.status(400).json({ success: false, message: 'No pending address change' });
+
+        user.pendingAddress.status = 'REJECTED';
+        // user.pendingAddress.rejectionReason = reason;
+        await user.save();
+
+        res.status(200).json({ success: true, message: 'Address change rejected' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to reject address change', error });
     }
 };
 
