@@ -37,6 +37,14 @@ export interface IUser extends Document {
   gender?: string;
   dob?: string;
   idOrPassportNumber?: string;
+  profilePhoto?: string;
+  city?: string;
+  address?: string;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -59,6 +67,14 @@ const UserSchema: Schema = new Schema({
   gender: { type: String },
   dob: { type: String },
   idOrPassportNumber: { type: String },
+  profilePhoto: { type: String },
+  city: { type: String },
+  address: { type: String },
+  emergencyContact: {
+    name: { type: String },
+    phone: { type: String },
+    relationship: { type: String }
+  },
   referralCode: { type: String, unique: true },
   referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
   referralFraudScore: { type: Number, default: 0 },

@@ -50,6 +50,46 @@ export interface IProvider extends Document {
     complaintsCount: number;
   };
 
+  equipment: {
+    name: string;
+    category: string;
+    photoUrl?: string;
+    proofUrl?: string;
+    isVerified: boolean;
+  }[];
+
+  certifications: {
+    name: string;
+    institution: string;
+    certificateNumber: string;
+    expiryDate?: Date;
+    photoUrl: string;
+    status: VerificationStatus;
+  }[];
+
+  workExperience: {
+    companyName: string;
+    role: string;
+    startDate: Date;
+    endDate?: Date;
+    description?: string;
+    referenceName?: string;
+    referencePhone?: string;
+  }[];
+
+  bankDetails?: {
+    bankName: string;
+    accountHolder: string;
+    accountNumberEncrypted: string;
+    branchCode: string;
+    isVerified: boolean;
+  };
+
+  payoutPreferences: {
+    frequency: 'WEEKLY' | 'MONTHLY';
+    method: 'BANK_TRANSFER' | 'WALLET_TRANSFER';
+  };
+
   location: {
     type: string;
     coordinates: number[];
@@ -94,6 +134,46 @@ const ProviderSchema: Schema = new Schema({
     completedJobs: { type: Number, default: 0 },
     arrivedOnTimeJobs: { type: Number, default: 0 },
     complaintsCount: { type: Number, default: 0 }
+  },
+
+  equipment: [{
+    name: { type: String, required: true },
+    category: { type: String, required: true },
+    photoUrl: { type: String },
+    proofUrl: { type: String },
+    isVerified: { type: Boolean, default: false }
+  }],
+
+  certifications: [{
+    name: { type: String, required: true },
+    institution: { type: String, required: true },
+    certificateNumber: { type: String, required: true },
+    expiryDate: { type: Date },
+    photoUrl: { type: String },
+    status: { type: String, enum: Object.values(VerificationStatus), default: VerificationStatus.PENDING }
+  }],
+
+  workExperience: [{
+    companyName: { type: String, required: true },
+    role: { type: String, required: true },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date },
+    description: { type: String },
+    referenceName: { type: String },
+    referencePhone: { type: String }
+  }],
+
+  bankDetails: {
+    bankName: { type: String },
+    accountHolder: { type: String },
+    accountNumberEncrypted: { type: String },
+    branchCode: { type: String },
+    isVerified: { type: Boolean, default: false }
+  },
+
+  payoutPreferences: {
+    frequency: { type: String, enum: ['WEEKLY', 'MONTHLY'], default: 'WEEKLY' },
+    method: { type: String, enum: ['BANK_TRANSFER', 'WALLET_TRANSFER'], default: 'BANK_TRANSFER' }
   },
 
   location: {
