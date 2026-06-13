@@ -4,6 +4,7 @@ import User, { UserRole } from '../models/User';
 import Provider from '../models/Provider';
 import Service, { GenderRule } from '../models/Service';
 import OtpRequest from '../models/OtpRequest';
+import LoginLog from '../models/LoginLog';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
