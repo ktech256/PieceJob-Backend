@@ -260,6 +260,7 @@ export const login = async (req: Request, res: Response) => {
             firstName: user.firstName,
             lastName: user.lastName,
             role: user.role,
+            gender: user.gender,
             countryCode: user.countryCode,
             referralCode: user.referralCode
         }
@@ -272,6 +273,7 @@ export const login = async (req: Request, res: Response) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        gender: user.gender,
         countryCode: user.countryCode,
         referralCode: user.referralCode
       }

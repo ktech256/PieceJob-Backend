@@ -50,10 +50,22 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
 export const getPublicServices = async (req: Request, res: Response) => {
     try {
         const countryCode = req.headers['x-country-code'] as string || 'ZA';
-        const services = await Service.find({
+        const userGender = req.query.gender as string; // 'M' or 'F'
+
+        const query: any = {
             $or: [{ countryCode: 'GLOBAL' }, { countryCode }],
             isActive: true
-        }).sort({ category: 1, code: 1 });
+        };
+
+        // GENDER FILTERING LOGIC (RC-2 CRITICAL)
+        if (userGender) {
+            const allowedRules = ['BOTH'];
+            if (userGender === 'M') allowedRules.push('MEN_ONLY');
+            if (userGender === 'F') allowedRules.push('WOMEN_ONLY');
+            query.genderRule = { $in: allowedRules };
+        }
+
+        const services = await Service.find(query).sort({ category: 1, code: 1 });
 
         res.status(200).json({
             success: true,
