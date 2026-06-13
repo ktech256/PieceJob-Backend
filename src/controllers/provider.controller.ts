@@ -72,17 +72,36 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     try {
-        const providerId = req.user?.userId;
+        const userId = req.user?.userId;
         const now = new Date();
         const startOfToday = new Date(now.setHours(0, 0, 0, 0));
 
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+
+        const monthAgo = new Date();
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+        const provider = await Provider.findOne({ userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
         const earningsToday = await Ledger.aggregate([
-            { $match: { toUserId: new mongoose.Types.ObjectId(providerId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: startOfToday }, status: 'COMPLETED' } },
+            { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: startOfToday }, status: 'COMPLETED' } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+
+        const earningsWeekly = await Ledger.aggregate([
+            { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: weekAgo }, status: 'COMPLETED' } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+
+        const earningsMonthly = await Ledger.aggregate([
+            { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: monthAgo }, status: 'COMPLETED' } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
 
         const jobs = await Job.aggregate([
-            { $match: { providerId: new mongoose.Types.ObjectId(providerId) } },
+            { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
             { $group: { _id: "$status", count: { $sum: 1 } } }
         ]);
 
@@ -91,13 +110,24 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({
             success: true,
-            stats: {
+            data: {
                 earningsToday: earningsToday[0]?.total || 0,
+                earningsWeekly: earningsWeekly[0]?.total || 0,
+                earningsMonthly: earningsMonthly[0]?.total || 0,
                 jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
-                jobsActive: jobsByStatus[JobStatus.STARTED] || 0
+                jobsActive: (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0),
+                acceptanceRate: provider.performance.acceptanceRate,
+                completionRate: provider.performance.completionRate,
+                arrivalRate: provider.performance.arrivalRate,
+                tier: provider.tier,
+                tierProgress: 0.75, // Placeholder for logic
+                rating: provider.ratingAvg,
+                verificationStatus: provider.verificationStatus,
+                isGhostMode: false
             }
         });
     } catch (error) {
+        console.error('[STATS_ERROR]', error);
         res.status(500).json({ success: false, message: 'Stats failed', error });
     }
 };
