@@ -93,6 +93,16 @@ export interface IProvider extends Document {
     method: 'BANK_TRANSFER' | 'WALLET_TRANSFER';
   };
 
+  notificationSettings: {
+    jobBroadcasts: boolean;
+    chatMessages: boolean;
+    walletAlerts: boolean;
+    payoutAlerts: boolean;
+    verificationUpdates: boolean;
+    marketing: boolean;
+    sosAlerts: boolean;
+  };
+
   location: {
     type: string;
     coordinates: number[];

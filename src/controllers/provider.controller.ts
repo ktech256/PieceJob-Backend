@@ -117,7 +117,7 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
 
         for (const s of services) {
             // Gender Check
-            if (s.genderRule !== 'BOTH' && s.genderRule !== provider.gender) {
+            if (s.genderRule !== 'BOTH' && (s.genderRule as string) !== (provider.gender as string)) {
                 continue; // Skip restricted
             }
 
