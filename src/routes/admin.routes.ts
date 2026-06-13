@@ -152,6 +152,8 @@ router.get('/pricing/simulate', hasPermission('MANAGE_PRICING'), pricingAdminCon
 // Verifications (PAGE 8)
 router.get('/verifications/queue', hasPermission('MANAGE_VERIFICATION'), verificationAdminController.listQueue);
 router.get('/verifications/addresses', hasPermission('MANAGE_VERIFICATION'), providerAdminController.listPendingAddressChanges);
+router.patch('/verifications/addresses/:providerId/approve', hasPermission('MANAGE_VERIFICATION'), providerAdminController.approveAddressChange);
+router.patch('/verifications/addresses/:providerId/reject', hasPermission('MANAGE_VERIFICATION'), providerAdminController.rejectAddressChange);
 router.get('/verifications/banking', hasPermission('MANAGE_VERIFICATION'), providerAdminController.listPendingBankDetails);
 router.patch('/verifications/banking/:providerId/approve', hasPermission('MANAGE_VERIFICATION'), providerAdminController.approveBankDetails);
 router.patch('/verifications/banking/:providerId/reject', hasPermission('MANAGE_VERIFICATION'), providerAdminController.rejectBankDetails);

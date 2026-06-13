@@ -20,8 +20,6 @@ router.get('/bank', authenticate, authorize([UserRole.PROVIDER]), providerContro
 router.post('/bank', authenticate, authorize([UserRole.PROVIDER]), providerController.updateBankDetails);
 router.patch('/wallet-settings', authenticate, authorize([UserRole.PROVIDER]), providerController.updateWalletSettings);
 router.patch('/notifications', authenticate, authorize([UserRole.PROVIDER]), providerController.updateNotificationSettings);
-router.patch('/:providerId/address/approve', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), providerController.approveAddressChange);
-router.patch('/:providerId/address/reject', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), providerController.rejectAddressChange);
 router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), providerController.getDashboardStats);
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);
 router.get('/verification/requirements', authenticate, authorize([UserRole.PROVIDER]), verificationController.getRequirements);
