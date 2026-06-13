@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Provider, { VerificationStatus } from '../models/Provider';
+import User from '../models/User';
+import Service from '../models/Service';
 import { emitAdminUpdate } from '../socket/socket.service';
 import Job, { JobStatus } from '../models/Job';
 import Ledger, { TransactionType } from '../models/Ledger';
@@ -15,14 +17,32 @@ export const getProviderProfile = async (req: AuthRequest, res: Response) => {
     }
     res.status(200).json({
       success: true,
-      provider: {
-        ...provider.toObject(),
-        isShadowBanned: provider.isShadowBanned
-      }
+      data: provider
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch provider profile', error });
   }
+};
+
+export const updateProfile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const {
+            firstName, lastName, gender, dob, profilePhoto, city, address, emergencyContact
+        } = req.body;
+
+        // Update User Model (PII)
+        await User.findByIdAndUpdate(userId, {
+            firstName, lastName, gender, dob, profilePhoto, city, address, emergencyContact
+        });
+
+        // Fetch fresh profile
+        const provider = await Provider.findOne({ userId }).populate('userId', '-passwordHash');
+
+        res.status(200).json({ success: true, message: 'Profile updated successfully', data: provider });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to update profile', error });
+    }
 };
 
 export const updateStatus = async (req: AuthRequest, res: Response) => {
@@ -58,7 +78,7 @@ export const handleHeartbeat = async (req: AuthRequest, res: Response) => {
 
 export const uploadDocument = async (req: AuthRequest, res: Response) => {
   try {
-    const { type, url } = req.body; // In real app, this would be a file upload
+    const { type, url } = req.body;
     const provider = await Provider.findOneAndUpdate(
       { userId: req.user?.userId },
       { $push: { documents: { type, url, status: VerificationStatus.PENDING } } },
@@ -68,6 +88,95 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     res.status(500).json({ success: false, message: 'Document upload failed', error });
   }
+};
+
+export const getMyServices = async (req: AuthRequest, res: Response) => {
+    try {
+        const provider = await Provider.findOne({ userId: req.user?.userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const services = await Service.find({ code: { $in: provider.servicesOffered } });
+        res.status(200).json({ success: true, data: services });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch services', error });
+    }
+};
+
+export const updateServices = async (req: AuthRequest, res: Response) => {
+    try {
+        const { serviceCodes } = req.body;
+        const userId = req.user?.userId;
+
+        const services = await Service.find({ code: { $in: serviceCodes } });
+        if (services.length !== serviceCodes.length) {
+            return res.status(400).json({ success: false, message: 'Invalid service codes provided' });
+        }
+
+        const provider = await Provider.findOneAndUpdate(
+            { userId },
+            { servicesOffered: serviceCodes },
+            { new: true }
+        );
+
+        res.status(200).json({ success: true, message: 'Services updated', data: provider.servicesOffered });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to update services', error });
+    }
+};
+
+export const getEquipment = async (req: AuthRequest, res: Response) => {
+    try {
+        const provider = await Provider.findOne({ userId: req.user?.userId });
+        res.status(200).json({ success: true, data: provider?.equipment || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch equipment', error });
+    }
+};
+
+export const addEquipment = async (req: AuthRequest, res: Response) => {
+    try {
+        const { name, category, photoUrl } = req.body;
+        const provider = await Provider.findOneAndUpdate(
+            { userId: req.user?.userId },
+            { $push: { equipment: { name, category, photoUrl, isVerified: false } } },
+            { new: true }
+        );
+        res.status(201).json({ success: true, data: provider?.equipment });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to add equipment', error });
+    }
+};
+
+export const getBankDetails = async (req: AuthRequest, res: Response) => {
+    try {
+        const provider = await Provider.findOne({ userId: req.user?.userId });
+        res.status(200).json({ success: true, data: provider?.bankDetails });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch bank details', error });
+    }
+};
+
+export const updateBankDetails = async (req: AuthRequest, res: Response) => {
+    try {
+        const { bankName, accountHolder, accountNumber, branchCode } = req.body;
+        // In real app, encrypt accountNumber here
+        const provider = await Provider.findOneAndUpdate(
+            { userId: req.user?.userId },
+            {
+                bankDetails: {
+                    bankName,
+                    accountHolder,
+                    accountNumberEncrypted: accountNumber,
+                    branchCode,
+                    isVerified: false
+                }
+            },
+            { new: true }
+        );
+        res.status(200).json({ success: true, message: 'Bank details updated', data: provider?.bankDetails });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to update bank details', error });
+    }
 };
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
@@ -120,7 +229,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
                 completionRate: provider.performance.completionRate,
                 arrivalRate: provider.performance.arrivalRate,
                 tier: provider.tier,
-                tierProgress: 0.75, // Placeholder for logic
+                tierProgress: 0.75,
                 rating: provider.ratingAvg,
                 verificationStatus: provider.verificationStatus,
                 isGhostMode: false

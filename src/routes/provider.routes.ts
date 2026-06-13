@@ -7,6 +7,13 @@ import { UserRole } from '../models/User';
 const router = Router();
 
 router.get('/profile', authenticate, authorize([UserRole.PROVIDER]), providerController.getProviderProfile);
+router.patch('/profile', authenticate, authorize([UserRole.PROVIDER]), providerController.updateProfile);
+router.get('/services', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyServices);
+router.post('/services', authenticate, authorize([UserRole.PROVIDER]), providerController.updateServices);
+router.get('/equipment', authenticate, authorize([UserRole.PROVIDER]), providerController.getEquipment);
+router.post('/equipment', authenticate, authorize([UserRole.PROVIDER]), providerController.addEquipment);
+router.get('/bank', authenticate, authorize([UserRole.PROVIDER]), providerController.getBankDetails);
+router.post('/bank', authenticate, authorize([UserRole.PROVIDER]), providerController.updateBankDetails);
 router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), providerController.getDashboardStats);
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);
 router.post('/verification/submit', authenticate, authorize([UserRole.PROVIDER]), verificationController.submitMyVerification);
