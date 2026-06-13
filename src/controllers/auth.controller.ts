@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import User, { UserRole } from '../models/User';
 import Provider from '../models/Provider';
+import Service, { GenderRule } from '../models/Service';
 import OtpRequest from '../models/OtpRequest';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
