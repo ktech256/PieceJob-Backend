@@ -107,6 +107,9 @@ export const registerCustomer = async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId, gender, dob, idNumber } = req.body;
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phoneNumber.trim();
+
     const settings = await settingsService.getSettings(countryCode);
 
     // 1. Pre-validation: Device Lock (403)
@@ -120,7 +123,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
     }
 
     // 2. Pre-validation: User Existence (400)
-    const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
+    const existingUser = await User.findOne({ $or: [{ email: cleanEmail }, { phoneNumber: cleanPhone }] });
     if (existingUser) {
         await session.abortTransaction();
         session.endSession();
@@ -137,8 +140,8 @@ export const registerCustomer = async (req: Request, res: Response) => {
     const user = new User({
       firstName,
       lastName,
-      email,
-      phoneNumber,
+      email: cleanEmail,
+      phoneNumber: cleanPhone,
       passwordHash,
       role: UserRole.CUSTOMER,
       countryCode,
@@ -146,7 +149,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
       gender,
       dob,
       idOrPassportNumber: idNumber,
-      isTestUser: testUserService.isTestNumber(phoneNumber),
+      isTestUser: testUserService.isTestNumber(cleanPhone),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       referredBy
     });
@@ -178,6 +181,8 @@ export const registerProvider = async (req: Request, res: Response) => {
       referralCode, deviceId
     } = req.body;
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phoneNumber.trim();
     const actualIdNumber = idOrPassportNumber || idNumber;
 
     const settings = await settingsService.getSettings(countryCode);
@@ -193,7 +198,7 @@ export const registerProvider = async (req: Request, res: Response) => {
     }
 
     // 2. Pre-validation: User Existence (400)
-    const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
+    const existingUser = await User.findOne({ $or: [{ email: cleanEmail }, { phoneNumber: cleanPhone }] });
     if (existingUser) {
         await session.abortTransaction();
         session.endSession();
@@ -222,8 +227,8 @@ export const registerProvider = async (req: Request, res: Response) => {
     const user = new User({
       firstName,
       lastName,
-      email,
-      phoneNumber,
+      email: cleanEmail,
+      phoneNumber: cleanPhone,
       passwordHash,
       role: UserRole.PROVIDER,
       countryCode,
@@ -231,7 +236,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       gender,
       dob,
       idOrPassportNumber: actualIdNumber,
-      isTestUser: testUserService.isTestNumber(phoneNumber),
+      isTestUser: testUserService.isTestNumber(cleanPhone),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
     });
 
@@ -267,15 +272,31 @@ export const registerProvider = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { identifier, password, deviceId, hardwareId } = req.body; // identifier can be email or phone
+    const { identifier, password, deviceId, hardwareId } = req.body;
 
-    const user = await User.findOne({ $or: [{ email: identifier }, { phoneNumber: identifier }] });
+    if (!identifier || !password) {
+        return res.status(400).json({ success: false, message: 'Identifier and password are required' });
+    }
+
+    const cleanIdentifier = identifier.trim().toLowerCase();
+
+    console.log(`[AUTH] Login attempt for: ${identifier.trim()}`);
+
+    const user = await User.findOne({
+        $or: [
+            { email: { $regex: new RegExp('^' + cleanIdentifier + '$', 'i') } },
+            { phoneNumber: identifier.trim() }
+        ]
+    });
+
     if (!user) {
+      console.warn(`[AUTH] Login failed: User not found for ${cleanIdentifier}`);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
+      console.warn(`[AUTH] Login failed: Password mismatch for ${cleanIdentifier}`);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
