@@ -149,16 +149,21 @@ export const registerCustomer = async (req: Request, res: Response) => {
 
 export const registerProvider = async (req: Request, res: Response) => {
   try {
+    console.log('[DEBUG] registerProvider Payload:', JSON.stringify(req.body, null, 2));
+
     const {
       firstName, lastName, email, phoneNumber, password, countryCode,
-      gender, dob, nationalityType, idNumber, servicesOffered,
+      gender, dob, nationalityType, idNumber, idOrPassportNumber, servicesOffered,
       referralCode, deviceId
     } = req.body;
+
+    const actualIdNumber = idOrPassportNumber || idNumber;
 
     // SECTION 15.1: Device Uniqueness for Providers
     if (deviceId) {
         const deviceUser = await User.findOne({ deviceId, role: UserRole.PROVIDER });
         if (deviceUser) {
+            console.log('[403] Device already associated. DeviceId:', deviceId);
             return res.status(403).json({ success: false, message: 'Device already associated with an account' });
         }
     }
@@ -186,7 +191,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       deviceId,
       gender,
       dob,
-      idOrPassportNumber: idNumber,
+      idOrPassportNumber: actualIdNumber,
       isTestUser: testUserService.isTestNumber(phoneNumber),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       referredBy
@@ -197,11 +202,16 @@ export const registerProvider = async (req: Request, res: Response) => {
     // SECTION: Gender Rule Enforcement for Selected Services
     if (servicesOffered && servicesOffered.length > 0) {
         const services = await Service.find({ code: { $in: servicesOffered } });
+        console.log(`[DEBUG] Validating ${services.length} services for gender: ${gender}`);
+
         for (const s of services) {
+            console.log(`[DEBUG] Service: ${s.code}, Rule: ${s.genderRule}, ProviderGender: ${gender}`);
             if (s.genderRule === GenderRule.MEN_ONLY && gender !== 'M') {
+                console.log(`[403] Gender Violation: Male only service ${s.code} selected by ${gender}`);
                 return res.status(403).json({ success: false, message: `Service ${s.name} is restricted to Male providers.` });
             }
             if (s.genderRule === GenderRule.WOMEN_ONLY && gender !== 'F') {
+                console.log(`[403] Gender Violation: Female only service ${s.code} selected by ${gender}`);
                 return res.status(403).json({ success: false, message: `Service ${s.name} is restricted to Female providers.` });
             }
         }
@@ -212,7 +222,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       gender,
       dob,
       nationalityType,
-      idOrPassportNumber: idNumber,
+      idOrPassportNumber: actualIdNumber,
       servicesOffered,
       location: { coordinates: [0, 0] } // Initial location
     });
