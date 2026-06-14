@@ -93,11 +93,7 @@ export const getPublicServices = async (req: Request, res: Response) => {
 
         for (const s of services) {
             let level: string = s.verificationLevel;
-            // SPEC Category Mappings
-            if (s.category === ServiceCategory.CSS) level = VerificationLevel.HIGH_VETTING;
-            if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
-                if (level !== VerificationLevel.HIGH_VETTING) level = VerificationLevel.TRADE;
-            }
+            // Respect Dashboard Verification Requirement strictly for grouping (RC-2 Fix)
             if (grouped[level]) grouped[level].services.push(s);
             else grouped['STANDARD'].services.push(s);
         }

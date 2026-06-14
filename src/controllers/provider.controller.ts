@@ -202,15 +202,8 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
             const levels = ['STANDARD', 'PROFESSIONAL', 'TRADE', 'HIGH_VETTING'];
             const provLevelIdx = levels.indexOf(provider.verificationLevel);
 
-            // SPEC Category Mappings for effective level
+            // Respect Dashboard Verification Requirement strictly (RC-2 Fix)
             let effectiveServLevel: string = s.verificationLevel;
-            if (s.category === ServiceCategory.CSS) effectiveServLevel = VerificationLevel.HIGH_VETTING;
-            if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
-                if (levels.indexOf(effectiveServLevel) < levels.indexOf(VerificationLevel.TRADE)) {
-                    effectiveServLevel = VerificationLevel.TRADE;
-                }
-            }
-
             const servLevelIdx = levels.indexOf(effectiveServLevel);
 
             // RC-2: Verification Level Persistence Logic
@@ -225,13 +218,13 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
 
                 // Additive logic for preview
                 if (levels.indexOf(effectiveServLevel) >= levels.indexOf('PROFESSIONAL')) {
-                    requiredDocs.push('PROFESSIONAL_CERT', 'EXPERIENCE_DOC');
+                    requiredDocs.push('CERTIFICATION', 'EXPERIENCE_VERIFICATION');
                 }
                 if (levels.indexOf(effectiveServLevel) >= levels.indexOf('TRADE')) {
-                    requiredDocs.push('TRADE_LICENSE', 'EQUIPMENT_PROOF');
+                    requiredDocs.push('TRADE_LICENSE', 'TOOL_VERIFICATION');
                 }
                 if (levels.indexOf(effectiveServLevel) >= levels.indexOf('HIGH_VETTING')) {
-                    requiredDocs.push('CRIMINAL_CHECK', 'DETAILED_CV', 'REFERENCE_LETTER');
+                    requiredDocs.push('CRIMINAL_CHECK', 'INTERVIEW', 'REFERENCES');
                 }
 
                 requirements[s.code] = {

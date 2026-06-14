@@ -43,14 +43,7 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         for (const s of services) {
             let level = s.verificationLevel;
 
-            // SPEC Category Mappings for dynamic level escalation
-            if (s.category === ServiceCategory.CSS) level = VerificationLevel.HIGH_VETTING;
-            if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
-                if (levelOrder.indexOf(level) < levelOrder.indexOf(VerificationLevel.TRADE)) {
-                    level = VerificationLevel.TRADE;
-                }
-            }
-
+            // Respect Dashboard settings strictly (RC-2 Fix)
             const currentIdx = levelOrder.indexOf(level);
             if (currentIdx > highestLevelIndex) highestLevelIndex = currentIdx;
         }
