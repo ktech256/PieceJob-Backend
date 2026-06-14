@@ -5,8 +5,12 @@ import { initSchedulers } from './services/scheduler.service';
 import * as jobService from './services/job.service';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import initializeFirebase from './config/firebase';
 
 dotenv.config();
+
+// Initialize Firebase
+initializeFirebase();
 
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);

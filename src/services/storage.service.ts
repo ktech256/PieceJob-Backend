@@ -23,9 +23,9 @@ export const uploadBase64File = async (base64Data: string, folder: string, mimeT
         console.log(`[STORAGE_TRACE] 6. Firebase upload success. Path: ${filename}`);
         // Return the permanent bucket path
         return filename;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Upload Error:', error);
-        throw new Error('Failed to upload file to storage');
+        throw new Error(`Failed to upload file to storage: ${error.message}`);
     }
 };
 
