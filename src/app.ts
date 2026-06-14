@@ -17,6 +17,7 @@ import configRoutes from './routes/config.routes';
 import corporateRoutes from './routes/corporate.routes';
 import supportRoutes from './routes/support.routes';
 import analyticsRoutes from './routes/v1/analytics.routes';
+import testRoutes from './routes/test.routes';
 
 // PieceJob Backend - V3.0 Refinement
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/v1/config', configRoutes);
 app.use('/api/v1/corporate', corporateRoutes);
 app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/test', testRoutes);
 
 // Dashboard Aliases (Mounting under /api for dashboard lib/api/axios.ts)
 app.use('/api/auth', authRoutes);

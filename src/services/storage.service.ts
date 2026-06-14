@@ -3,7 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const uploadBase64File = async (base64Data: string, folder: string, mimeType: string): Promise<string> => {
     try {
+        const app = admin.app();
         const bucket = admin.storage().bucket();
+
+        console.log("MANDATORY RUNTIME BUCKET AUDIT");
+        console.log("ACTIVE STORAGE BUCKET:", bucket.name);
+        console.log("FIREBASE PROJECT:", app.options.projectId);
+        console.log("STORAGE CONFIG:", app.options.storageBucket);
+
         console.log(`[STORAGE_TRACE] 5. Firebase upload start. Bucket: ${bucket.name}, Folder: ${folder}, Data Length: ${base64Data.length}`);
 
         let ext = 'bin';
