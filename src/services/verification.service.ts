@@ -29,13 +29,16 @@ export const submitVerification = async (
             latestRequest.status === VerificationRequestStatus.UNDER_REVIEW)) {
 
             const hasRejectedDocs = latestRequest.documents.some(d => d.status === 'REJECTED');
+            const isPurePending = latestRequest.status === VerificationRequestStatus.PENDING && !hasRejectedDocs;
 
-            if (!hasRejectedDocs) {
+            // Only block if it's a completely new, untouched request.
+            // If there's any rejection or it's already under review with rejections, allow resubmission.
+            if (isPurePending) {
                 console.error(`[VERIFY_LOCK] Submission blocked. Pure pending request ${latestRequest._id} exists.`);
                 throw new Error(`A verification request for ${type} is already in progress.`);
             } else {
-                 console.log(`[VERIFY_LOCK] Superseding request ${latestRequest._id} because it has rejected documents.`);
-                 // Unlock the flow by marking the old request as superseded/resubmitted
+                 console.log(`[VERIFY_LOCK] Superseding request ${latestRequest._id} (Status: ${latestRequest.status}, hasRejected: ${hasRejectedDocs})`);
+                 // Mark old request as superseded/resubmitted
                  latestRequest.status = VerificationRequestStatus.RESUBMITTED;
                  await latestRequest.save({ session });
             }
@@ -158,7 +161,7 @@ export const reviewRequest = async (
                         if (existingIdx !== -1) {
                             provider.documents[existingIdx].url = doc.url;
                             provider.documents[existingIdx].status = update.status as any;
-                            if (update.reason) provider.documents[existingIdx].rejectionReason = update.reason;
+                            provider.documents[existingIdx].rejectionReason = update.reason;
                         } else {
                             provider.documents.push({
                                 type: doc.type,
