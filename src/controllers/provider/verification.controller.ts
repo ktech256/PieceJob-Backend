@@ -103,7 +103,12 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         // CRIMINAL CHECK ENGINE (HURU)
         // Only show Criminal Check if triggered OR if higher level than STANDARD is active
         const isProfessionalPlus = highestLevelIndex > 0;
-        const isTriggered = provider.ratingAvg < 3.5 || provider.performance.complaintsCount > 0 || provider.criminalCheckRequired;
+
+        // Triggered if (rated and rating low) OR verified complaints OR manual admin flag
+        const isTriggered = (provider.jobsCompleted > 0 && provider.ratingAvg < 3.5) ||
+                           provider.performance.complaintsCount > 0 ||
+                           provider.criminalCheckRequired;
+
         const isCriminalCheckMandatory = isProfessionalPlus || isTriggered;
 
         // RC-2: Respect Criminal Check visibility rule - strictly hide for standard unless triggered
