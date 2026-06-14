@@ -16,9 +16,11 @@ export const getMyStatus = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({
             success: true,
-            currentLevel: provider.verificationLevel,
-            currentStatus: provider.verificationStatus,
-            latestRequest
+            data: {
+                currentLevel: provider.verificationLevel,
+                currentStatus: provider.verificationStatus,
+                latestRequest
+            }
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch status', error });
@@ -217,7 +219,10 @@ export const submitMyVerification = async (req: AuthRequest, res: Response) => {
             extraData
         );
 
-        res.status(201).json({ success: true, request: result });
+        res.status(201).json({
+            success: true,
+            data: result
+        });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

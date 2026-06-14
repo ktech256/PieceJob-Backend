@@ -167,7 +167,10 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
     const path = await storageService.uploadBase64File(cleanBase64, folder || 'documents', mimeType || 'image/jpeg');
     console.log(`[UPLOAD_TRACE] 7. Storage Service Success. Path: ${path}`);
 
-    res.status(200).json({ success: true, url: path });
+    res.status(200).json({
+        success: true,
+        data: { url: path }
+    });
   } catch (error: any) {
     console.error('[UPLOAD_TRACE] ERROR:', error.message);
     res.status(500).json({ success: false, message: error.message });
