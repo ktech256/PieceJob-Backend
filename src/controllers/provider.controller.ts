@@ -161,7 +161,7 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
 
     // Clean base64 if it has prefix
     const cleanBase64 = base64.includes(';base64,') ? base64.split(';base64,')[1] : base64;
-    console.log('[UPLOAD_TRACE] 4. Base64 cleaned. Starting Storage Service call.');
+    console.log(`[UPLOAD_TRACE] 4. Base64 cleaned. Admin SDK Bucket Name: ${admin.storage().bucket().name}`);
 
     const path = await storageService.uploadBase64File(cleanBase64, folder || 'documents', mimeType || 'image/jpeg');
     console.log(`[UPLOAD_TRACE] 7. Storage Service Success. Path: ${path}`);
