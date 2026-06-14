@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import Country from '../models/Country';
 import SystemSettings from '../models/SystemSettings';
-import Service from '../models/Service';
+import Service, { ServiceCategory, VerificationLevel } from '../models/Service';
 import * as pricingService from '../services/pricing.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 

@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Provider, { VerificationStatus } from '../models/Provider';
 import User from '../models/User';
-import Service from '../models/Service';
+import Service, { ServiceCategory, VerificationLevel } from '../models/Service';
 import { emitAdminUpdate } from '../socket/socket.service';
 import Job, { JobStatus } from '../models/Job';
 import Ledger, { TransactionType } from '../models/Ledger';
