@@ -216,15 +216,17 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
                 // Build requirements for pending services (Strictly Additive)
                 let requiredDocs: string[] = ['GOVERNMENT_ID', 'SELFIE'];
 
-                // Additive logic for preview
-                if (levels.indexOf(effectiveServLevel) >= levels.indexOf('PROFESSIONAL')) {
-                    requiredDocs.push('CERTIFICATION', 'EXPERIENCE_VERIFICATION');
+                const servIdx = levels.indexOf(effectiveServLevel);
+
+                // Additive logic for preview (RC-2: Criminal Check required for Professional+)
+                if (servIdx >= levels.indexOf('PROFESSIONAL')) {
+                    requiredDocs.push('CRIMINAL_CHECK', 'CERTIFICATION', 'EXPERIENCE_VERIFICATION');
                 }
-                if (levels.indexOf(effectiveServLevel) >= levels.indexOf('TRADE')) {
+                if (servIdx >= levels.indexOf('TRADE')) {
                     requiredDocs.push('TRADE_LICENSE', 'TOOL_VERIFICATION');
                 }
-                if (levels.indexOf(effectiveServLevel) >= levels.indexOf('HIGH_VETTING')) {
-                    requiredDocs.push('CRIMINAL_CHECK', 'INTERVIEW', 'REFERENCES');
+                if (servIdx >= levels.indexOf('HIGH_VETTING')) {
+                    requiredDocs.push('INTERVIEW', 'REFERENCES');
                 }
 
                 requirements[s.code] = {

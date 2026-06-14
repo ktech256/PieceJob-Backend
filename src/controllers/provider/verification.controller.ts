@@ -101,20 +101,23 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         });
 
         // CRIMINAL CHECK ENGINE (HURU)
-        // Mandatory if Professional+ OR triggered by performance/flags
+        // Only show Criminal Check if triggered OR if higher level than STANDARD is active
         const isProfessionalPlus = highestLevelIndex > 0;
         const isTriggered = provider.ratingAvg < 3.5 || provider.performance.complaintsCount > 0 || provider.criminalCheckRequired;
         const isCriminalCheckMandatory = isProfessionalPlus || isTriggered;
 
-        requirements.push({
-            type: 'CRIMINAL_CHECK',
-            isRequired: isCriminalCheckMandatory,
-            allowedTypes: ['GALLERY', 'PDF'],
-            label: isCriminalCheckMandatory ? 'Criminal Check (Mandatory)' : 'Criminal Check (Optional)',
-            group: 'STANDARD',
-            status: getDocStatus('CRIMINAL_CHECK'),
-            rejectionReason: getRejectionReason('CRIMINAL_CHECK')
-        });
+        // RC-2: Respect Criminal Check visibility rule - strictly hide for standard unless triggered
+        if (isCriminalCheckMandatory) {
+            requirements.push({
+                type: 'CRIMINAL_CHECK',
+                isRequired: true,
+                allowedTypes: ['GALLERY', 'PDF'],
+                label: 'Criminal Check (Mandatory)',
+                group: 'STANDARD',
+                status: getDocStatus('CRIMINAL_CHECK'),
+                rejectionReason: getRejectionReason('CRIMINAL_CHECK')
+            });
+        }
 
         // --- PROFESSIONAL ---
         if (activeLevels.has(VerificationLevel.PROFESSIONAL)) {
