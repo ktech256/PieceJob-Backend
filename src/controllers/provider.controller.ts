@@ -201,16 +201,28 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
             // Level Check
             const levels = ['STANDARD', 'PROFESSIONAL', 'TRADE', 'HIGH_VETTING'];
             const provLevelIdx = levels.indexOf(provider.verificationLevel);
-            const servLevelIdx = levels.indexOf(s.verificationLevel);
 
-            if (provLevelIdx >= servLevelIdx) {
+            // SPEC Category Mappings for effective level
+            let effectiveServLevel: string = s.verificationLevel;
+            if (s.category === ServiceCategory.CSS) effectiveServLevel = VerificationLevel.HIGH_VETTING;
+            if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
+                if (levels.indexOf(effectiveServLevel) < levels.indexOf(VerificationLevel.TRADE)) {
+                    effectiveServLevel = VerificationLevel.TRADE;
+                }
+            }
+
+            const servLevelIdx = levels.indexOf(effectiveServLevel);
+
+            // RC-2: Verification Level Persistence Logic
+            // If provider is already approved at this level or higher, approve immediately
+            if (provider.verificationStatus === 'APPROVED' && provLevelIdx >= servLevelIdx) {
                 approved.push(s.code);
             } else {
                 pending.push(s.code);
 
-                // PAGE 8: Verification Matrix Enforcement
+                // Build requirements for pending services
                 let requiredDocs: string[] = [];
-                switch(s.verificationLevel) {
+                switch(effectiveServLevel) {
                     case 'PROFESSIONAL':
                         requiredDocs = ['GOVERNMENT_ID', 'SELFIE', 'PROFESSIONAL_CERT'];
                         break;
@@ -225,7 +237,7 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
                 }
 
                 requirements[s.code] = {
-                    level: s.verificationLevel,
+                    level: effectiveServLevel,
                     docs: requiredDocs
                 };
             }

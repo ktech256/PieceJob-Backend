@@ -30,36 +30,41 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        // RC-2: Consider both active and pending services for dynamic requirement generation
+        // Consider both active and pending services for dynamic requirement generation
         const combinedServiceCodes = [...new Set([...provider.servicesOffered, ...provider.pendingServices])];
         const services = await Service.find({ code: { $in: combinedServiceCodes } });
 
-        // 1. Determine Target Level based on highest service requirement
-        let targetLevel = VerificationLevel.STANDARD;
+        // 1. Determine Activated Levels
         const levelOrder = [VerificationLevel.STANDARD, VerificationLevel.PROFESSIONAL, VerificationLevel.TRADE, VerificationLevel.HIGH_VETTING];
+        const activeLevels = new Set([VerificationLevel.STANDARD]);
 
         for (const s of services) {
-            // SPEC: CSS category is HIGH VETTING
-            let effectiveLevel = s.verificationLevel;
-            if (s.category === ServiceCategory.CSS) effectiveLevel = VerificationLevel.HIGH_VETTING;
-            // SPEC: HMS, OPS, TSS categories are TRADE
+            let level = s.verificationLevel;
+
+            // SPEC Category Mappings
+            if (s.category === ServiceCategory.CSS) level = VerificationLevel.HIGH_VETTING;
             if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
-                if (levelOrder.indexOf(effectiveLevel) < levelOrder.indexOf(VerificationLevel.TRADE)) {
-                    effectiveLevel = VerificationLevel.TRADE;
+                if (levelOrder.indexOf(level) < levelOrder.indexOf(VerificationLevel.TRADE)) {
+                    level = VerificationLevel.TRADE;
                 }
             }
 
-            if (levelOrder.indexOf(effectiveLevel) > levelOrder.indexOf(targetLevel)) {
-                targetLevel = effectiveLevel;
+            if (level === VerificationLevel.HIGH_VETTING) {
+                // High Vetting is strictly cumulative per spec
+                activeLevels.add(VerificationLevel.PROFESSIONAL);
+                activeLevels.add(VerificationLevel.TRADE);
+                activeLevels.add(VerificationLevel.HIGH_VETTING);
+            } else {
+                activeLevels.add(level);
             }
         }
 
-        // 2. Build Document List
-        const requirements: { type: string, isRequired: boolean, allowedTypes: string[], label: string }[] = [];
+        // 2. Build Document List dynamically based on active levels
+        const requirements: { type: string, isRequired: boolean, allowedTypes: string[], label: string, group: string }[] = [];
 
-        // STANDARD
-        requirements.push({ type: 'GOVERNMENT_ID', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY', 'PDF'], label: 'Government ID' });
-        requirements.push({ type: 'SELFIE', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY'], label: 'Selfie' });
+        // --- STANDARD ---
+        requirements.push({ type: 'GOVERNMENT_ID', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY', 'PDF'], label: 'Government ID', group: 'STANDARD' });
+        requirements.push({ type: 'SELFIE', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY'], label: 'Selfie', group: 'STANDARD' });
 
         // CRIMINAL CHECK ENGINE
         const isCriminalCheckMandatory = provider.ratingAvg < 3.5 || provider.performance.complaintsCount > 0 || provider.criminalCheckRequired;
@@ -67,32 +72,34 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
             type: 'CRIMINAL_CHECK',
             isRequired: isCriminalCheckMandatory,
             allowedTypes: ['GALLERY', 'PDF'],
-            label: isCriminalCheckMandatory ? 'Criminal Check (Mandatory)' : 'Criminal Check (Optional)'
+            label: isCriminalCheckMandatory ? 'Criminal Check (Mandatory)' : 'Criminal Check (Optional)',
+            group: 'STANDARD'
         });
 
-        // PROFESSIONAL
-        if (levelOrder.indexOf(targetLevel) >= levelOrder.indexOf(VerificationLevel.PROFESSIONAL)) {
-            requirements.push({ type: 'CERTIFICATION', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Certification' });
-            requirements.push({ type: 'EXPERIENCE_VERIFICATION', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Experience Verification' });
+        // --- PROFESSIONAL ---
+        if (activeLevels.has(VerificationLevel.PROFESSIONAL)) {
+            requirements.push({ type: 'CERTIFICATION', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Certification', group: 'PROFESSIONAL' });
+            requirements.push({ type: 'EXPERIENCE_VERIFICATION', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Experience Verification', group: 'PROFESSIONAL' });
         }
 
-        // TRADE
-        if (levelOrder.indexOf(targetLevel) >= levelOrder.indexOf(VerificationLevel.TRADE)) {
-            requirements.push({ type: 'TRADE_LICENSE', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Trade Licence' });
-            requirements.push({ type: 'TOOL_VERIFICATION', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY'], label: 'Tool Verification' });
+        // --- TRADE ---
+        if (activeLevels.has(VerificationLevel.TRADE)) {
+            requirements.push({ type: 'TRADE_LICENSE', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Trade Licence', group: 'TRADE' });
+            requirements.push({ type: 'TOOL_VERIFICATION', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY'], label: 'Tool Verification', group: 'TRADE' });
         }
 
-        // HIGH VETTING
-        if (levelOrder.indexOf(targetLevel) >= levelOrder.indexOf(VerificationLevel.HIGH_VETTING)) {
-            requirements.push({ type: 'INTERVIEW', isRequired: true, allowedTypes: ['NONE'], label: 'Interview' });
-            requirements.push({ type: 'REFERENCES', isRequired: true, allowedTypes: ['NONE'], label: 'References' });
+        // --- HIGH VETTING ---
+        if (activeLevels.has(VerificationLevel.HIGH_VETTING)) {
+            requirements.push({ type: 'INTERVIEW', isRequired: true, allowedTypes: ['NONE'], label: 'Interview', group: 'HIGH_VETTING' });
+            requirements.push({ type: 'REFERENCES', isRequired: true, allowedTypes: ['NONE'], label: 'References', group: 'HIGH_VETTING' });
         }
 
         res.status(200).json({
             success: true,
             data: {
                 currentLevel: provider.verificationLevel,
-                targetLevel,
+                verificationStatus: provider.verificationStatus,
+                activeLevels: Array.from(activeLevels),
                 requirements
             }
         });

@@ -67,10 +67,30 @@ export const getPublicServices = async (req: Request, res: Response) => {
 
         const services = await Service.find(query).sort({ category: 1, code: 1 });
 
+        // RC-2 Dynamic Grouping logic
+        const grouped: any = {
+            'STANDARD': { label: 'STANDARD', requirements: '(ID, Selfie)', services: [] },
+            'PROFESSIONAL': { label: 'PROFESSIONAL', requirements: '(ID, Selfie, Certification, Experience)', services: [] },
+            'TRADE': { label: 'TRADE', requirements: '(ID, Selfie, Trade Licence, Tool Verification)', services: [] },
+            'HIGH_VETTING': { label: 'HIGH VETTING', requirements: '(ID, Selfie, References, Interview)', services: [] }
+        };
+
+        for (const s of services) {
+            let level: string = s.verificationLevel;
+            // SPEC Category Mappings
+            if (s.category === ServiceCategory.CSS) level = VerificationLevel.HIGH_VETTING;
+            if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
+                if (level !== VerificationLevel.HIGH_VETTING) level = VerificationLevel.TRADE;
+            }
+            if (grouped[level]) grouped[level].services.push(s);
+            else grouped['STANDARD'].services.push(s);
+        }
+
         res.status(200).json({
             success: true,
             data: services,
-            services: services // Dual key
+            services: services, // Dual key
+            grouped: Object.values(grouped).filter((g: any) => g.services.length > 0)
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch services', error });
