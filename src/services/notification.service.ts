@@ -6,9 +6,10 @@ import NotificationLog from '../models/Notification';
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     try {
         admin.initializeApp({
-            credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
+            credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'piecejob-b596e.firebasestorage.app'
         });
-        console.log('Firebase Admin Initialized');
+        console.log('Firebase Admin Initialized with Storage');
     } catch (error) {
         console.error('Firebase Initialization Failed:', error);
     }

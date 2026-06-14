@@ -3,6 +3,7 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 import Provider from '../../models/Provider';
 import VerificationRequest from '../../models/VerificationRequest';
 import * as verificationService from '../../services/verification.service';
+import * as storageService from '../../services/storage.service';
 
 export const listQueue = async (req: AuthRequest, res: Response) => {
     try {
@@ -36,7 +37,16 @@ export const getRequestDetail = async (req: AuthRequest, res: Response) => {
 
         if (!request) return res.status(404).json({ success: false, message: 'Request not found' });
 
-        res.status(200).json({ success: true, request });
+        // Generate Signed URLs for all documents
+        const docsWithUrls = await Promise.all(request.documents.map(async (doc: any) => {
+            const signedUrl = await storageService.getSignedUrl(doc.url);
+            return { ...doc.toObject(), url: signedUrl };
+        }));
+
+        const result: any = request.toObject();
+        result.documents = docsWithUrls;
+
+        res.status(200).json({ success: true, request: result });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch details', error });
     }

@@ -27,5 +27,6 @@ router.post('/verification/submit', authenticate, authorize([UserRole.PROVIDER])
 router.patch('/status', authenticate, authorize([UserRole.PROVIDER]), providerController.updateStatus);
 router.post('/heartbeat', authenticate, authorize([UserRole.PROVIDER]), providerController.handleHeartbeat);
 router.post('/documents', authenticate, authorize([UserRole.PROVIDER]), providerController.uploadDocument);
+router.post('/upload-file', authenticate, authorize([UserRole.PROVIDER]), providerController.uploadFile);
 
 export default router;

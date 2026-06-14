@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User';
 import * as auditService from '../services/audit.service';
+import * as storageService from '../services/storage.service';
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -9,7 +10,16 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    res.status(200).json({ success: true, user });
+
+    const userData = user.toObject();
+    if (userData.profilePhoto) {
+        userData.profilePhoto = await storageService.getSignedUrl(userData.profilePhoto);
+    }
+    if (userData.pendingAddress?.proofOfResidenceUrl) {
+        userData.pendingAddress.proofOfResidenceUrl = await storageService.getSignedUrl(userData.pendingAddress.proofOfResidenceUrl);
+    }
+
+    res.status(200).json({ success: true, user: userData });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch profile', error });
   }

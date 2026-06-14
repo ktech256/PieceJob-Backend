@@ -8,6 +8,7 @@ import Job, { JobStatus } from '../models/Job';
 import Ledger, { TransactionType } from '../models/Ledger';
 import mongoose from 'mongoose';
 import * as presenceService from '../services/provider-presence.service';
+import * as storageService from '../services/storage.service';
 
 export const getProviderProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -16,8 +17,19 @@ export const getProviderProfile = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Provider profile not found' });
     }
 
-    // Ensure dob is formatted as string if needed, or let client handle it
-    const profile = provider.toObject();
+    const profile: any = provider.toObject();
+
+    // Signed URLs for docs in profile
+    if (profile.userId?.profilePhoto) {
+        profile.userId.profilePhoto = await storageService.getSignedUrl(profile.userId.profilePhoto);
+    }
+
+    if (profile.documents) {
+        profile.documents = await Promise.all(profile.documents.map(async (d: any) => ({
+            ...d,
+            url: await storageService.getSignedUrl(d.url)
+        })));
+    }
 
     res.status(200).json({
       success: true,
@@ -133,6 +145,18 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
     res.status(200).json({ success: true, message: 'Document uploaded', provider });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Document upload failed', error });
+  }
+};
+
+export const uploadFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const { base64, mimeType, folder } = req.body;
+    if (!base64) return res.status(400).json({ success: false, message: 'No file data provided' });
+
+    const url = await storageService.uploadBase64File(base64, folder || 'documents', mimeType || 'image/jpeg');
+    res.status(200).json({ success: true, url });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

@@ -3,6 +3,7 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 import Provider, { VerificationStatus } from '../../models/Provider';
 import User from '../../models/User';
 import * as auditService from '../../services/audit.service';
+import * as storageService from '../../services/storage.service';
 
 export const getProvidersMonitor = async (req: AuthRequest, res: Response) => {
     try {
@@ -79,7 +80,17 @@ export const listPendingAddressChanges = async (req: AuthRequest, res: Response)
         if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
 
         const users = await User.find(query).select('firstName lastName email pendingAddress countryCode');
-        res.status(200).json({ success: true, queue: users });
+
+        // Signed URLs for proof of residence
+        const queue = await Promise.all(users.map(async (u) => {
+            const userObj: any = u.toObject();
+            if (userObj.pendingAddress?.proofOfResidenceUrl) {
+                userObj.pendingAddress.proofOfResidenceUrl = await storageService.getSignedUrl(userObj.pendingAddress.proofOfResidenceUrl);
+            }
+            return userObj;
+        }));
+
+        res.status(200).json({ success: true, queue });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch address queue', error });
     }
@@ -95,7 +106,16 @@ export const listPendingBankDetails = async (req: AuthRequest, res: Response) =>
             .populate('userId', 'firstName lastName email phoneNumber')
             .select('bankDetails userId countryCode');
 
-        res.status(200).json({ success: true, queue: providers });
+        // Signed URLs for bank confirmation
+        const queue = await Promise.all(providers.map(async (p) => {
+            const provObj: any = p.toObject();
+            if (provObj.bankDetails?.bankConfirmationUrl) {
+                provObj.bankDetails.bankConfirmationUrl = await storageService.getSignedUrl(provObj.bankDetails.bankConfirmationUrl);
+            }
+            return provObj;
+        }));
+
+        res.status(200).json({ success: true, queue });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch banking queue', error });
     }
