@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
-import Provider, { VerificationStatus } from '../../models/Provider';
+import Provider from '../../models/Provider';
 import VerificationRequest from '../../models/VerificationRequest';
 import * as verificationService from '../../services/verification.service';
 
@@ -64,7 +64,7 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
 
         const getDocStatus = (type: string) => {
             const perm = permanentDocs.find((d: any) => d.type === type);
-            if (perm && perm.status === VerificationStatus.APPROVED) return 'VERIFIED';
+            if (perm && perm.status === 'APPROVED') return 'VERIFIED';
 
             const latest = latestRequest?.documents?.find((d: any) => d.type === type);
             if (latest) {
