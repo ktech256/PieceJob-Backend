@@ -16,13 +16,13 @@ export const submitVerification = async (
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        // 1. Check for existing pending request of same type
+        // 1. Get the latest request for this level to check for locks and merge documents
         const latestRequest = await VerificationRequest.findOne({
             providerId,
             type
         }).sort({ submittedAt: -1 }).session(session);
 
-        console.log(`[VERIFY_LOCK] Provider: ${providerId}, Level: ${type}, Latest Status: ${latestRequest?.status}`);
+        console.log(`[VERIFY_SUBMIT] Provider: ${providerId}, Level: ${type}, Incoming Docs: ${documents.length}`);
 
         if (latestRequest &&
            (latestRequest.status === VerificationRequestStatus.PENDING ||
@@ -31,32 +31,55 @@ export const submitVerification = async (
             const hasRejectedDocs = latestRequest.documents.some(d => d.status === 'REJECTED');
 
             if (!hasRejectedDocs) {
-                console.error(`[VERIFY_LOCK] Submission blocked. Active request ${latestRequest._id} is in status ${latestRequest.status}`);
+                console.error(`[VERIFY_LOCK] Submission blocked. Pure pending request ${latestRequest._id} exists.`);
                 throw new Error(`A verification request for ${type} is already in progress.`);
             } else {
-                 console.log(`[VERIFY_LOCK] Allowing resubmission for ${providerId} because existing request has rejections.`);
+                 console.log(`[VERIFY_LOCK] Superseding request ${latestRequest._id} because it has rejected documents.`);
+                 // Unlock the flow by marking the old request as superseded/resubmitted
+                 latestRequest.status = VerificationRequestStatus.RESUBMITTED;
+                 await latestRequest.save({ session });
             }
         }
 
         const provider = await Provider.findById(providerId).session(session);
         if (!provider) throw new Error('Provider not found');
 
-        // Merge incoming documents with existing approved ones to ensure a complete set for review
+        // --- SMART MERGE LOGIC ---
+        // Ensure the new request is a COMPLETE set for the level.
+        // If a document type is missing from the incoming set, pull it from the latest request or profile.
+
         const finalDocs = [...documents.map(d => ({
             ...d,
             status: d.status === 'APPROVED' ? 'APPROVED' : 'PENDING'
         }))];
 
-        provider.documents.forEach(permDoc => {
-            if (permDoc.status === 'APPROVED') {
-                const alreadyInIncoming = finalDocs.find(d => d.type === permDoc.type);
-                if (!alreadyInIncoming) {
+        const existingDocTypes = new Set(finalDocs.map(d => d.type));
+
+        // Pull missing docs from latest request to maintain a full set for the admin
+        if (latestRequest) {
+            latestRequest.documents.forEach(prevDoc => {
+                if (!existingDocTypes.has(prevDoc.type)) {
                     finalDocs.push({
-                        type: permDoc.type,
-                        url: permDoc.url,
-                        status: 'APPROVED'
+                        type: prevDoc.type,
+                        url: prevDoc.url,
+                        status: prevDoc.status as any,
+                        rejectionReason: prevDoc.rejectionReason
                     });
+                    existingDocTypes.add(prevDoc.type);
                 }
+            });
+        }
+
+        // Also check permanent records for anything still missing (e.g. legacy approvals)
+        provider.documents.forEach(permDoc => {
+            if (!existingDocTypes.has(permDoc.type)) {
+                finalDocs.push({
+                    type: permDoc.type,
+                    url: permDoc.url,
+                    status: permDoc.status as any,
+                    rejectionReason: permDoc.rejectionReason
+                });
+                existingDocTypes.add(permDoc.type);
             }
         });
 
