@@ -3,8 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const uploadBase64File = async (base64Data: string, folder: string, mimeType: string): Promise<string> => {
     try {
-        console.log(`[STORAGE_TRACE] 5. Firebase upload start. Folder: ${folder}, Data Length: ${base64Data.length}`);
         const bucket = admin.storage().bucket();
+        console.log(`[STORAGE_TRACE] 5. Firebase upload start. Bucket: ${bucket.name}, Folder: ${folder}, Data Length: ${base64Data.length}`);
 
         let ext = 'bin';
         if (mimeType.includes('pdf')) ext = 'pdf';
