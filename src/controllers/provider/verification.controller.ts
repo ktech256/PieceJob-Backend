@@ -34,14 +34,16 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         const combinedServiceCodes = [...new Set([...provider.servicesOffered, ...provider.pendingServices])];
         const services = await Service.find({ code: { $in: combinedServiceCodes } });
 
-        // 1. Determine Activated Levels
+        // 1. Determine Activated Levels (Strictly Cumulative Hierarchy)
         const levelOrder = [VerificationLevel.STANDARD, VerificationLevel.PROFESSIONAL, VerificationLevel.TRADE, VerificationLevel.HIGH_VETTING];
         const activeLevels = new Set([VerificationLevel.STANDARD]);
+
+        let highestLevelIndex = 0;
 
         for (const s of services) {
             let level = s.verificationLevel;
 
-            // SPEC Category Mappings
+            // SPEC Category Mappings for dynamic level escalation
             if (s.category === ServiceCategory.CSS) level = VerificationLevel.HIGH_VETTING;
             if ([ServiceCategory.HMS, ServiceCategory.OPS, ServiceCategory.TSS].includes(s.category)) {
                 if (levelOrder.indexOf(level) < levelOrder.indexOf(VerificationLevel.TRADE)) {
@@ -49,14 +51,13 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
                 }
             }
 
-            if (level === VerificationLevel.HIGH_VETTING) {
-                // High Vetting is strictly cumulative per spec
-                activeLevels.add(VerificationLevel.PROFESSIONAL);
-                activeLevels.add(VerificationLevel.TRADE);
-                activeLevels.add(VerificationLevel.HIGH_VETTING);
-            } else {
-                activeLevels.add(level);
-            }
+            const currentIdx = levelOrder.indexOf(level);
+            if (currentIdx > highestLevelIndex) highestLevelIndex = currentIdx;
+        }
+
+        // Fill additive hierarchy
+        for (let i = 0; i <= highestLevelIndex; i++) {
+            activeLevels.add(levelOrder[i]);
         }
 
         // 2. Build Document List dynamically based on active levels

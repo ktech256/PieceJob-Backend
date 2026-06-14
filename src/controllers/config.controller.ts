@@ -67,12 +67,28 @@ export const getPublicServices = async (req: Request, res: Response) => {
 
         const services = await Service.find(query).sort({ category: 1, code: 1 });
 
-        // RC-2 Dynamic Grouping logic
+        // RC-2 Dynamic Grouping logic (Strictly Additive per Refinement Spec)
         const grouped: any = {
-            'STANDARD': { label: 'STANDARD', requirements: '(ID, Selfie)', services: [] },
-            'PROFESSIONAL': { label: 'PROFESSIONAL', requirements: '(ID, Selfie, Certification, Experience)', services: [] },
-            'TRADE': { label: 'TRADE', requirements: '(ID, Selfie, Trade Licence, Tool Verification)', services: [] },
-            'HIGH_VETTING': { label: 'HIGH VETTING', requirements: '(ID, Selfie, References, Interview)', services: [] }
+            'STANDARD': {
+                label: 'STANDARD',
+                requirements: '(ID, Selfie)',
+                services: []
+            },
+            'PROFESSIONAL': {
+                label: 'PROFESSIONAL',
+                requirements: '(ID, Selfie, Certification, Experience Verification)',
+                services: []
+            },
+            'TRADE': {
+                label: 'TRADE',
+                requirements: '(ID, Selfie, Certification, Experience Verification, Trade Licence, Tool Verification)',
+                services: []
+            },
+            'HIGH_VETTING': {
+                label: 'HIGH VETTING',
+                requirements: '(ID, Selfie, Certification, Experience Verification, Trade Licence, Tool Verification, References, Interview)',
+                services: []
+            }
         };
 
         for (const s of services) {
@@ -88,9 +104,10 @@ export const getPublicServices = async (req: Request, res: Response) => {
 
         res.status(200).json({
             success: true,
-            data: services,
-            services: services, // Dual key
-            grouped: Object.values(grouped).filter((g: any) => g.services.length > 0)
+            data: {
+                services: services,
+                grouped: Object.values(grouped).filter((g: any) => g.services.length > 0)
+            }
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch services', error });

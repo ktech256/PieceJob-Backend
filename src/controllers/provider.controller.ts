@@ -220,25 +220,23 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
             } else {
                 pending.push(s.code);
 
-                // Build requirements for pending services
-                let requiredDocs: string[] = [];
-                switch(effectiveServLevel) {
-                    case 'PROFESSIONAL':
-                        requiredDocs = ['GOVERNMENT_ID', 'SELFIE', 'PROFESSIONAL_CERT'];
-                        break;
-                    case 'TRADE':
-                        requiredDocs = ['TRADE_LICENSE', 'EQUIPMENT_PROOF', 'EXPERIENCE_DOC'];
-                        break;
-                    case 'HIGH_VETTING':
-                        requiredDocs = ['CRIMINAL_CHECK', 'DETAILED_CV', 'REFERENCE_LETTER'];
-                        break;
-                    default:
-                        requiredDocs = ['GOVERNMENT_ID', 'SELFIE'];
+                // Build requirements for pending services (Strictly Additive)
+                let requiredDocs: string[] = ['GOVERNMENT_ID', 'SELFIE'];
+
+                // Additive logic for preview
+                if (levels.indexOf(effectiveServLevel) >= levels.indexOf('PROFESSIONAL')) {
+                    requiredDocs.push('PROFESSIONAL_CERT', 'EXPERIENCE_DOC');
+                }
+                if (levels.indexOf(effectiveServLevel) >= levels.indexOf('TRADE')) {
+                    requiredDocs.push('TRADE_LICENSE', 'EQUIPMENT_PROOF');
+                }
+                if (levels.indexOf(effectiveServLevel) >= levels.indexOf('HIGH_VETTING')) {
+                    requiredDocs.push('CRIMINAL_CHECK', 'DETAILED_CV', 'REFERENCE_LETTER');
                 }
 
                 requirements[s.code] = {
                     level: effectiveServLevel,
-                    docs: requiredDocs
+                    docs: [...new Set(requiredDocs)]
                 };
             }
         }
