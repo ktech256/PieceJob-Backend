@@ -18,6 +18,7 @@ import corporateRoutes from './routes/corporate.routes';
 import supportRoutes from './routes/support.routes';
 import analyticsRoutes from './routes/v1/analytics.routes';
 
+// PieceJob Backend - V3.0 Refinement
 const app = express();
 
 app.use(helmet());
