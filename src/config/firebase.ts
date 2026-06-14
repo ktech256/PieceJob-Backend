@@ -10,21 +10,27 @@ const initializeFirebase = () => {
     }
 
     try {
-        if (admin.apps.length === 0) {
-            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            // FORCED MIGRATION: Ensuring PieceJob uses TowMech bucket despite any environment variables
-            const bucketName = 'towmech-dc8c4.firebasestorage.app';
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        // FORCED MIGRATION: Ensuring PieceJob uses TowMech bucket despite any environment variables
+        const bucketName = 'towmech-dc8c4.firebasestorage.app';
 
-            console.log(`[FIREBASE_INIT] FORCED STORAGE MIGRATION`);
-            console.log(`[FIREBASE_INIT] Project: ${serviceAccount.project_id}`);
-            console.log(`[FIREBASE_INIT] Bucket: ${bucketName}`);
-
+        // FORCE RESET: Ensure we use the TowMech bucket even if another module initialized first
+        if (admin.apps.length > 0) {
+            console.log(`[FIREBASE_INIT] Re-initializing Firebase to force bucket: ${bucketName}`);
+            Promise.all(admin.apps.map(app => app?.delete())).then(() => {
+                admin.initializeApp({
+                    credential: admin.credential.cert(serviceAccount),
+                    storageBucket: bucketName
+                });
+            });
+        } else {
+            console.log(`[FIREBASE_INIT] Project: ${serviceAccount.project_id}, Bucket: ${bucketName}`);
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount),
                 storageBucket: bucketName
             });
-            console.log('✅ Firebase Admin Initialized');
         }
+        console.log('✅ Firebase Admin Initialized (TowMech Bucket Forced)');
     } catch (error: any) {
         console.error('❌ Firebase Initialization Failed:', error.message);
     }
