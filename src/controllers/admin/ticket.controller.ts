@@ -162,7 +162,10 @@ export const resolveTicket = async (req: AuthRequest, res: Response) => {
         if (isComplaintVerified && ticket.role === 'PROVIDER') {
             await Provider.findOneAndUpdate(
                 { userId: ticket.userId },
-                { criminalCheckRequired: true }
+                {
+                    criminalCheckRequired: true,
+                    $inc: { 'performance.complaintsCount': 1 }
+                }
             );
             console.log(`[COMPLIANCE] Criminal check mandated for provider ${ticket.userId} due to verified complaint.`);
         }

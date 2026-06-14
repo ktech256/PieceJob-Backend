@@ -30,7 +30,9 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        const services = await Service.find({ code: { $in: provider.servicesOffered } });
+        // RC-2: Consider both active and pending services for dynamic requirement generation
+        const combinedServiceCodes = [...new Set([...provider.servicesOffered, ...provider.pendingServices])];
+        const services = await Service.find({ code: { $in: combinedServiceCodes } });
 
         // 1. Determine Target Level based on highest service requirement
         let targetLevel = VerificationLevel.STANDARD;

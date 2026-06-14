@@ -141,9 +141,15 @@ export const getMyServices = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        // Populate both approved and pending services
-        const approved = await Service.find({ code: { $in: provider.servicesOffered } });
-        const pending = await Service.find({ code: { $in: provider.pendingServices } });
+        // Populate both approved and pending services, isolating by country/global
+        const approved = await Service.find({
+            code: { $in: provider.servicesOffered },
+            $or: [{ countryCode: provider.countryCode }, { countryCode: 'GLOBAL' }]
+        });
+        const pending = await Service.find({
+            code: { $in: provider.pendingServices },
+            $or: [{ countryCode: provider.countryCode }, { countryCode: 'GLOBAL' }]
+        });
 
         res.status(200).json({
             success: true,
@@ -165,7 +171,10 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        const services = await Service.find({ code: { $in: serviceCodes } });
+        const services = await Service.find({
+            code: { $in: serviceCodes },
+            $or: [{ countryCode: provider.countryCode }, { countryCode: 'GLOBAL' }]
+        });
 
         const approved: string[] = [];
         const pending: string[] = [];
@@ -173,17 +182,20 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
 
         for (const s of services) {
             // Gender Check (RC-2 Rule Alignment - Strict Enforcement)
-            if (s.genderRule === 'MEN_ONLY' && provider.gender !== 'M') {
-                return res.status(403).json({
-                    success: false,
-                    message: `Service '${s.name}' is currently unavailable for your provider profile.`
-                });
-            }
-            if (s.genderRule === 'WOMEN_ONLY' && provider.gender !== 'F') {
-                return res.status(403).json({
-                    success: false,
-                    message: `Service '${s.name}' is currently unavailable for your provider profile.`
-                });
+            // Provider Gender B (Both) can take any service
+            if (provider.gender !== 'B') {
+                if (s.genderRule === 'MEN_ONLY' && provider.gender === 'F') {
+                    return res.status(403).json({
+                        success: false,
+                        message: `Service '${s.name}' is for Male providers only.`
+                    });
+                }
+                if (s.genderRule === 'WOMEN_ONLY' && provider.gender === 'M') {
+                    return res.status(403).json({
+                        success: false,
+                        message: `Service '${s.name}' is for Female providers only.`
+                    });
+                }
             }
 
             // Level Check
