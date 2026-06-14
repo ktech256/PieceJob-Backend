@@ -3,6 +3,7 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 import SupportTicket, { TicketStatus, TicketType } from '../../models/SupportTicket';
 import Job from '../../models/Job';
 import Chat from '../../models/Chat';
+import Provider from '../../models/Provider';
 import * as settlementService from '../../services/dispute-settlement.service';
 import * as auditService from '../../services/audit.service';
 
