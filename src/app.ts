@@ -18,6 +18,7 @@ import corporateRoutes from './routes/corporate.routes';
 import supportRoutes from './routes/support.routes';
 import analyticsRoutes from './routes/v1/analytics.routes';
 import testRoutes from './routes/test.routes';
+import admin from 'firebase-admin';
 
 // PieceJob Backend - V3.0 Refinement
 const app = express();
@@ -58,6 +59,22 @@ app.get('/health', async (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED';
   const dbName = mongoose.connection.db?.databaseName;
 
+  let firebaseAudit = {};
+  try {
+      if (admin.apps.length > 0) {
+          const fbApp = admin.app();
+          firebaseAudit = {
+              projectId: fbApp.options.projectId,
+              storageBucket: fbApp.options.storageBucket,
+              appsCount: admin.apps.length
+          };
+      } else {
+          firebaseAudit = { status: 'NOT_INITIALIZED' };
+      }
+  } catch (e: any) {
+      firebaseAudit = { error: e.message };
+  }
+
   // Quick count audit
   const countryCount = await mongoose.model('Country').countDocuments();
   const serviceCount = await mongoose.model('Service').countDocuments();
@@ -71,6 +88,7 @@ app.get('/health', async (req, res) => {
           countries: countryCount,
           services: serviceCount
       },
+      firebase: firebaseAudit,
       timestamp: new Date().toISOString()
   });
 });
