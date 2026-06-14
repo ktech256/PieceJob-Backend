@@ -150,23 +150,25 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
 
 export const uploadFile = async (req: AuthRequest, res: Response) => {
   try {
-    console.log(`[UPLOAD] Request received from user ${req.user?.userId}. Folder: ${req.body.folder}, Mime: ${req.body.mimeType}`);
     const { base64, mimeType, folder } = req.body;
+    console.log(`[UPLOAD_TRACE] 1. Request Received. User: ${req.user?.userId}, Folder: ${folder}, Mime: ${mimeType}`);
 
     if (!base64) {
-        console.error('[UPLOAD] Error: No base64 data');
+        console.error('[UPLOAD_TRACE] 2. FAIL: No base64 data');
         return res.status(400).json({ success: false, message: 'No file data provided' });
     }
+    console.log(`[UPLOAD_TRACE] 3. Base64 length: ${base64.length}`);
 
     // Clean base64 if it has prefix
     const cleanBase64 = base64.includes(';base64,') ? base64.split(';base64,')[1] : base64;
+    console.log('[UPLOAD_TRACE] 4. Base64 cleaned. Starting Storage Service call.');
 
     const path = await storageService.uploadBase64File(cleanBase64, folder || 'documents', mimeType || 'image/jpeg');
-    console.log(`[UPLOAD] Success: File stored at ${path}`);
+    console.log(`[UPLOAD_TRACE] 7. Storage Service Success. Path: ${path}`);
 
     res.status(200).json({ success: true, url: path });
   } catch (error: any) {
-    console.error('[UPLOAD] Exception:', error.message);
+    console.error('[UPLOAD_TRACE] ERROR:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };

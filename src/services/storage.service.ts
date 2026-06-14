@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const uploadBase64File = async (base64Data: string, folder: string, mimeType: string): Promise<string> => {
     try {
+        console.log(`[STORAGE_TRACE] 5. Firebase upload start. Folder: ${folder}, Data Length: ${base64Data.length}`);
         const bucket = admin.storage().bucket();
 
         let ext = 'bin';
@@ -19,6 +20,7 @@ export const uploadBase64File = async (base64Data: string, folder: string, mimeT
             public: false
         });
 
+        console.log(`[STORAGE_TRACE] 6. Firebase upload success. Path: ${filename}`);
         // Return the permanent bucket path
         return filename;
     } catch (error) {
