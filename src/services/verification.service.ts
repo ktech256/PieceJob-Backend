@@ -22,7 +22,12 @@ export const submitVerification = async (
             type
         }).sort({ submittedAt: -1 }).session(session);
 
-        if (latestRequest && (latestRequest.status === VerificationRequestStatus.PENDING || latestRequest.status === VerificationRequestStatus.UNDER_REVIEW)) {
+        console.log(`[VERIFY_LOCK] Provider: ${providerId}, Level: ${type}, Latest Status: ${latestRequest?.status}`);
+
+        if (latestRequest &&
+           (latestRequest.status === VerificationRequestStatus.PENDING ||
+            latestRequest.status === VerificationRequestStatus.UNDER_REVIEW)) {
+            console.error(`[VERIFY_LOCK] Submission blocked. Active request ${latestRequest._id} is in status ${latestRequest.status}`);
             throw new Error(`A verification request for ${type} is already in progress.`);
         }
 
