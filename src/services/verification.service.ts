@@ -17,13 +17,14 @@ export const submitVerification = async (
     session.startTransaction();
     try {
         // 1. Check for existing pending request of same type
-        const existing = await VerificationRequest.findOne({
+        const latestRequest = await VerificationRequest.findOne({
             providerId,
-            type,
-            status: { $in: [VerificationRequestStatus.PENDING, VerificationRequestStatus.UNDER_REVIEW] }
-        }).session(session);
+            type
+        }).sort({ submittedAt: -1 }).session(session);
 
-        if (existing) throw new Error(`A verification request for ${type} is already in progress.`);
+        if (latestRequest && (latestRequest.status === VerificationRequestStatus.PENDING || latestRequest.status === VerificationRequestStatus.UNDER_REVIEW)) {
+            throw new Error(`A verification request for ${type} is already in progress.`);
+        }
 
         const provider = await Provider.findById(providerId).session(session);
         if (!provider) throw new Error('Provider not found');
@@ -174,11 +175,11 @@ export const reviewRequest = async (
             }
         } else if (status === VerificationRequestStatus.REJECTED || status === VerificationRequestStatus.ACTION_REQUIRED) {
              await Provider.findByIdAndUpdate(request.providerId, {
-                verificationStatus: status === VerificationRequestStatus.REJECTED ? VerificationStatus.REJECTED : 'PENDING'
+                verificationStatus: status === VerificationRequestStatus.REJECTED ? VerificationStatus.REJECTED : VerificationStatus.ACTION_REQUIRED
             }).session(session);
         } else if (status === VerificationRequestStatus.RESUBMITTED) {
             await Provider.findByIdAndUpdate(request.providerId, {
-                verificationStatus: 'REJECTED' // Or a new state if needed, but REJECTED works for flow
+                verificationStatus: 'PENDING'
             }).session(session);
         }
 

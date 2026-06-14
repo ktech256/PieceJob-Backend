@@ -5,7 +5,8 @@ import { ProviderLifecycleState } from './ProviderLifecycleLog';
 export enum VerificationStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED'
+  REJECTED = 'REJECTED',
+  ACTION_REQUIRED = 'ACTION_REQUIRED'
 }
 
 export enum ProviderTier {
