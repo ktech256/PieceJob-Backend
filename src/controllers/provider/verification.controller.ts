@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
-import Provider from '../../models/Provider';
+import Provider, { VerificationStatus } from '../../models/Provider';
 import VerificationRequest from '../../models/VerificationRequest';
 import * as verificationService from '../../services/verification.service';
 
@@ -29,6 +29,9 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const latestRequest = await VerificationRequest.findOne({ providerId: provider._id })
+            .sort({ submittedAt: -1 });
 
         // Consider both active and pending services for dynamic requirement generation
         const combinedServiceCodes = [...new Set([...provider.servicesOffered, ...provider.pendingServices])];
@@ -60,10 +63,10 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         const permanentDocs = provider.documents || [];
 
         const getDocStatus = (type: string) => {
-            const perm = permanentDocs.find(d => d.type === type);
+            const perm = permanentDocs.find((d: any) => d.type === type);
             if (perm && perm.status === VerificationStatus.APPROVED) return 'VERIFIED';
 
-            const latest = status?.latestRequest?.documents?.find(d => d.type === type);
+            const latest = latestRequest?.documents?.find((d: any) => d.type === type);
             if (latest) {
                 if (latest.status === 'APPROVED') return 'VERIFIED';
                 if (latest.status === 'REJECTED') return 'REJECTED';
@@ -73,7 +76,7 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         };
 
         const getRejectionReason = (type: string) => {
-            const latest = status?.latestRequest?.documents?.find(d => d.type === type);
+            const latest = latestRequest?.documents?.find((d: any) => d.type === type);
             return latest?.rejectionReason;
         };
 
