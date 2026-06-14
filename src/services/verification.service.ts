@@ -85,13 +85,28 @@ export const reviewRequest = async (
         }
 
         if (documentStatusUpdates) {
+            const provider = await Provider.findById(request.providerId).session(session);
+
             documentStatusUpdates.forEach(update => {
                 const doc = (request.documents as any).id(update.docId);
                 if (doc) {
                     doc.status = update.status;
                     doc.rejectionReason = update.reason;
+
+                    if (update.status === 'APPROVED' && provider) {
+                        // Sync to permanent records
+                        const existingIdx = provider.documents.findIndex(d => d.type === doc.type);
+                        if (existingIdx !== -1) {
+                            provider.documents[existingIdx].url = doc.url;
+                            provider.documents[existingIdx].status = VerificationStatus.APPROVED;
+                        } else {
+                            provider.documents.push({ type: doc.type, url: doc.url, status: VerificationStatus.APPROVED });
+                        }
+                    }
                 }
             });
+
+            if (provider) await provider.save({ session });
         }
 
         await request.save({ session });

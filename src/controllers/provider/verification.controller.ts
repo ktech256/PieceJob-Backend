@@ -54,38 +54,127 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         }
 
         // 2. Build Document List dynamically based on active levels
-        const requirements: { type: string, isRequired: boolean, allowedTypes: string[], label: string, group: string }[] = [];
+        const requirements: { type: string, isRequired: boolean, allowedTypes: string[], label: string, group: string, status: string, rejectionReason?: string }[] = [];
+
+        // Fetch provider's permanent document records
+        const permanentDocs = provider.documents || [];
+
+        const getDocStatus = (type: string) => {
+            const perm = permanentDocs.find(d => d.type === type);
+            if (perm && perm.status === VerificationStatus.APPROVED) return 'VERIFIED';
+
+            const latest = status?.latestRequest?.documents?.find(d => d.type === type);
+            if (latest) {
+                if (latest.status === 'APPROVED') return 'VERIFIED';
+                if (latest.status === 'REJECTED') return 'REJECTED';
+                return 'PENDING REVIEW';
+            }
+            return 'NOT UPLOADED';
+        };
+
+        const getRejectionReason = (type: string) => {
+            const latest = status?.latestRequest?.documents?.find(d => d.type === type);
+            return latest?.rejectionReason;
+        };
 
         // --- STANDARD ---
-        requirements.push({ type: 'GOVERNMENT_ID', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY', 'PDF'], label: 'Government ID', group: 'STANDARD' });
-        requirements.push({ type: 'SELFIE', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY'], label: 'Selfie', group: 'STANDARD' });
+        requirements.push({
+            type: 'GOVERNMENT_ID',
+            isRequired: true,
+            allowedTypes: ['CAMERA', 'GALLERY', 'PDF'],
+            label: 'Government ID',
+            group: 'STANDARD',
+            status: getDocStatus('GOVERNMENT_ID'),
+            rejectionReason: getRejectionReason('GOVERNMENT_ID')
+        });
+        requirements.push({
+            type: 'SELFIE',
+            isRequired: true,
+            allowedTypes: ['CAMERA', 'GALLERY'],
+            label: 'Selfie',
+            group: 'STANDARD',
+            status: getDocStatus('SELFIE'),
+            rejectionReason: getRejectionReason('SELFIE')
+        });
 
-        // CRIMINAL CHECK ENGINE
-        const isCriminalCheckMandatory = provider.ratingAvg < 3.5 || provider.performance.complaintsCount > 0 || provider.criminalCheckRequired;
+        // CRIMINAL CHECK ENGINE (HURU)
+        // Mandatory if Professional+ OR triggered by performance/flags
+        const isProfessionalPlus = highestLevelIndex > 0;
+        const isTriggered = provider.ratingAvg < 3.5 || provider.performance.complaintsCount > 0 || provider.criminalCheckRequired;
+        const isCriminalCheckMandatory = isProfessionalPlus || isTriggered;
+
         requirements.push({
             type: 'CRIMINAL_CHECK',
             isRequired: isCriminalCheckMandatory,
             allowedTypes: ['GALLERY', 'PDF'],
             label: isCriminalCheckMandatory ? 'Criminal Check (Mandatory)' : 'Criminal Check (Optional)',
-            group: 'STANDARD'
+            group: 'STANDARD',
+            status: getDocStatus('CRIMINAL_CHECK'),
+            rejectionReason: getRejectionReason('CRIMINAL_CHECK')
         });
 
         // --- PROFESSIONAL ---
         if (activeLevels.has(VerificationLevel.PROFESSIONAL)) {
-            requirements.push({ type: 'CERTIFICATION', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Certification', group: 'PROFESSIONAL' });
-            requirements.push({ type: 'EXPERIENCE_VERIFICATION', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Experience Verification', group: 'PROFESSIONAL' });
+            requirements.push({
+                type: 'CERTIFICATION',
+                isRequired: true,
+                allowedTypes: ['GALLERY', 'PDF'],
+                label: 'Certification',
+                group: 'PROFESSIONAL',
+                status: getDocStatus('CERTIFICATION'),
+                rejectionReason: getRejectionReason('CERTIFICATION')
+            });
+            requirements.push({
+                type: 'EXPERIENCE_VERIFICATION',
+                isRequired: true,
+                allowedTypes: ['GALLERY', 'PDF'],
+                label: 'Experience Verification',
+                group: 'PROFESSIONAL',
+                status: getDocStatus('EXPERIENCE_VERIFICATION'),
+                rejectionReason: getRejectionReason('EXPERIENCE_VERIFICATION')
+            });
         }
 
         // --- TRADE ---
         if (activeLevels.has(VerificationLevel.TRADE)) {
-            requirements.push({ type: 'TRADE_LICENSE', isRequired: true, allowedTypes: ['GALLERY', 'PDF'], label: 'Trade Licence', group: 'TRADE' });
-            requirements.push({ type: 'TOOL_VERIFICATION', isRequired: true, allowedTypes: ['CAMERA', 'GALLERY'], label: 'Tool Verification', group: 'TRADE' });
+            requirements.push({
+                type: 'TRADE_LICENSE',
+                isRequired: true,
+                allowedTypes: ['GALLERY', 'PDF'],
+                label: 'Trade Licence',
+                group: 'TRADE',
+                status: getDocStatus('TRADE_LICENSE'),
+                rejectionReason: getRejectionReason('TRADE_LICENSE')
+            });
+            requirements.push({
+                type: 'TOOL_VERIFICATION',
+                isRequired: true,
+                allowedTypes: ['CAMERA', 'GALLERY'],
+                label: 'Tool Verification',
+                group: 'TRADE',
+                status: getDocStatus('TOOL_VERIFICATION'),
+                rejectionReason: getRejectionReason('TOOL_VERIFICATION')
+            });
         }
 
         // --- HIGH VETTING ---
         if (activeLevels.has(VerificationLevel.HIGH_VETTING)) {
-            requirements.push({ type: 'INTERVIEW', isRequired: true, allowedTypes: ['NONE'], label: 'Interview', group: 'HIGH_VETTING' });
-            requirements.push({ type: 'REFERENCES', isRequired: true, allowedTypes: ['NONE'], label: 'References', group: 'HIGH_VETTING' });
+            requirements.push({
+                type: 'INTERVIEW',
+                isRequired: true,
+                allowedTypes: ['NONE'],
+                label: 'Interview',
+                group: 'HIGH_VETTING',
+                status: getDocStatus('INTERVIEW')
+            });
+            requirements.push({
+                type: 'REFERENCES',
+                isRequired: true,
+                allowedTypes: ['NONE'],
+                label: 'References',
+                group: 'HIGH_VETTING',
+                status: getDocStatus('REFERENCES')
+            });
         }
 
         res.status(200).json({
