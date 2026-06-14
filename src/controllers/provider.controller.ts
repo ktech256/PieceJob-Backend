@@ -1,3 +1,4 @@
+import admin from 'firebase-admin';
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Provider, { VerificationStatus } from '../models/Provider';
