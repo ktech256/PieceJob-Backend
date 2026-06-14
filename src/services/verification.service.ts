@@ -27,8 +27,15 @@ export const submitVerification = async (
         if (latestRequest &&
            (latestRequest.status === VerificationRequestStatus.PENDING ||
             latestRequest.status === VerificationRequestStatus.UNDER_REVIEW)) {
-            console.error(`[VERIFY_LOCK] Submission blocked. Active request ${latestRequest._id} is in status ${latestRequest.status}`);
-            throw new Error(`A verification request for ${type} is already in progress.`);
+
+            const hasRejectedDocs = latestRequest.documents.some(d => d.status === 'REJECTED');
+
+            if (!hasRejectedDocs) {
+                console.error(`[VERIFY_LOCK] Submission blocked. Active request ${latestRequest._id} is in status ${latestRequest.status}`);
+                throw new Error(`A verification request for ${type} is already in progress.`);
+            } else {
+                 console.log(`[VERIFY_LOCK] Allowing resubmission for ${providerId} because existing request has rejections.`);
+            }
         }
 
         const provider = await Provider.findById(providerId).session(session);
