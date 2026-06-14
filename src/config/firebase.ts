@@ -12,7 +12,7 @@ const initializeFirebase = () => {
     try {
         if (admin.apps.length === 0) {
             const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'piecejob-b596e.firebasestorage.app';
+            const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'towmech-dc8c4.firebasestorage.app';
 
             console.log(`[FIREBASE_INIT] Initializing for project: ${serviceAccount.project_id}`);
             console.log(`[FIREBASE_INIT] Using Storage Bucket: ${bucketName}`);

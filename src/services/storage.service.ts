@@ -11,7 +11,8 @@ export const uploadBase64File = async (base64Data: string, folder: string, mimeT
         else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
         else if (mimeType.includes('png')) ext = 'png';
 
-        const filename = `${folder}/${uuidv4()}_${Date.now()}.${ext}`;
+        // Prepend piecejob/ to isolate from TowMech files
+        const filename = `piecejob/${folder}/${uuidv4()}_${Date.now()}.${ext}`;
         const file = bucket.file(filename);
 
         const buffer = Buffer.from(base64Data, 'base64');
