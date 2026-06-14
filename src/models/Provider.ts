@@ -113,6 +113,7 @@ export interface IProvider extends Document {
     type: string;
     url: string;
     status: VerificationStatus;
+    rejectionReason?: string;
   }[];
 }
 
