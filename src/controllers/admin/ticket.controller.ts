@@ -135,3 +135,39 @@ export const processEscrowSettlement = async (req: AuthRequest, res: Response) =
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+export const resolveTicket = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { status, internalNotes, isComplaintVerified } = req.body;
+
+        const ticket = await SupportTicket.findById(id);
+        if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+
+        ticket.status = status;
+        if (internalNotes) ticket.internalNotes.push(internalNotes);
+
+        ticket.timeline.push({
+            status: status,
+            adminId: req.user?.userId as any,
+            action: 'TICKET_RESOLVED',
+            reason: `Resolution: ${status}`,
+            timestamp: new Date()
+        });
+
+        await ticket.save();
+
+        // RC-2: Criminal Check Escalation Logic
+        if (isComplaintVerified && ticket.role === 'PROVIDER') {
+            await Provider.findOneAndUpdate(
+                { userId: ticket.userId },
+                { criminalCheckRequired: true }
+            );
+            console.log(`[COMPLIANCE] Criminal check mandated for provider ${ticket.userId} due to verified complaint.`);
+        }
+
+        res.status(200).json({ success: true, ticket });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Resolution failed', error });
+    }
+};

@@ -99,6 +99,7 @@ router.patch('/fraud/alerts/:id/resolve', fraudAdminController.resolveAlert);
 router.get('/tickets', hasPermission('MANAGE_SUPPORT'), ticketAdminController.listTickets);
 router.get('/tickets/:id', hasPermission('MANAGE_SUPPORT'), ticketAdminController.getTicketDetail);
 router.patch('/tickets/:id/assign', hasPermission('MANAGE_SUPPORT'), ticketAdminController.assignTicket);
+router.patch('/tickets/:id/resolve', hasPermission('MANAGE_SUPPORT'), ticketAdminController.resolveTicket);
 router.get('/tickets/:id/chat-vault', hasPermission('VIEW_CHATS'), ticketAdminController.getChatVault);
 router.post('/tickets/:id/settle', hasPermission('MANAGE_FINANCE'), ticketAdminController.processEscrowSettlement);
 router.get('/disputes', hasPermission('MANAGE_DISPUTES'), disputeController.getDisputes);
@@ -157,6 +158,7 @@ router.patch('/verifications/addresses/:providerId/reject', hasPermission('MANAG
 router.get('/verifications/banking', hasPermission('MANAGE_VERIFICATION'), providerAdminController.listPendingBankDetails);
 router.patch('/verifications/banking/:providerId/approve', hasPermission('MANAGE_VERIFICATION'), providerAdminController.approveBankDetails);
 router.patch('/verifications/banking/:providerId/reject', hasPermission('MANAGE_VERIFICATION'), providerAdminController.rejectBankDetails);
+router.post('/providers/:providerId/request-revetting', hasPermission('MANAGE_VERIFICATION'), providerAdminController.requestRevetting);
 router.get('/verifications/:id', hasPermission('MANAGE_VERIFICATION'), verificationAdminController.getRequestDetail);
 router.patch('/verifications/:id/review', hasPermission('MANAGE_VERIFICATION'), verificationAdminController.review);
 

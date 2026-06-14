@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
-import Provider from '../../models/Provider';
+import Provider, { VerificationStatus } from '../../models/Provider';
 import User from '../../models/User';
+import * as auditService from '../../services/audit.service';
 
 export const getProvidersMonitor = async (req: AuthRequest, res: Response) => {
     try {
@@ -126,5 +127,35 @@ export const rejectBankDetails = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: 'Banking details rejected' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to reject banking details', error });
+    }
+};
+
+export const requestRevetting = async (req: AuthRequest, res: Response) => {
+    try {
+        const { providerId } = req.params;
+        const { reason } = req.body;
+
+        const provider = await Provider.findByIdAndUpdate(
+            providerId,
+            { criminalCheckRequired: true, verificationStatus: VerificationStatus.PENDING },
+            { new: true }
+        );
+
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        await auditService.logAdminAction({
+            countryCode: provider.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REQUEST_REVETTING',
+            entityType: 'Provider',
+            entityId: providerId,
+            afterState: { criminalCheckRequired: true, reason },
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, message: 'Re-vetting requested. Criminal check is now mandatory.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Action failed', error });
     }
 };

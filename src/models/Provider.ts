@@ -108,6 +108,7 @@ export interface IProvider extends Document {
     coordinates: number[];
   };
   suspendedUntil?: Date;
+  criminalCheckRequired: boolean;
   documents: {
     type: string;
     url: string;
@@ -207,6 +208,7 @@ const ProviderSchema: Schema = new Schema({
     coordinates: { type: [Number], index: '2dsphere' }
   },
   suspendedUntil: { type: Date },
+  criminalCheckRequired: { type: Boolean, default: false },
   documents: [{
     type: { type: String },
     url: { type: String },

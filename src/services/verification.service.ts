@@ -102,11 +102,24 @@ export const reviewRequest = async (
             if (provider) {
                 provider.verificationLevel = request.type;
                 provider.verificationStatus = VerificationStatus.APPROVED;
+
+                // SPEC: Approved Selfie automatically becomes Provider Profile Picture
+                const selfie = request.documents.find(d => d.type === 'SELFIE' && d.status === 'APPROVED');
+                if (selfie) {
+                    await mongoose.model('User').findByIdAndUpdate(provider.userId, {
+                        profilePhoto: selfie.url
+                    }).session(session);
+                }
+
                 await provider.save({ session });
             }
         } else if (status === VerificationRequestStatus.REJECTED) {
              await Provider.findByIdAndUpdate(request.providerId, {
                 verificationStatus: VerificationStatus.REJECTED
+            }).session(session);
+        } else if (status === VerificationRequestStatus.RESUBMITTED) {
+            await Provider.findByIdAndUpdate(request.providerId, {
+                verificationStatus: 'REJECTED' // Or a new state if needed, but REJECTED works for flow
             }).session(session);
         }
 
@@ -131,10 +144,12 @@ export const reviewRequest = async (
         if (provider && (provider.userId as any)._id) {
             await notifyUser(
                 (provider.userId as any)._id.toString(),
-                `Verification ${status}`,
+                `Verification ${status === VerificationRequestStatus.RESUBMITTED ? 'Resubmission Required' : status}`,
                 status === VerificationRequestStatus.APPROVED
                     ? `Your ${request.type} verification has been approved.`
-                    : `Your ${request.type} verification was rejected: ${rejectionReason}`,
+                    : status === VerificationRequestStatus.RESUBMITTED
+                        ? `A document in your ${request.type} verification requires resubmission: ${rejectionReason}`
+                        : `Your ${request.type} verification was rejected: ${rejectionReason}`,
                 { type: 'VERIFICATION_UPDATE', requestId, status }
             );
         }
