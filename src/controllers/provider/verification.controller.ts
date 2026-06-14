@@ -67,6 +67,7 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         const getDocStatus = (type: string) => {
             const perm = permanentDocs.find((d: any) => d.type === type);
             if (perm && perm.status === 'APPROVED') return 'VERIFIED';
+            if (perm && perm.status === 'REJECTED') return 'REJECTED';
 
             const latest = latestRequest?.documents?.find((d: any) => d.type === type);
             if (latest) {
@@ -78,6 +79,9 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
         };
 
         const getRejectionReason = (type: string) => {
+            const perm = permanentDocs.find((d: any) => d.type === type);
+            if (perm && perm.status === 'REJECTED') return perm.rejectionReason;
+
             const latest = latestRequest?.documents?.find((d: any) => d.type === type);
             return latest?.rejectionReason;
         };
@@ -194,6 +198,7 @@ export const getRequirements = async (req: AuthRequest, res: Response) => {
             success: true,
             data: {
                 currentLevel: provider.verificationLevel,
+                targetLevel: levelOrder[highestLevelIndex],
                 verificationStatus: provider.verificationStatus,
                 activeLevels: Array.from(activeLevels),
                 requirements

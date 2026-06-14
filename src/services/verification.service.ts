@@ -25,12 +25,34 @@ export const submitVerification = async (
 
         if (existing) throw new Error(`A verification request for ${type} is already in progress.`);
 
+        const provider = await Provider.findById(providerId).session(session);
+        if (!provider) throw new Error('Provider not found');
+
+        // Merge incoming documents with existing approved ones to ensure a complete set for review
+        const finalDocs = [...documents.map(d => ({
+            ...d,
+            status: d.status === 'APPROVED' ? 'APPROVED' : 'PENDING'
+        }))];
+
+        provider.documents.forEach(permDoc => {
+            if (permDoc.status === 'APPROVED') {
+                const alreadyInIncoming = finalDocs.find(d => d.type === permDoc.type);
+                if (!alreadyInIncoming) {
+                    finalDocs.push({
+                        type: permDoc.type,
+                        url: permDoc.url,
+                        status: 'APPROVED'
+                    });
+                }
+            }
+        });
+
         // 2. Create Request
         const request = new VerificationRequest({
             providerId,
             countryCode,
             type,
-            documents: documents.map(d => ({ ...d, status: 'PENDING' })),
+            documents: finalDocs,
             ...extraData,
             status: VerificationRequestStatus.PENDING,
             submittedAt: new Date()
@@ -87,24 +109,46 @@ export const reviewRequest = async (
         if (documentStatusUpdates) {
             const provider = await Provider.findById(request.providerId).session(session);
 
-            documentStatusUpdates.forEach(update => {
+            for (const update of documentStatusUpdates) {
                 const doc = (request.documents as any).id(update.docId);
                 if (doc) {
+                    const oldDocStatus = doc.status;
                     doc.status = update.status;
                     doc.rejectionReason = update.reason;
 
-                    if (update.status === 'APPROVED' && provider) {
+                    if (provider) {
                         // Sync to permanent records
                         const existingIdx = provider.documents.findIndex(d => d.type === doc.type);
                         if (existingIdx !== -1) {
                             provider.documents[existingIdx].url = doc.url;
-                            provider.documents[existingIdx].status = VerificationStatus.APPROVED;
+                            provider.documents[existingIdx].status = update.status as any;
+                            if (update.reason) provider.documents[existingIdx].rejectionReason = update.reason;
                         } else {
-                            provider.documents.push({ type: doc.type, url: doc.url, status: VerificationStatus.APPROVED });
+                            provider.documents.push({
+                                type: doc.type,
+                                url: doc.url,
+                                status: update.status as any,
+                                rejectionReason: update.reason
+                            });
+                        }
+
+                        // Notification for specific document change
+                        if (oldDocStatus !== update.status && provider.userId) {
+                            const title = update.status === 'APPROVED' ? 'Document Approved' : 'Document Rejected';
+                            const body = update.status === 'APPROVED'
+                                ? `Your ${doc.type.replace(/_/g, ' ')} has been approved.`
+                                : `Your ${doc.type.replace(/_/g, ' ')} was rejected: ${update.reason || 'Please resubmit.'}`;
+
+                            // Non-blocking notification
+                            notifyUser(provider.userId.toString(), title, body, {
+                                type: 'VERIFICATION_UPDATE',
+                                docType: doc.type,
+                                status: update.status
+                            }).catch(e => console.error('Notification failed', e));
                         }
                     }
                 }
-            });
+            }
 
             if (provider) await provider.save({ session });
         }
@@ -128,9 +172,9 @@ export const reviewRequest = async (
 
                 await provider.save({ session });
             }
-        } else if (status === VerificationRequestStatus.REJECTED) {
+        } else if (status === VerificationRequestStatus.REJECTED || status === VerificationRequestStatus.ACTION_REQUIRED) {
              await Provider.findByIdAndUpdate(request.providerId, {
-                verificationStatus: VerificationStatus.REJECTED
+                verificationStatus: status === VerificationRequestStatus.REJECTED ? VerificationStatus.REJECTED : 'PENDING'
             }).session(session);
         } else if (status === VerificationRequestStatus.RESUBMITTED) {
             await Provider.findByIdAndUpdate(request.providerId, {

@@ -212,7 +212,8 @@ const ProviderSchema: Schema = new Schema({
   documents: [{
     type: { type: String },
     url: { type: String },
-    status: { type: String, enum: Object.values(VerificationStatus), default: VerificationStatus.PENDING }
+    status: { type: String, enum: Object.values(VerificationStatus), default: VerificationStatus.PENDING },
+    rejectionReason: { type: String }
   }]
 }, { timestamps: true });
 
