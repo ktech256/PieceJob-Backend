@@ -44,6 +44,13 @@ export interface ISupportTicket extends Document {
   assignedTo?: mongoose.Types.ObjectId;
   assignedAt?: Date;
   timeline: ITicketTimeline[];
+  messages: Array<{
+    senderId: mongoose.Types.ObjectId;
+    senderRole: 'USER' | 'ADMIN';
+    text: string;
+    attachments: string[];
+    timestamp: Date;
+  }>;
   escrowSettlement?: {
     customerAmount: number;
     providerAmount: number;
@@ -72,6 +79,13 @@ const SupportTicketSchema: Schema = new Schema({
     adminId: { type: Schema.Types.ObjectId, ref: 'User' },
     action: { type: String },
     reason: { type: String },
+    timestamp: { type: Date, default: Date.now }
+  }],
+  messages: [{
+    senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    senderRole: { type: String, enum: ['USER', 'ADMIN'], required: true },
+    text: { type: String, required: true },
+    attachments: [{ type: String }],
     timestamp: { type: Date, default: Date.now }
   }],
   escrowSettlement: {

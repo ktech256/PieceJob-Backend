@@ -104,6 +104,15 @@ export interface IProvider extends Document {
     sosAlerts: boolean;
   };
 
+  availability: {
+    vacationMode: boolean;
+    workingHours: Array<{
+      day: number; // 0-6 (Sun-Sat)
+      enabled: boolean;
+      slots: Array<{ start: string; end: string }>;
+    }>;
+  };
+
   location: {
     type: string;
     coordinates: number[];
@@ -203,6 +212,18 @@ const ProviderSchema: Schema = new Schema({
     verificationUpdates: { type: Boolean, default: true },
     marketing: { type: Boolean, default: false },
     sosAlerts: { type: Boolean, default: true }
+  },
+
+  availability: {
+    vacationMode: { type: Boolean, default: false },
+    workingHours: [{
+      day: { type: Number, required: true },
+      enabled: { type: Boolean, default: true },
+      slots: [{
+        start: { type: String, default: '08:00' },
+        end: { type: String, default: '17:00' }
+      }]
+    }]
   },
 
   location: {

@@ -20,6 +20,9 @@ router.get('/bank', authenticate, authorize([UserRole.PROVIDER]), providerContro
 router.post('/bank', authenticate, authorize([UserRole.PROVIDER]), providerController.updateBankDetails);
 router.patch('/wallet-settings', authenticate, authorize([UserRole.PROVIDER]), providerController.updateWalletSettings);
 router.patch('/notifications', authenticate, authorize([UserRole.PROVIDER]), providerController.updateNotificationSettings);
+router.get('/availability', authenticate, authorize([UserRole.PROVIDER]), providerController.getAvailability);
+router.patch('/availability', authenticate, authorize([UserRole.PROVIDER]), providerController.updateAvailability);
+router.get('/reviews', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyReviews);
 router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), providerController.getDashboardStats);
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);
 router.get('/verification/requirements', authenticate, authorize([UserRole.PROVIDER]), verificationController.getRequirements);

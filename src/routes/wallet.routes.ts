@@ -10,5 +10,6 @@ router.get('/payouts', authenticate, walletController.getMyPayouts);
 router.get('/statements', authenticate, walletController.getMyStatements);
 router.get('/invoices', authenticate, walletController.getMyInvoices);
 router.get('/commission-rate', authenticate, walletController.getMyCommissionRate);
+router.post('/withdraw', authenticate, walletController.requestWithdrawal);
 
 export default router;
