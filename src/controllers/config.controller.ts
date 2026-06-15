@@ -3,6 +3,7 @@ import Country from '../models/Country';
 import SystemSettings from '../models/SystemSettings';
 import Service, { ServiceCategory, VerificationLevel } from '../models/Service';
 import ServiceCategoryModel from '../models/ServiceCategory';
+import Provider from '../models/Provider';
 import * as pricingService from '../services/pricing.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 
@@ -84,11 +85,11 @@ export const getPublicServices = async (req: Request, res: Response) => {
             isOnline: true
         }).select('servicesOffered location');
 
-        const grouped = categories.map(cat => {
-            const servicesInCategory = services.filter(s => s.category === cat.code);
+        const grouped = categories.map((cat: any) => {
+            const servicesInCategory = services.filter((s: any) => s.category === cat.code);
 
-            const servicesWithCount = servicesInCategory.map(s => {
-                const count = onlineProviders.filter(p => p.servicesOffered.includes(s.code)).length;
+            const servicesWithCount = servicesInCategory.map((s: any) => {
+                const count = onlineProviders.filter((p: any) => p.servicesOffered.includes(s.code)).length;
                 let countLabel = "0";
                 if (count > 0 && count <= 5) countLabel = "1-5";
                 else if (count > 5 && count <= 10) countLabel = "6-10";
