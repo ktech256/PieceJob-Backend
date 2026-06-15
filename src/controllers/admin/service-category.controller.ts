@@ -65,9 +65,9 @@ export const seedCategories = async () => {
     for (const cat of defaultCategories) {
         await ServiceCategory.findOneAndUpdate(
             { code: cat.code },
-            { $setOnInsert: cat },
+            { $set: { name: cat.name, sortOrder: cat.sortOrder }, $setOnInsert: { verificationLevel: cat.verificationLevel, isActive: true, isDeleted: false } },
             { upsert: true }
         );
     }
-    console.log('[SEED] Service Categories initialized');
+    console.log('[SEED] Service Categories initialized and updated');
 };

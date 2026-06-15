@@ -75,44 +75,23 @@ export const getPublicServices = async (req: Request, res: Response) => {
             query.genderRule = { $in: allowedRules };
         }
 
-        const services = await Service.find(query).sort({ category: 1, code: 1 });
+        const services = await Service.find(query).sort({ code: 1 });
+        const categories = await ServiceCategoryModel.find({ isDeleted: false, isActive: true }).sort({ sortOrder: 1 });
 
-        // RC-2 Dynamic Grouping logic (Strictly Additive per Refinement Spec)
-        const grouped: any = {
-            'STANDARD': {
-                label: 'STANDARD',
-                requirements: '(ID, Selfie)',
-                services: []
-            },
-            'PROFESSIONAL': {
-                label: 'PROFESSIONAL',
-                requirements: '(ID, Selfie, Certification, Experience Verification)',
-                services: []
-            },
-            'TRADE': {
-                label: 'TRADE',
-                requirements: '(ID, Selfie, Certification, Experience Verification, Trade Licence, Tool Verification)',
-                services: []
-            },
-            'HIGH_VETTING': {
-                label: 'HIGH VETTING',
-                requirements: '(ID, Selfie, Certification, Experience Verification, Trade Licence, Tool Verification, References, Interview)',
-                services: []
-            }
-        };
-
-        for (const s of services) {
-            let level: string = s.verificationLevel;
-            // Respect Dashboard Verification Requirement strictly for grouping (RC-2 Fix)
-            if (grouped[level]) grouped[level].services.push(s);
-            else grouped['STANDARD'].services.push(s);
-        }
+        const grouped = categories.map(cat => {
+            const servicesInCategory = services.filter(s => s.category === cat.code);
+            return {
+                label: cat.name,
+                requirements: `Verification Required: ${cat.verificationLevel}`,
+                services: servicesInCategory
+            };
+        }).filter(g => g.services.length > 0);
 
         res.status(200).json({
             success: true,
             data: {
                 services: services,
-                grouped: Object.values(grouped).filter((g: any) => g.services.length > 0)
+                grouped: grouped
             }
         });
     } catch (error) {

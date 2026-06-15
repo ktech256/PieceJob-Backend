@@ -6,13 +6,12 @@ import PricingRule from '../../models/PricingRule';
 export const listServices = async (req: AuthRequest, res: Response) => {
   try {
     const countryCode = req.query.countryCode as string || req.user?.countryCode || 'GLOBAL';
-    // Fetch both global services and country-specific ones that are ACTIVE
+    // Fetch both global services and country-specific ones for management
     const services = await Service.find({
       $or: [
         { countryCode: 'GLOBAL' },
         { countryCode }
-      ],
-      isActive: true
+      ]
     }).sort({ category: 1, code: 1 });
 
     res.status(200).json({ success: true, services });
