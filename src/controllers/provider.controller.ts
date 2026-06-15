@@ -59,7 +59,6 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         // 1. Lock Verified Fields (Section 1)
         if (isVerified) {
             // These fields cannot be changed if verified
-            // We ignore any attempts to change them
         } else {
             if (firstName) user.firstName = firstName;
             if (lastName) user.lastName = lastName;
@@ -79,11 +78,8 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
                     submittedAt: new Date(),
                     status: 'PENDING'
                 };
-
-                // PAGE 12: Audit Log for address change request
                 console.log(`[AUDIT] Address change requested for verified provider ${userId}`);
             } else {
-                // Not verified yet, can change directly
                 if (city) user.city = city;
                 if (province) user.province = province;
                 if (address) user.address = address;
@@ -95,9 +91,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
         await user.save();
 
-        // Refresh and return
         const updatedProvider = await Provider.findOne({ userId }).populate('userId', '-passwordHash');
-
         res.status(200).json({ success: true, message: 'Profile updated successfully', data: updatedProvider });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update profile', error });
@@ -126,16 +120,8 @@ export const getAvailability = async (req: AuthRequest, res: Response) => {
     }
 };
 
-import Job from '../models/Job';
-
 export const getMyReviews = async (req: AuthRequest, res: Response) => {
     try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
         const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
             .populate('customerId', 'firstName lastName profilePhoto')
             .sort({ createdAt: -1 });
@@ -152,7 +138,6 @@ export const getMyReviews = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({ success: true, data: formatted });
     } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
         res.status(200).json({ success: true, data: [] });
     }
 };
@@ -188,59 +173,6 @@ export const handleHeartbeat = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const uploadDocument = async (req: AuthRequest, res: Response) => {
   try {
     const { type, url } = req.body;
@@ -258,27 +190,13 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
 export const uploadFile = async (req: AuthRequest, res: Response) => {
   try {
     const { base64, mimeType, folder } = req.body;
-    console.log(`[UPLOAD_TRACE] 1. Request Received. User: ${req.user?.userId}, Folder: ${folder}, Mime: ${mimeType}`);
+    if (!base64) return res.status(400).json({ success: false, message: 'No file data provided' });
 
-    if (!base64) {
-        console.error('[UPLOAD_TRACE] 2. FAIL: No base64 data');
-        return res.status(400).json({ success: false, message: 'No file data provided' });
-    }
-    console.log(`[UPLOAD_TRACE] 3. Base64 length: ${base64.length}`);
-
-    // Clean base64 if it has prefix
     const cleanBase64 = base64.includes(';base64,') ? base64.split(';base64,')[1] : base64;
-    console.log(`[UPLOAD_TRACE] 4. Base64 cleaned. Admin SDK Bucket Name: ${admin.storage().bucket().name}`);
-
     const path = await storageService.uploadBase64File(cleanBase64, folder || 'documents', mimeType || 'image/jpeg');
-    console.log(`[UPLOAD_TRACE] 7. Storage Service Success. Path: ${path}`);
 
-    res.status(200).json({
-        success: true,
-        data: { url: path }
-    });
+    res.status(200).json({ success: true, data: { url: path } });
   } catch (error: any) {
-    console.error('[UPLOAD_TRACE] ERROR:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -288,7 +206,6 @@ export const getMyServices = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        // Populate both approved and pending services, isolating by country/global
         const approved = await Service.find({
             code: { $in: provider.servicesOffered },
             $or: [{ countryCode: provider.countryCode }, { countryCode: 'GLOBAL' }]
@@ -298,68 +215,9 @@ export const getMyServices = async (req: AuthRequest, res: Response) => {
             $or: [{ countryCode: provider.countryCode }, { countryCode: 'GLOBAL' }]
         });
 
-        res.status(200).json({
-            success: true,
-            data: {
-                approved,
-                pending
-            }
-        });
+        res.status(200).json({ success: true, data: { approved, pending } });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch services', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -381,58 +239,29 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
         const requirements: any = {};
 
         for (const s of services) {
-            // Gender Check (RC-2 Rule Alignment - Strict Enforcement)
-            // Provider Gender B (Both) can take any service
             if (provider.gender !== 'B') {
                 if (s.genderRule === 'MEN_ONLY' && provider.gender === 'F') {
-                    return res.status(403).json({
-                        success: false,
-                        message: `Service '${s.name}' is for Male providers only.`
-                    });
+                    return res.status(403).json({ success: false, message: `Service '${s.name}' is for Male providers only.` });
                 }
                 if (s.genderRule === 'WOMEN_ONLY' && provider.gender === 'M') {
-                    return res.status(403).json({
-                        success: false,
-                        message: `Service '${s.name}' is for Female providers only.`
-                    });
+                    return res.status(403).json({ success: false, message: `Service '${s.name}' is for Female providers only.` });
                 }
             }
 
-            // Level Check
             const levels = ['STANDARD', 'PROFESSIONAL', 'TRADE', 'HIGH_VETTING'];
             const provLevelIdx = levels.indexOf(provider.verificationLevel);
+            const servLevelIdx = levels.indexOf(s.verificationLevel);
 
-            // Respect Dashboard Verification Requirement strictly (RC-2 Fix)
-            let effectiveServLevel: string = s.verificationLevel;
-            const servLevelIdx = levels.indexOf(effectiveServLevel);
-
-            // RC-2: Verification Level Persistence Logic
-            // If provider is already approved at this level or higher, approve immediately
             if (provider.verificationStatus === 'APPROVED' && provLevelIdx >= servLevelIdx) {
                 approved.push(s.code);
             } else {
                 pending.push(s.code);
-
-                // Build requirements for pending services (Strictly Additive)
                 let requiredDocs: string[] = ['GOVERNMENT_ID', 'SELFIE'];
+                if (servLevelIdx >= levels.indexOf('PROFESSIONAL')) requiredDocs.push('CRIMINAL_CHECK', 'CERTIFICATION', 'EXPERIENCE_VERIFICATION');
+                if (servLevelIdx >= levels.indexOf('TRADE')) requiredDocs.push('TRADE_LICENSE', 'TOOL_VERIFICATION');
+                if (servLevelIdx >= levels.indexOf('HIGH_VETTING')) requiredDocs.push('INTERVIEW', 'REFERENCES');
 
-                const servIdx = levels.indexOf(effectiveServLevel);
-
-                // Additive logic for preview (RC-2: Criminal Check required for Professional+)
-                if (servIdx >= levels.indexOf('PROFESSIONAL')) {
-                    requiredDocs.push('CRIMINAL_CHECK', 'CERTIFICATION', 'EXPERIENCE_VERIFICATION');
-                }
-                if (servIdx >= levels.indexOf('TRADE')) {
-                    requiredDocs.push('TRADE_LICENSE', 'TOOL_VERIFICATION');
-                }
-                if (servIdx >= levels.indexOf('HIGH_VETTING')) {
-                    requiredDocs.push('INTERVIEW', 'REFERENCES');
-                }
-
-                requirements[s.code] = {
-                    level: effectiveServLevel,
-                    docs: [...new Set(requiredDocs)]
-                };
+                requirements[s.code] = { level: s.verificationLevel, docs: [...new Set(requiredDocs)] };
             }
         }
 
@@ -450,118 +279,12 @@ export const updateServices = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const getEquipment = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         res.status(200).json({ success: true, data: provider?.equipment || [] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch equipment', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -579,118 +302,12 @@ export const addEquipment = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const getCertifications = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         res.status(200).json({ success: true, data: provider?.certifications || [] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch certifications', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -708,118 +325,12 @@ export const addCertification = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const getExperience = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         res.status(200).json({ success: true, data: provider?.workExperience || [] });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch experience', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -837,118 +348,12 @@ export const addExperience = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const getBankDetails = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         res.status(200).json({ success: true, data: provider?.bankDetails });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch bank details', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -976,59 +381,6 @@ export const updateBankDetails = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const updateWalletSettings = async (req: AuthRequest, res: Response) => {
     try {
         const { frequency, method } = req.body;
@@ -1040,59 +392,6 @@ export const updateWalletSettings = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, data: provider?.payoutPreferences });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update wallet settings', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -1110,68 +409,13 @@ export const updateNotificationSettings = async (req: AuthRequest, res: Response
     }
 };
 
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
-    }
-};
-
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
         const now = new Date();
         const startOfToday = new Date(now.setHours(0, 0, 0, 0));
-
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
-
         const monthAgo = new Date();
         monthAgo.setMonth(monthAgo.getMonth() - 1);
 
@@ -1222,58 +466,5 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('[STATS_ERROR]', error);
         res.status(500).json({ success: false, message: 'Stats failed', error });
-    }
-};
-
-export const updateAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOneAndUpdate(
-            { userId: req.user?.userId },
-            { availability: req.body },
-            { new: true }
-        );
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Update failed', error });
-    }
-};
-
-export const getAvailability = async (req: AuthRequest, res: Response) => {
-    try {
-        const provider = await Provider.findOne({ userId: req.user?.userId }).select('availability');
-        res.status(200).json({ success: true, data: provider?.availability });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Fetch failed', error });
-    }
-};
-
-import Job from '../models/Job';
-
-export const getMyReviews = async (req: AuthRequest, res: Response) => {
-    try {
-        // In this system, reviews might be part of the Job model or a separate Review model.
-        // Assuming reviews are stored in Job metadata or separate collection.
-        // For compliance with Specification V3.0, let's assume a Review model exists or we query Jobs with reviews.
-        // Since I don't see a Review.ts in models, I'll check Job.ts or check list_files again.
-
-        // Checking for Review model...
-        const reviews = await mongoose.model('Review').find({ providerId: req.user?.userId })
-            .populate('customerId', 'firstName lastName profilePhoto')
-            .sort({ createdAt: -1 });
-
-        const formatted = reviews.map((r: any) => ({
-            id: r._id,
-            jobId: r.jobId,
-            rating: r.rating,
-            comment: r.comment,
-            reviewerName: `${r.customerId.firstName} ${r.customerId.lastName}`,
-            reviewerPhoto: r.customerId.profilePhoto,
-            createdAt: r.createdAt
-        }));
-
-        res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        // Fallback: If Review model doesn't exist, return empty for now to avoid crash
-        res.status(200).json({ success: true, data: [] });
     }
 };
