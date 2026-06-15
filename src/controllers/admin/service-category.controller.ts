@@ -54,18 +54,18 @@ export const toggleCategoryStatus = async (req: AuthRequest, res: Response) => {
 
 export const seedCategories = async () => {
     const defaultCategories = [
-        { code: 'HDS', name: 'Home & Domestic Services (HDS)', sortOrder: 1, verificationLevel: 'STANDARD' },
-        { code: 'CSS', name: 'Care & Support Services (CSS)', sortOrder: 2, verificationLevel: 'STANDARD' },
-        { code: 'HMS', name: 'Handyman & Repairs Services (HMS)', sortOrder: 3, verificationLevel: 'PROFESSIONAL' },
-        { code: 'OPS', name: 'Outdoor & Property Services (OPS)', sortOrder: 4, verificationLevel: 'STANDARD' },
-        { code: 'LLS', name: 'Convenience & Lifestyle Services (LLS)', sortOrder: 5, verificationLevel: 'STANDARD' },
-        { code: 'TSS', name: 'Technology & Home Setup Services (TSS)', sortOrder: 6, verificationLevel: 'PROFESSIONAL' }
+        { code: 'HDS', name: 'Home & Domestic Services (HDS)', sortOrder: 1 },
+        { code: 'CSS', name: 'Care & Support Services (CSS)', sortOrder: 2 },
+        { code: 'HMS', name: 'Handyman & Repairs Services (HMS)', sortOrder: 3 },
+        { code: 'OPS', name: 'Outdoor & Property Services (OPS)', sortOrder: 4 },
+        { code: 'LLS', name: 'Convenience & Lifestyle Services (LLS)', sortOrder: 5 },
+        { code: 'TSS', name: 'Technology & Home Setup Services (TSS)', sortOrder: 6 }
     ];
 
     for (const cat of defaultCategories) {
         await ServiceCategory.findOneAndUpdate(
             { code: cat.code },
-            { $set: { name: cat.name, sortOrder: cat.sortOrder }, $setOnInsert: { verificationLevel: cat.verificationLevel, isActive: true, isDeleted: false } },
+            { $set: { name: cat.name, sortOrder: cat.sortOrder }, $setOnInsert: { isActive: true, isDeleted: false } },
             { upsert: true }
         );
     }

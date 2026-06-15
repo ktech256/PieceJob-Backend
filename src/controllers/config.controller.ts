@@ -82,7 +82,7 @@ export const getPublicServices = async (req: Request, res: Response) => {
             const servicesInCategory = services.filter(s => s.category === cat.code);
             return {
                 label: cat.name,
-                requirements: `Verification Required: ${cat.verificationLevel}`,
+                requirements: `Various levels based on service selection`,
                 services: servicesInCategory
             };
         }).filter(g => g.services.length > 0);
