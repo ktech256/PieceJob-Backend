@@ -2,11 +2,17 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export enum JobStatus {
   DRAFT = 'DRAFT',
+  REQUEST_CREATED = 'REQUEST_CREATED',
   PAYMENT_PENDING = 'PAYMENT_PENDING',
+  BOOKING_FEE_PAID = 'BOOKING_FEE_PAID',
+  BROADCASTING = 'BROADCASTING',
   BROADCASTED = 'BROADCASTED',
   ACCEPTED = 'ACCEPTED',
+  PROVIDER_ACCEPTED = 'PROVIDER_ACCEPTED',
+  EN_ROUTE = 'EN_ROUTE',
   ARRIVED = 'ARRIVED',
   STARTED = 'STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
   COMPLETED = 'COMPLETED',
   RATED = 'RATED',
   CLOSED = 'CLOSED',
@@ -28,6 +34,12 @@ export interface IJob extends Document {
   };
   bookingFee: number;
   serviceFee?: number;
+
+  // Third Party Requests
+  isForSomeoneElse: boolean;
+  recipientName?: string;
+  recipientPhone?: string;
+
   paymentStatus: 'PENDING' | 'PAID' | 'REFUNDED';
   escrowStatus: 'PENDING' | 'HELD' | 'ESCROW_HOLD_REVIEW' | 'RELEASED' | 'REFUNDED';
   fraudFlag?: string;
@@ -71,6 +83,9 @@ const JobSchema: Schema = new Schema({
   },
   bookingFee: { type: Number, required: true },
   serviceFee: { type: Number },
+  isForSomeoneElse: { type: Boolean, default: false },
+  recipientName: { type: String },
+  recipientPhone: { type: String },
   paymentStatus: { type: String, enum: ['PENDING', 'PAID', 'REFUNDED'], default: 'PENDING' },
   escrowStatus: { type: String, enum: ['PENDING', 'HELD', 'ESCROW_HOLD_REVIEW', 'RELEASED', 'REFUNDED'], default: 'PENDING' },
   fraudFlag: { type: String },

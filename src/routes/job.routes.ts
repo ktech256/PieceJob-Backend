@@ -6,7 +6,8 @@ import { UserRole } from '../models/User';
 const router = Router();
 
 router.post('/request', authenticate, authorize([UserRole.CUSTOMER]), jobController.requestJob);
-router.post('/:jobId/pay', authenticate, authorize([UserRole.CUSTOMER]), jobController.payBookingFee);
+router.get('/:jobId', authenticate, jobController.getJobById);
+router.post('/:jobId/pay-booking-fee', authenticate, authorize([UserRole.CUSTOMER]), jobController.payBookingFee);
 router.put('/:jobId/accept', authenticate, authorize([UserRole.PROVIDER]), jobController.acceptJob);
 router.patch('/:jobId/status', authenticate, jobController.updateJobStatus);
 router.post('/:jobId/rate', authenticate, authorize([UserRole.CUSTOMER]), jobController.rateJob);

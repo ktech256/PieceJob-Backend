@@ -27,6 +27,7 @@ router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), pro
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);
 router.get('/verification/requirements', authenticate, authorize([UserRole.PROVIDER]), verificationController.getRequirements);
 router.post('/verification/submit', authenticate, authorize([UserRole.PROVIDER]), verificationController.submitMyVerification);
+router.get('/online', authenticate, providerController.getOnlineProviders);
 router.patch('/status', authenticate, authorize([UserRole.PROVIDER]), providerController.updateStatus);
 router.post('/heartbeat', authenticate, authorize([UserRole.PROVIDER]), providerController.handleHeartbeat);
 router.post('/documents', authenticate, authorize([UserRole.PROVIDER]), providerController.uploadDocument);

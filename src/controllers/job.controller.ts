@@ -32,7 +32,7 @@ function calculateDistance(c1: number[], c2: number[]) {
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
   try {
-    const { serviceCode, coordinates, address, isEmergency } = req.body;
+    const { serviceCode, coordinates, address, isEmergency, isForSomeoneElse, recipientName, recipientPhone } = req.body;
     let { zoneId } = req.body;
 
     // Automatic Zone Resolution
@@ -61,6 +61,11 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
       },
       bookingFee: pricingBreakdown.bookingFee,
       serviceFee: pricingBreakdown.totalAmount - pricingBreakdown.bookingFee,
+
+      // Third Party
+      isForSomeoneElse,
+      recipientName,
+      recipientPhone,
 
       // PRICING SNAPSHOT
       pricingSnapshot: {
@@ -104,7 +109,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
     );
 
     job.paymentStatus = 'PAID';
-    job.status = JobStatus.BROADCASTED;
+    job.status = JobStatus.BROADCASTED; // Start broadcasting immediately
     await job.save();
 
     jobService.broadcastJob(job.id);
@@ -114,6 +119,18 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     res.status(500).json({ success: false, message: 'Payment processing failed', error });
   }
+};
+
+export const getJobById = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const job = await Job.findById(jobId).populate('providerId', 'firstName lastName ratingAvg jobsCompleted');
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        res.status(200).json({ success: true, data: job });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch job', error });
+    }
 };
 
 export const acceptJob = async (req: AuthRequest, res: Response) => {

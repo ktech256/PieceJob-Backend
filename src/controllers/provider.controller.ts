@@ -163,6 +163,34 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getOnlineProviders = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.user?.countryCode || 'ZA';
+        const providers = await Provider.find({
+            countryCode,
+            isOnline: true,
+            verificationStatus: 'APPROVED'
+        }).select('userId ratingAvg jobsCompleted location');
+
+        const populated = await User.populate(providers, { path: 'userId', select: 'firstName lastName profilePhoto' });
+
+        const formatted = populated.map((p: any) => ({
+            id: p._id,
+            userId: p.userId._id,
+            firstName: p.userId.firstName,
+            lastName: p.userId.lastName,
+            ratingAvg: p.ratingAvg,
+            jobsCompleted: p.jobsCompleted,
+            location: p.location,
+            isOnline: p.isOnline
+        }));
+
+        res.status(200).json({ success: true, data: formatted });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch online providers', error });
+    }
+};
+
 export const handleHeartbeat = async (req: AuthRequest, res: Response) => {
     try {
         const { coordinates, hardwareId, isMockLocation } = req.body;

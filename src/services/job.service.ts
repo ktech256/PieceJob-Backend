@@ -116,14 +116,16 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
       emitToUser(p.userId.toString(), 'NEW_JOB_BROADCAST', {
         jobId: job.id,
         serviceCode: job.serviceCode,
-        location: job.location
+        location: job.location,
+        isForSomeoneElse: job.isForSomeoneElse,
+        recipientName: job.recipientName
       });
 
       // FCM Notification
       notificationService.notifyUser(
           p.userId.toString(),
           'New Job Available',
-          `A new ${job.serviceCode} request is nearby.`
+          `A new ${job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`
       );
     });
 
@@ -161,7 +163,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     const commissionRate = await pricingService.getCommissionRate(job.countryCode, provider.tier);
 
     job.providerId = providerId as any;
-    job.status = JobStatus.ACCEPTED;
+    job.status = JobStatus.PROVIDER_ACCEPTED; // Use specific status from spec
     job.acceptedAt = new Date();
     job.commissionRateSnapshot = commissionRate;
     job.version += 1;
