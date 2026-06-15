@@ -11,6 +11,7 @@ import app from './app';
 import { initSocket } from './socket/socket.service';
 import { initSchedulers } from './services/scheduler.service';
 import * as jobService from './services/job.service';
+import * as categoryController from './controllers/admin/service-category.controller';
 import mongoose from 'mongoose';
 
 const port = process.env.PORT || 5000;
@@ -31,6 +32,8 @@ mongoose.connect(MONGO_URI, {
 })
   .then(async () => {
       console.log('✅ Connected to MongoDB');
+      // Initialize dynamic categories
+      await categoryController.seedCategories();
       // Resume interrupted broadcasts
       await jobService.resumeBroadcasts();
   })

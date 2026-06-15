@@ -25,7 +25,7 @@ export enum VerificationLevel {
 export interface IService extends Document {
   code: string; // e.g., HDS-01
   name: string;
-  category: ServiceCategory;
+  category: string; // Dynamic Category Code
   genderRule: GenderRule;
   verificationLevel: VerificationLevel;
   equipmentRequired: string[];
@@ -38,7 +38,7 @@ export interface IService extends Document {
 const ServiceSchema: Schema = new Schema({
   code: { type: String, required: true },
   name: { type: String, required: true },
-  category: { type: String, enum: Object.values(ServiceCategory), required: true },
+  category: { type: String, required: true },
   genderRule: { type: String, enum: Object.values(GenderRule), default: GenderRule.BOTH },
   verificationLevel: { type: String, enum: Object.values(VerificationLevel), default: VerificationLevel.STANDARD },
   equipmentRequired: [{ type: String }],

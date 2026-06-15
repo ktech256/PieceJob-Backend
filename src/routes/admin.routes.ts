@@ -5,6 +5,7 @@ import * as analyticsController from '../controllers/admin/analytics.controller'
 import * as supportController from '../controllers/admin/support.controller';
 import * as complianceController from '../controllers/admin/compliance.controller';
 import * as serviceController from '../controllers/admin/service.controller';
+import * as categoryController from '../controllers/admin/service-category.controller';
 import * as payoutController from '../controllers/admin/payout.controller';
 import * as countryController from '../controllers/admin/country.controller';
 import * as paymentAdminController from '../controllers/admin/payment.controller';
@@ -70,6 +71,13 @@ router.patch('/services/:id', serviceController.updateService);
 router.delete('/services/:id', serviceController.deleteService);
 router.patch('/services/:id/toggle', serviceController.toggleServiceStatus);
 router.patch('/services/rules/:serviceCode', serviceController.updateServiceRules);
+
+// Categories
+router.get('/categories', categoryController.listCategories);
+router.post('/categories', categoryController.createCategory);
+router.patch('/categories/:id', categoryController.updateCategory);
+router.delete('/categories/:id', categoryController.softDeleteCategory);
+router.patch('/categories/:id/toggle', categoryController.toggleCategoryStatus);
 
 // Payments (Admin)
 router.get('/payments', paymentAdminController.listPayments);

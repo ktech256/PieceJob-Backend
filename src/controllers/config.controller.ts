@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Country from '../models/Country';
 import SystemSettings from '../models/SystemSettings';
 import Service, { ServiceCategory, VerificationLevel } from '../models/Service';
+import ServiceCategoryModel from '../models/ServiceCategory';
 import * as pricingService from '../services/pricing.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 
@@ -45,6 +46,15 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch config', error });
   }
+};
+
+export const getPublicCategories = async (req: Request, res: Response) => {
+    try {
+        const categories = await ServiceCategoryModel.find({ isDeleted: false, isActive: true }).sort({ sortOrder: 1 });
+        res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch categories', error });
+    }
 };
 
 export const getPublicServices = async (req: Request, res: Response) => {
