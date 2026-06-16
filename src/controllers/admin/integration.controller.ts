@@ -47,7 +47,7 @@ export const rotateKey = async (req: AuthRequest, res: Response) => {
         integration.config = integration.backupConfig;
         integration.backupConfig = temp;
         integration.lastRotationDate = new Date();
-        integration.updatedBy = req.user?.userId;
+        integration.updatedBy = req.user?.userId as any;
 
         await integration.save();
         res.status(200).json({ success: true, data: integration });
