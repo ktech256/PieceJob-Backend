@@ -27,6 +27,8 @@ import * as verificationAdminController from '../controllers/admin/verification.
 import * as ticketAdminController from '../controllers/admin/ticket.controller';
 import * as adminUserController from '../controllers/admin/admin-user.controller';
 import * as sosAdminController from '../controllers/sos.controller';
+import * as integrationController from '../controllers/admin/integration.controller';
+import * as paymentRoutingController from '../controllers/admin/payment-provider.controller';
 import templateRouter from './admin/notification-template.routes';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { hasPermission } from '../middleware/permission.middleware';
@@ -78,6 +80,16 @@ router.post('/categories', categoryController.createCategory);
 router.patch('/categories/:id', categoryController.updateCategory);
 router.delete('/categories/:id', categoryController.softDeleteCategory);
 router.patch('/categories/:id/toggle', categoryController.toggleCategoryStatus);
+
+// Integrations
+router.get('/integrations', integrationController.listIntegrations);
+router.patch('/integrations/:type', integrationController.updateIntegration);
+
+// Payment Routing
+router.get('/payment-providers', paymentRoutingController.listProviders);
+router.post('/payment-providers', paymentRoutingController.createProvider);
+router.patch('/payment-providers/:id', paymentRoutingController.updateProvider);
+router.get('/payment-providers/methods', paymentRoutingController.getAvailableMethods);
 
 // Payments (Admin)
 router.get('/payments', paymentAdminController.listPayments);
