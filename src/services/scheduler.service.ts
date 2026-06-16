@@ -21,5 +21,11 @@ export const initSchedulers = () => {
         await corporateSchedulingService.processSchedules();
     }, 15 * 60 * 1000);
 
+    // 4. Ecosystem Health Monitor (Every 5 minutes)
+    setInterval(async () => {
+        const { runFullEcosystemCheck } = require('./health-monitor.service');
+        await runFullEcosystemCheck();
+    }, 5 * 60 * 1000);
+
     console.log('System Schedulers Initialized');
 };

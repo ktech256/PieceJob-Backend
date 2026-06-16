@@ -13,7 +13,7 @@ import * as providerAdminController from '../controllers/admin/provider.controll
 import * as userAdminController from '../controllers/admin/user.controller';
 import * as disputeController from '../controllers/dispute.controller';
 import * as auditController from '../controllers/admin/audit.controller';
-import * as zoneController from '../controllers/admin/zone.controller';
+import * as zoneController from '../controllers/admin/zone-management.controller';
 import * as fraudAdminController from '../controllers/admin/fraud.controller';
 import * as exchangeController from '../controllers/admin/exchange.controller';
 import * as financeController from '../controllers/admin/finance.controller';
@@ -84,6 +84,7 @@ router.patch('/categories/:id/toggle', categoryController.toggleCategoryStatus);
 // Integrations
 router.get('/integrations', integrationController.listIntegrations);
 router.patch('/integrations/:type', integrationController.updateIntegration);
+router.post('/integrations/:type/rotate', integrationController.rotateKey);
 
 // Payment Routing
 router.get('/payment-providers', paymentRoutingController.listProviders);

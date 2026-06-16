@@ -4,8 +4,8 @@ import Zone, { IZone } from '../models/Zone';
  * findZoneByCoordinates
  * Finds the first active zone that contains the given [lng, lat] coordinates.
  */
-export const findZoneByCoordinates = async (lng: number, lat: number, countryCode: string): Promise<IZone | null> => {
-    return await Zone.findOne({
+export const findZoneByCoordinates = async (lng: number, lat: number, countryCode: string, checkBooking: boolean = false): Promise<IZone | null> => {
+    const query: any = {
         countryCode,
         isActive: true,
         boundary: {
@@ -16,16 +16,20 @@ export const findZoneByCoordinates = async (lng: number, lat: number, countryCod
                 }
             }
         }
-    });
+    };
+
+    if (checkBooking) query.bookingAvailability = true;
+
+    return await Zone.findOne(query);
 };
 
 /**
  * resolveZoneForLocation
  * Reusable resolver for any location-based zone lookup.
  */
-export const resolveZoneForLocation = async (coordinates: number[], countryCode: string): Promise<IZone | null> => {
+export const resolveZoneForLocation = async (coordinates: number[], countryCode: string, checkBooking: boolean = false): Promise<IZone | null> => {
     if (!coordinates || coordinates.length !== 2) return null;
-    return await findZoneByCoordinates(coordinates[0], coordinates[1], countryCode);
+    return await findZoneByCoordinates(coordinates[0], coordinates[1], countryCode, checkBooking);
 };
 
 /**

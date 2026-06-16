@@ -35,10 +35,13 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
     const { serviceCode, coordinates, address, isEmergency, isForSomeoneElse, recipientName, recipientPhone } = req.body;
     let { zoneId } = req.body;
 
-    // Automatic Zone Resolution
+    // Automatic Zone Resolution (with availability check)
     if (!zoneId && coordinates) {
-        const resolvedZone = await zoneResolverService.resolveZoneForLocation(coordinates, req.user!.countryCode);
-        if (resolvedZone) zoneId = resolvedZone._id;
+        const resolvedZone = await zoneResolverService.resolveZoneForLocation(coordinates, req.user!.countryCode, true);
+        if (!resolvedZone) {
+            return res.status(403).json({ success: false, message: 'PieceJob is not yet available in this area.' });
+        }
+        zoneId = resolvedZone._id;
     }
 
     // PAGE 4 – PRICING & RULES INTEGRATION
@@ -97,6 +100,10 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
 
     if (!job || job.customerId.toString() !== req.user?.userId) {
       return res.status(404).json({ success: false, message: 'Job not found' });
+    }
+
+    if (job.paymentStatus === 'PAID') {
+        return res.status(200).json({ success: true, message: 'Job already paid', job });
     }
 
     // SECTION 5.2: Double-Entry Ledger Integration

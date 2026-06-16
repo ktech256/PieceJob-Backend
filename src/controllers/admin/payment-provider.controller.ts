@@ -59,3 +59,13 @@ export const getAvailableMethods = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ success: false, message: 'Failed to fetch payment methods' });
     }
 };
+
+export const deleteProvider = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        await PaymentProvider.findByIdAndDelete(id);
+        res.status(200).json({ success: true, message: 'Provider removed' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Delete failed' });
+    }
+};

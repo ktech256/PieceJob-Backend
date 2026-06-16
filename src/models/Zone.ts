@@ -3,8 +3,12 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IZone extends Document {
   name: string;
   zoneCode: string;
+  province: string;
   cityName: string;
   countryCode: string;
+  radius?: number; // In KM if using circle
+  serviceAvailability: boolean;
+  bookingAvailability: boolean;
   boundary: {
     type: string;
     coordinates: number[][][]; // Polygon
@@ -17,8 +21,12 @@ export interface IZone extends Document {
 const ZoneSchema: Schema = new Schema({
   name: { type: String, required: true },
   zoneCode: { type: String, required: true },
+  province: { type: String, required: true },
   cityName: { type: String, required: true },
   countryCode: { type: String, required: true },
+  radius: { type: Number },
+  serviceAvailability: { type: Boolean, default: true },
+  bookingAvailability: { type: Boolean, default: true },
   boundary: {
     type: { type: String, default: 'Polygon' },
     coordinates: { type: [[[Number]]], required: true }
