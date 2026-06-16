@@ -24,7 +24,10 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     isOnline: true,
     verificationStatus: 'APPROVED',
     isShadowBanned: { $ne: true }, // Exclude shadow banned
-    suspendedUntil: { $lt: new Date() },
+    $or: [
+        { suspendedUntil: { $exists: false } },
+        { suspendedUntil: { $lt: new Date() } }
+    ],
     servicesOffered: job.serviceCode,
     countryCode: job.countryCode
   };

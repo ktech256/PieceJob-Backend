@@ -228,7 +228,7 @@ const ProviderSchema: Schema = new Schema({
 
   location: {
     type: { type: String, default: 'Point' },
-    coordinates: { type: [Number], index: '2dsphere' }
+    coordinates: { type: [Number] }
   },
   suspendedUntil: { type: Date },
   criminalCheckRequired: { type: Boolean, default: false },
@@ -243,5 +243,6 @@ const ProviderSchema: Schema = new Schema({
 ProviderSchema.index({ userId: 1 });
 ProviderSchema.index({ countryCode: 1 });
 ProviderSchema.index({ isOnline: 1, servicesOffered: 1 });
+ProviderSchema.index({ location: '2dsphere' });
 
 export default mongoose.model<IProvider>('Provider', ProviderSchema);
