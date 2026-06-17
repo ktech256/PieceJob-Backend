@@ -18,8 +18,8 @@ async function seed() {
             {
                 name: 'Google Maps Platform',
                 config: {
-                    MAPS_API_KEY: 'AIzaSyDQQ-0RvmDlQvUPT9SuKxkHp_6z3lNl0V4',
-                    PLACES_API_KEY: 'AIzaSyDQQ-0RvmDlQvUPT9SuKxkHp_6z3lNl0V4'
+                    MAPS_API_KEY: 'AIzaSyA6ejydkakIIGLWO9YLCPID7zCiS0VoU3w',
+                    PLACES_API_KEY: 'AIzaSyA6ejydkakIIGLWO9YLCPID7zCiS0VoU3w'
                 },
                 isActive: true
             },

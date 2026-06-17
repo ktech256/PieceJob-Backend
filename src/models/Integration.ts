@@ -3,8 +3,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IIntegration extends Document {
     type: 'GOOGLE_MAPS' | 'FIREBASE' | 'SMS' | 'EMAIL' | 'PUSH' | 'OTP';
     name: string;
-    config: Map<string, string>;
-    backupConfig: Map<string, string>;
+    config: any;
+    backupConfig: any;
     lastRotationDate?: Date;
     isActive: boolean;
     health: {
@@ -19,8 +19,8 @@ export interface IIntegration extends Document {
 const IntegrationSchema: Schema = new Schema({
     type: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    config: { type: Map, of: String, default: {} },
-    backupConfig: { type: Map, of: String, default: {} },
+    config: { type: Schema.Types.Mixed, default: {} },
+    backupConfig: { type: Schema.Types.Mixed, default: {} },
     lastRotationDate: { type: Date },
     isActive: { type: Boolean, default: true },
     health: {
