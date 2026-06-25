@@ -7,6 +7,7 @@ import Service, { ServiceCategory, VerificationLevel } from '../models/Service';
 import { emitAdminUpdate } from '../socket/socket.service';
 import Job, { JobStatus } from '../models/Job';
 import Ledger, { TransactionType } from '../models/Ledger';
+import SystemSettings from '../models/SystemSettings';
 import mongoose from 'mongoose';
 import * as presenceService from '../services/provider-presence.service';
 import * as storageService from '../services/storage.service';
