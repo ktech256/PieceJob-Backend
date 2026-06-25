@@ -78,6 +78,7 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
           hourlyPrice: pricingBreakdown.hourlyPrice,
           bookingFee: pricingBreakdown.bookingFee,
           taxPercentage: pricingBreakdown.taxPercentage,
+          currencyCode: pricingBreakdown.currency,
           surcharges: pricingBreakdown.surcharges
       },
 

@@ -58,6 +58,7 @@ export interface IJob extends Document {
       hourlyPrice: number;
       bookingFee: number;
       taxPercentage: number;
+      currencyCode: string;
       surcharges: {
           type: string;
           amount: number;
@@ -105,6 +106,7 @@ const JobSchema: Schema = new Schema({
       hourlyPrice: { type: Number },
       bookingFee: { type: Number },
       taxPercentage: { type: Number },
+      currencyCode: { type: String },
       surcharges: [{
           type: { type: String },
           amount: { type: Number }
