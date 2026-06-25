@@ -4,6 +4,7 @@ import Provider, { VerificationStatus } from '../models/Provider';
 import PanicAlert from '../models/PanicAlert';
 import Job from '../models/Job';
 import AuditLog from '../models/AuditLog';
+import mongoose from 'mongoose';
 
 import * as testUserService from '../services/test-user.service';
 
