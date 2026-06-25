@@ -62,6 +62,11 @@ export const getPublicServices = async (req: Request, res: Response) => {
     try {
         const countryCode = req.headers['x-country-code'] as string || 'ZA';
         const userGender = req.query.gender as string; // 'M' or 'F'
+        const lat = req.query.lat ? parseFloat(req.query.lat as string) : null;
+        const lng = req.query.lng ? parseFloat(req.query.lng as string) : null;
+
+        const settings = await SystemSettings.findOne({ countryCode });
+        const radiusKm = settings?.matchingRadiusKm || 5;
 
         const query: any = {
             $or: [{ countryCode: 'GLOBAL' }, { countryCode }],
@@ -80,39 +85,60 @@ export const getPublicServices = async (req: Request, res: Response) => {
         const categories = await ServiceCategoryModel.find({ isDeleted: false, isActive: true }).sort({ sortOrder: 1 });
 
         // Fetch online providers for count calculation
-        const onlineProviders = await Provider.find({
+        const providerQuery: any = {
             countryCode: countryCode === 'GLOBAL' ? { $exists: true } : countryCode,
-            isOnline: true
-        }).select('servicesOffered location');
+            isOnline: true,
+            currentAvailabilityStatus: 'ONLINE',
+            verificationStatus: 'APPROVED'
+        };
+
+        // Radius Filtering if coordinates provided
+        if (lat !== null && lng !== null) {
+            providerQuery.location = {
+                $near: {
+                    $geometry: {
+                        type: 'Point',
+                        coordinates: [lng, lat]
+                    },
+                    $maxDistance: radiusKm * 1000
+                }
+            };
+        }
+
+        const onlineProviders = await Provider.find(providerQuery).select('servicesOffered location');
+
+        const formatCountLabel = (count: number) => {
+            if (count === 0) return "0 Online";
+            if (count === 1) return "1 Online";
+            if (count > 1 && count < 5) return "0-4 Online";
+            if (count >= 5 && count < 10) return "5+ Online";
+            if (count >= 10) return "10+ Online";
+            return "0 Online";
+        };
+
+        const servicesWithCounts = services.map((s: any) => {
+            const count = onlineProviders.filter((p: any) => p.servicesOffered.includes(s.code)).length;
+            return {
+                ...s.toObject(),
+                onlineCountLabel: formatCountLabel(count),
+                onlineCount: count
+            };
+        });
 
         const grouped = categories.map((cat: any) => {
-            const servicesInCategory = services.filter((s: any) => s.category === cat.code);
-
-            const servicesWithCount = servicesInCategory.map((s: any) => {
-                const count = onlineProviders.filter((p: any) => p.servicesOffered.includes(s.code)).length;
-                let countLabel = "0";
-                if (count > 0 && count <= 5) countLabel = "1-5";
-                else if (count > 5 && count <= 10) countLabel = "6-10";
-                else if (count > 10) countLabel = "11+";
-
-                return {
-                    ...s.toObject(),
-                    onlineCountLabel: countLabel,
-                    onlineCount: count
-                };
-            });
+            const servicesInCategory = servicesWithCounts.filter((s: any) => s.category === cat.code);
 
             return {
                 label: cat.name,
                 requirements: `Various levels based on service selection`,
-                services: servicesWithCount
+                services: servicesInCategory
             };
         }).filter(g => g.services.length > 0);
 
         res.status(200).json({
             success: true,
             data: {
-                services: services,
+                services: servicesWithCounts,
                 grouped: grouped
             }
         });

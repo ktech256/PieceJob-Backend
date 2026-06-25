@@ -215,11 +215,32 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
 export const getOnlineProviders = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.user?.countryCode || 'ZA';
-        const providers = await Provider.find({
+        const lat = req.query.lat ? parseFloat(req.query.lat as string) : null;
+        const lng = req.query.lng ? parseFloat(req.query.lng as string) : null;
+
+        const settings = await SystemSettings.findOne({ countryCode });
+        const radiusKm = settings?.matchingRadiusKm || 5;
+
+        const query: any = {
             countryCode,
             isOnline: true,
+            currentAvailabilityStatus: 'ONLINE',
             verificationStatus: 'APPROVED'
-        }).select('userId ratingAvg jobsCompleted location');
+        };
+
+        if (lat !== null && lng !== null) {
+            query.location = {
+                $near: {
+                    $geometry: {
+                        type: 'Point',
+                        coordinates: [lng, lat]
+                    },
+                    $maxDistance: radiusKm * 1000
+                }
+            };
+        }
+
+        const providers = await Provider.find(query).select('userId ratingAvg jobsCompleted location');
 
         const populated = await User.populate(providers, { path: 'userId', select: 'firstName lastName profilePhoto' });
 
