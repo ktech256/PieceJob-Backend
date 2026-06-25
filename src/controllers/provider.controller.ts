@@ -158,12 +158,6 @@ export const updateStatus = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ success: false, message: 'Account not approved. Please complete verification.' });
         }
 
-        // 2. mandatory onboarding requirements
-        // Assuming APPROVED status handles this, but let's check for bank details as an example
-        if (!provider.bankDetails || !provider.bankDetails.bankName) {
-            return res.status(403).json({ success: false, message: 'Please complete your bank details onboarding.' });
-        }
-
         // 3. At least one active service
         if (!provider.servicesOffered || provider.servicesOffered.length === 0) {
             return res.status(403).json({ success: false, message: 'Please configure at least one active service.' });

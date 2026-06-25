@@ -39,6 +39,33 @@ export const verifyProvider = async (req: AuthRequest, res: Response) => {
 
     const previousStatus = provider.verificationStatus;
     provider.verificationStatus = status;
+
+    if (status === VerificationStatus.APPROVED) {
+        // Promote services
+        const Service = mongoose.model('Service');
+        const pendingServices = await Service.find({ code: { $in: provider.pendingServices } });
+
+        const levelOrder = ['STANDARD', 'PROFESSIONAL', 'TRADE', 'HIGH_VETTING'];
+        const provLevelIdx = levelOrder.indexOf(provider.verificationLevel);
+
+        const newlyApproved: string[] = [];
+        const remainingPending: string[] = [];
+
+        for (const s of pendingServices) {
+            const servLevelIdx = levelOrder.indexOf(s.verificationLevel);
+            if (provLevelIdx >= servLevelIdx) {
+                newlyApproved.push(s.code);
+            } else {
+                remainingPending.push(s.code);
+            }
+        }
+
+        if (newlyApproved.length > 0) {
+            provider.servicesOffered = [...new Set([...provider.servicesOffered, ...newlyApproved])];
+            provider.pendingServices = remainingPending;
+        }
+    }
+
     await provider.save();
 
     // SECTION 13: System Ledger Record (Audit Log)
