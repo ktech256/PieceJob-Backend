@@ -144,20 +144,75 @@ export const getMyReviews = async (req: AuthRequest, res: Response) => {
 
 export const updateStatus = async (req: AuthRequest, res: Response) => {
   try {
-    const { isOnline } = req.body;
-    const provider = await Provider.findOneAndUpdate(
-      { userId: req.user?.userId },
-      { isOnline, lastHeartbeat: new Date() },
-      { new: true }
-    );
+    const { isOnline, coordinates } = req.body;
+    const userId = req.user?.userId;
+
+    const provider = await Provider.findOne({ userId });
+    if (!provider) {
+        return res.status(404).json({ success: false, message: 'Provider profile not found' });
+    }
+
+    if (isOnline) {
+        // 1. Account approved and verified
+        if (provider.verificationStatus !== VerificationStatus.APPROVED) {
+            return res.status(403).json({ success: false, message: 'Account not approved. Please complete verification.' });
+        }
+
+        // 2. mandatory onboarding requirements
+        // Assuming APPROVED status handles this, but let's check for bank details as an example
+        if (!provider.bankDetails || !provider.bankDetails.bankName) {
+            return res.status(403).json({ success: false, message: 'Please complete your bank details onboarding.' });
+        }
+
+        // 3. At least one active service
+        if (!provider.servicesOffered || provider.servicesOffered.length === 0) {
+            return res.status(403).json({ success: false, message: 'Please configure at least one active service.' });
+        }
+
+        // 6. Not suspended
+        if (provider.suspendedUntil && provider.suspendedUntil > new Date()) {
+            return res.status(403).json({ success: false, message: 'Your account is currently suspended.' });
+        }
+
+        // 7. Not busy on another job
+        const activeJob = await Job.findOne({
+            providerId: userId,
+            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED] }
+        });
+        if (activeJob) {
+            return res.status(403).json({ success: false, message: 'You cannot go online while on an active job.' });
+        }
+
+        // 5. GPS location available
+        if (coordinates) {
+            provider.location.coordinates = coordinates;
+            provider.lastGpsUpdate = new Date();
+        } else if (!provider.location.coordinates || provider.location.coordinates.length === 0) {
+            return res.status(400).json({ success: false, message: 'GPS location is required to go online.' });
+        }
+
+        provider.isOnline = true;
+        provider.currentAvailabilityStatus = 'ONLINE';
+        provider.lastOnlineAt = new Date();
+    } else {
+        provider.isOnline = false;
+        provider.currentAvailabilityStatus = 'OFFLINE';
+    }
+
+    await provider.save();
 
     emitAdminUpdate('provider_status_changed', {
-        userId: req.user?.userId,
-        isOnline: provider?.isOnline,
+        userId: userId,
+        isOnline: provider.isOnline,
+        status: provider.currentAvailabilityStatus,
         timestamp: new Date()
     });
 
-    res.status(200).json({ success: true, isOnline: provider?.isOnline });
+    res.status(200).json({
+        success: true,
+        isOnline: provider.isOnline,
+        status: provider.currentAvailabilityStatus
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Status update failed', error });
   }

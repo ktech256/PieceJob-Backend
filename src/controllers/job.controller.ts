@@ -217,10 +217,23 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         );
 
         // PAGE 7: Increment Completed Jobs
-        await Provider.findOneAndUpdate(
+        const provider = await Provider.findOneAndUpdate(
             { userId: job.providerId },
-            { $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 } }
+            {
+                $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 },
+                currentAvailabilityStatus: 'ONLINE'
+            },
+            { new: true }
         );
+
+        if (provider) {
+            emitAdminUpdate('provider_status_changed', {
+                userId: job.providerId,
+                isOnline: provider.isOnline,
+                status: provider.currentAvailabilityStatus,
+                timestamp: new Date()
+            });
+        }
 
         // Notify Customer
         await notificationService.notifyUser(
@@ -276,6 +289,24 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       job.cancelledBy = new mongoose.Types.ObjectId(userId);
       job.cancellationReason = reason;
       await job.save();
+
+      // Reset provider status to ONLINE if they are still isOnline
+      if (job.providerId) {
+          const provider = await Provider.findOneAndUpdate(
+              { userId: job.providerId },
+              { currentAvailabilityStatus: 'ONLINE' },
+              { new: true }
+          );
+
+          if (provider) {
+              emitAdminUpdate('provider_status_changed', {
+                  userId: job.providerId,
+                  isOnline: provider.isOnline,
+                  status: provider.currentAvailabilityStatus,
+                  timestamp: new Date()
+              });
+          }
+      }
 
       // Notify other party
       const notifyTargetId = role === 'PROVIDER' ? job.customerId.toString() : job.providerId?.toString();

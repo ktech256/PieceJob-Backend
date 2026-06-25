@@ -9,9 +9,8 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
     const oldProvider = await Provider.findOne({ userId });
 
     const provider = await Provider.findOneAndUpdate(
-        { userId },
+        { userId, isOnline: true },
         {
-            isOnline: true,
             lastHeartbeat: now,
             lastGpsUpdate: now,
             'location.coordinates': coordinates,

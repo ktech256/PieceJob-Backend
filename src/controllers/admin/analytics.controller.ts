@@ -111,8 +111,9 @@ export const getLiveOpsData = async (req: AuthRequest, res: Response) => {
         if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
 
         const [providers, activeJobs] = await Promise.all([
-            Provider.find({ ...query, isOnline: true }).populate('userId', 'firstName lastName'),
-            Job.find({ ...query, status: { $in: [JobStatus.BROADCASTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED] } })
+            // Fetch ALL providers for the country to show both online (green) and offline (red)
+            Provider.find(query).populate('userId', 'firstName lastName role'),
+            Job.find({ ...query, status: { $in: [JobStatus.BROADCASTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE] } })
         ]);
 
         res.status(200).json({

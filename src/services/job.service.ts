@@ -175,6 +175,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
 
     // PAGE 7: Track Accepted Jobs
     provider.performance.acceptedJobs += 1;
+    provider.currentAvailabilityStatus = 'BUSY';
     await provider.save({ session });
 
     await session.commitTransaction();

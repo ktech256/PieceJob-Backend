@@ -31,6 +31,8 @@ export interface IProvider extends Document {
   tier: ProviderTier;
   countryCode: string;
   isOnline: boolean;
+  currentAvailabilityStatus: 'ONLINE' | 'OFFLINE' | 'BUSY';
+  lastOnlineAt?: Date;
   isFeatured: boolean;
   isShadowBanned: boolean;
   shadowBannedUntil?: Date;
@@ -141,6 +143,8 @@ const ProviderSchema: Schema = new Schema({
   tier: { type: String, enum: Object.values(ProviderTier), default: ProviderTier.BRONZE },
   countryCode: { type: String, required: true },
   isOnline: { type: Boolean, default: false },
+  currentAvailabilityStatus: { type: String, enum: ['ONLINE', 'OFFLINE', 'BUSY'], default: 'OFFLINE' },
+  lastOnlineAt: { type: Date },
   isFeatured: { type: Boolean, default: false },
   isShadowBanned: { type: Boolean, default: false },
   shadowBannedUntil: { type: Date },
