@@ -3,6 +3,8 @@ import * as paymentAdminController from "../controllers/admin/payment.controller
 import { authenticate, AuthRequest } from "../middleware/auth.middleware";
 import * as settingsService from "../services/settings.service";
 
+import * as paymentController from "../controllers/payment.controller";
+
 const router = Router();
 
 router.get("/config", authenticate, async (req: AuthRequest, res: Response) => {
@@ -10,6 +12,8 @@ router.get("/config", authenticate, async (req: AuthRequest, res: Response) => {
   res.json({ success: true, config: { gateway: 'PAYSTACK', currency: settings.currency || 'USD' } });
 });
 
+router.get("/verify/:reference", authenticate, paymentController.verifyPayment);
+router.post("/webhook/paystack", paymentController.handlePaystackWebhook);
 router.patch("/job/:jobId/mark-paid", authenticate, paymentAdminController.markJobPaid);
 
 export default router;

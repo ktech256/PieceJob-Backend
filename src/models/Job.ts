@@ -41,6 +41,7 @@ export interface IJob extends Document {
   recipientPhone?: string;
 
   paymentStatus: 'PENDING' | 'PAID' | 'REFUNDED';
+  paymentReference?: string;
   escrowStatus: 'PENDING' | 'HELD' | 'ESCROW_HOLD_REVIEW' | 'RELEASED' | 'REFUNDED';
   fraudFlag?: string;
   cancellationReason?: string;
@@ -87,6 +88,7 @@ const JobSchema: Schema = new Schema({
   recipientName: { type: String },
   recipientPhone: { type: String },
   paymentStatus: { type: String, enum: ['PENDING', 'PAID', 'REFUNDED'], default: 'PENDING' },
+  paymentReference: { type: String },
   escrowStatus: { type: String, enum: ['PENDING', 'HELD', 'ESCROW_HOLD_REVIEW', 'RELEASED', 'REFUNDED'], default: 'PENDING' },
   fraudFlag: { type: String },
   cancellationReason: { type: String },

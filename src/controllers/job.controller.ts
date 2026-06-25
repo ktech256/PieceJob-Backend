@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
+import User from '../models/User';
 import * as jobService from '../services/job.service';
 import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
@@ -14,6 +15,7 @@ import * as zoneResolverService from '../services/zone-resolver.service';
 import * as fraudService from '../services/fraud.service';
 import * as notificationService from '../services/notification.service';
 import * as testUserService from '../services/test-user.service';
+import * as paystackService from '../services/paystack.service';
 
 function calculateDistance(c1: number[], c2: number[]) {
   const R = 6371e3; // meters
@@ -106,25 +108,44 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
         return res.status(200).json({ success: true, message: 'Job already paid', job });
     }
 
-    // SECTION 5.2: Double-Entry Ledger Integration
-    await financialService.handleBookingFee(
-        job.id,
-        job.customerId.toString(),
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    // Initialize Paystack Transaction
+    const metadata = {
+        jobId: job.id,
+        customerId: user.id,
+        serviceCode: job.serviceCode
+    };
+
+    const paystackRes = await paystackService.initializeTransaction(
+        user.email,
         job.bookingFee,
-        'USD', // Default currency
+        job.pricingSnapshot?.currencyCode || 'USD',
+        metadata,
         job.countryCode
     );
 
-    job.paymentStatus = 'PAID';
-    job.status = JobStatus.BROADCASTED; // Start broadcasting immediately
-    await job.save();
+    if (paystackRes.status) {
+        job.paymentReference = paystackRes.data.reference;
+        job.status = JobStatus.PAYMENT_PENDING;
+        await job.save();
 
-    jobService.broadcastJob(job.id);
-    emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
-
-    res.status(200).json({ success: true, message: 'Payment successful, ledger updated', job });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Payment processing failed', error });
+        return res.status(200).json({
+            success: true,
+            message: 'Payment initialized',
+            data: {
+                paymentUrl: paystackRes.data.authorization_url,
+                reference: paystackRes.data.reference,
+                job
+            }
+        });
+    } else {
+        return res.status(400).json({ success: false, message: paystackRes.message });
+    }
+  } catch (error: any) {
+    console.error('Payment initialization failed:', error);
+    res.status(500).json({ success: false, message: error.message || 'Payment initialization failed' });
   }
 };
 
