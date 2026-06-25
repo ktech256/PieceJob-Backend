@@ -106,6 +106,7 @@ router.get('/users', userAdminController.listUsers);
 // Zones
 router.get('/zones', zoneController.listZones);
 router.post('/zones', zoneController.createZone);
+router.get('/zones/:id/stats', zoneController.getZoneStats);
 router.patch('/zones/:id', zoneController.updateZone);
 router.delete('/zones/:id', zoneController.deleteZone);
 router.patch('/zones/:id/toggle', zoneController.toggleZoneStatus);

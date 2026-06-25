@@ -6,6 +6,7 @@ export interface IZone extends Document {
   province: string;
   cityName: string;
   countryCode: string;
+  countryName?: string;
   radius?: number; // In KM if using circle
   serviceAvailability: boolean;
   bookingAvailability: boolean;
@@ -21,9 +22,10 @@ export interface IZone extends Document {
 const ZoneSchema: Schema = new Schema({
   name: { type: String, required: true },
   zoneCode: { type: String, required: true },
-  province: { type: String, required: true },
-  cityName: { type: String, required: true },
+  province: { type: String },
+  cityName: { type: String },
   countryCode: { type: String, required: true },
+  countryName: { type: String },
   radius: { type: Number },
   serviceAvailability: { type: Boolean, default: true },
   bookingAvailability: { type: Boolean, default: true },

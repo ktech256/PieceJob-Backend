@@ -37,13 +37,32 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
     const { serviceCode, coordinates, address, isEmergency, isForSomeoneElse, recipientName, recipientPhone } = req.body;
     let { zoneId } = req.body;
 
-    // Automatic Zone Resolution (with availability check)
-    if (!zoneId && coordinates) {
-        const resolvedZone = await zoneResolverService.resolveZoneForLocation(coordinates, req.user!.countryCode, true);
-        if (!resolvedZone) {
-            return res.status(403).json({ success: false, message: 'PieceJob is not yet available in this area.' });
+    // 1. Determine which zone contains customer coordinates
+    const resolvedZone = await zoneResolverService.resolveZoneForLocation(coordinates, req.user!.countryCode, true);
+
+    if (!resolvedZone) {
+        // If coordinate falls outside all active zones
+        return res.status(403).json({ success: false, message: 'PieceJob is not yet available in this area.' });
+    }
+
+    zoneId = resolvedZone._id;
+
+    // 2. Check if providers are online within that zone for the requested service
+    const onlineProvidersInZone = await Provider.countDocuments({
+        countryCode: req.user!.countryCode,
+        isOnline: true,
+        currentAvailabilityStatus: 'ONLINE',
+        verificationStatus: 'APPROVED',
+        servicesOffered: serviceCode,
+        location: {
+            $geoIntersects: {
+                $geometry: resolvedZone.boundary
+            }
         }
-        zoneId = resolvedZone._id;
+    });
+
+    if (onlineProvidersInZone === 0) {
+        return res.status(403).json({ success: false, message: 'No providers are currently online for this service in your area.' });
     }
 
     // PAGE 4 – PRICING & RULES INTEGRATION
