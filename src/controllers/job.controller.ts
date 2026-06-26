@@ -204,9 +204,19 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
   try {
     const { jobId } = req.params;
     const job = await jobService.acceptJob(jobId, req.user!.userId);
-    emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerId: req.user!.userId });
+    emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.PROVIDER_ACCEPTED, providerId: req.user!.userId });
 
-    // Notify Customer
+    // Notify Customer via Socket (Job Room)
+    emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.PROVIDER_ACCEPTED });
+
+    // Notify Customer via Socket (User Room - specific for acceptance transition)
+    emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', {
+        jobId: job.id,
+        status: JobStatus.PROVIDER_ACCEPTED,
+        providerId: req.user!.userId
+    });
+
+    // Notify Customer via FCM
     await notificationService.notifyUser(
         job.customerId.toString(),
         'Job Accepted',

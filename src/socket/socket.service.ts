@@ -40,6 +40,11 @@ export const initSocket = (server: any) => {
       console.log(`Socket ${socket.id} joined room job_${jobId}`);
     });
 
+    socket.on('join_user', (userId: string) => {
+        socket.join(`user_${userId}`);
+        console.log(`Socket ${socket.id} joined room user_${userId}`);
+    });
+
     socket.on('join_admin', () => {
       socket.join('admin_monitoring');
       console.log(`Socket ${socket.id} joined admin_monitoring`);
