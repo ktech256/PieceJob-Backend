@@ -20,14 +20,16 @@ export const initializePayment = async (
     metadata: any,
     countryCode: string
 ): Promise<PaymentInitializationResult> => {
+    console.log(`[PAYMENT_ROUTING] Looking for active providers in country: ${countryCode}`);
+
     // 1. Resolve the highest priority active provider for the country
     const provider = await PaymentProvider.findOne({
-        countryCode,
+        countryCode: countryCode.toUpperCase(),
         isActive: true
     }).sort({ priority: 1 });
 
     if (!provider) {
-        console.error(`[PAYMENT_ROUTING_ERROR] No active payment provider found for country: ${countryCode}`);
+        console.error(`[PAYMENT_ROUTING_ERROR] No active payment provider found for country: ${countryCode}. Check DB for countryCode: ${countryCode.toUpperCase()}`);
         return {
             success: false,
             message: `No payment gateway configured for country: ${countryCode}`,
@@ -35,18 +37,22 @@ export const initializePayment = async (
         };
     }
 
-    console.log(`[PAYMENT_ROUTING] Using gateway: ${provider.code} (${provider.name}) for ${countryCode}`);
+    console.log(`[PAYMENT_ROUTING] Found Provider! ID: ${provider._id}, Code: '${provider.code}', Name: ${provider.name}, Priority: ${provider.priority}`);
 
     // 2. Route to the specific gateway service
     try {
-        switch (provider.code.toLowerCase()) {
+        const normalizedCode = provider.code.trim().toLowerCase();
+        console.log(`[PAYMENT_ROUTING] Normalized Code: '${normalizedCode}'`);
+
+        switch (normalizedCode) {
             case 'paystack': {
                 const res = await paystackService.initializeTransaction(
                     email,
                     amount,
                     currency,
                     metadata,
-                    countryCode
+                    countryCode,
+                    provider // Pass the pre-resolved provider config
                 );
                 return {
                     success: res.status,
@@ -58,6 +64,7 @@ export const initializePayment = async (
             }
             // Add other gateways here (Stripe, Ozow, etc.)
             default:
+                console.error(`[PAYMENT_ROUTING_ERROR] Implementation missing for: '${normalizedCode}'`);
                 return {
                     success: false,
                     message: `Gateway ${provider.code} implementation missing`,

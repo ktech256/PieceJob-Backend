@@ -16,28 +16,29 @@ export const initializeTransaction = async (
   amount: number,
   currency: string,
   metadata: any,
-  countryCode: string
+  countryCode: string,
+  config?: any // Optional pre-resolved configuration
 ): Promise<PaystackInitializeResponse> => {
   console.log(`[PAYSTACK_TRACE] Step 1: Starting initialization for ${email} in country ${countryCode}`);
 
-  // 1. Resolve Paystack configuration for this specific country
-  const provider = await PaymentProvider.findOne({
-      code: 'paystack',
+  // 1. Use provided config or resolve Paystack configuration for this specific country
+  const provider = config || await PaymentProvider.findOne({
+      code: { $regex: new RegExp(`^paystack$`, 'i') },
       countryCode: countryCode,
       isActive: true
   });
 
   if (!provider) {
-    console.error(`[PAYSTACK_TRACE] ERROR: No active Paystack configuration found for country ${countryCode}`);
+    console.error(`[PAYSTACK_TRACE] ERROR: No active Paystack configuration found for country ${countryCode}. Query criteria: code=paystack, countryCode=${countryCode}, isActive=true`);
     throw new Error(`Paystack is not configured for country: ${countryCode}`);
   }
 
   if (!provider.secretKey) {
-    console.error(`[PAYSTACK_TRACE] ERROR: Paystack secret key missing for country ${countryCode}`);
+    console.error(`[PAYSTACK_TRACE] ERROR: Paystack secret key missing for country ${countryCode} (Config ID: ${provider._id})`);
     throw new Error(`Paystack secret key is missing for country: ${countryCode}`);
   }
 
-  console.log(`[PAYSTACK_TRACE] Step 2: Config resolved. Merchant: ${provider.merchantId || 'N/A'}, Env: ${provider.environment}`);
+  console.log(`[PAYSTACK_TRACE] Step 2: Config resolved. ID: ${provider._id}, Merchant: ${provider.merchantId || 'N/A'}, Env: ${provider.environment}`);
 
   // Paystack amount is in kobo (base unit * 100)
   const amountInBaseUnit = Math.round(amount * 100);
@@ -73,12 +74,13 @@ export const initializeTransaction = async (
 
 export const verifyTransaction = async (reference: string, countryCode: string): Promise<any> => {
   const provider = await PaymentProvider.findOne({
-      code: 'paystack',
+      code: { $regex: new RegExp(`^paystack$`, 'i') },
       countryCode: countryCode,
       isActive: true
   });
 
   if (!provider || !provider.secretKey) {
+    console.error(`[PAYSTACK_VERIFY_ERROR] No active Paystack configuration for country ${countryCode}`);
     throw new Error(`Paystack secret key is not configured for country: ${countryCode}`);
   }
 

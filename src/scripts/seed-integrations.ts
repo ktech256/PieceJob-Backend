@@ -41,32 +41,41 @@ async function seed() {
             { upsert: true }
         );
 
-        // 3. Seed Payment Providers
+        // 3. Seed Payment Providers (Updated for per-country isolation)
         const providers = [
             {
-                name: 'PayFast',
+                name: 'PayFast (ZA)',
                 code: 'payfast',
-                countries: ['ZA'],
-                currency: ['ZAR'],
+                countryCode: 'ZA',
+                currency: 'ZAR',
                 priority: 1,
                 environment: 'sandbox',
                 isActive: true
             },
             {
-                name: 'Paystack',
+                name: 'Paystack (ZA)',
                 code: 'paystack',
-                countries: ['NG', 'KE', 'ZA'],
-                currency: ['NGN', 'KES', 'ZAR'],
+                countryCode: 'ZA',
+                currency: 'ZAR',
                 priority: 2,
                 environment: 'sandbox',
                 isActive: true
             },
             {
-                name: 'Stripe',
+                name: 'Paystack (NG)',
+                code: 'paystack',
+                countryCode: 'NG',
+                currency: 'NGN',
+                priority: 1,
+                environment: 'sandbox',
+                isActive: true
+            },
+            {
+                name: 'Stripe (US)',
                 code: 'stripe',
-                countries: ['US', 'GB', 'EU'],
-                currency: ['USD', 'GBP', 'EUR'],
-                priority: 3,
+                countryCode: 'US',
+                currency: 'USD',
+                priority: 1,
                 environment: 'sandbox',
                 isActive: true
             }
@@ -74,7 +83,7 @@ async function seed() {
 
         for (const p of providers) {
             await PaymentProvider.findOneAndUpdate(
-                { code: p.code },
+                { code: p.code, countryCode: p.countryCode },
                 p,
                 { upsert: true }
             );

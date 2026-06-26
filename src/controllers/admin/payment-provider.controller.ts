@@ -19,9 +19,14 @@ export const createProvider = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.headers['x-country-code'] as string || req.user?.countryCode;
 
+        // TECHNICAL NORMALIZATION
+        const normalizedCode = (req.body.code as string).trim().toLowerCase();
+        const normalizedCountry = (req.body.countryCode || countryCode).trim().toUpperCase();
+
         const provider = new PaymentProvider({
             ...req.body,
-            countryCode: req.body.countryCode || countryCode,
+            code: normalizedCode,
+            countryCode: normalizedCountry,
             updatedBy: req.user?.userId
         });
         await provider.save();
@@ -34,6 +39,11 @@ export const createProvider = async (req: AuthRequest, res: Response) => {
 export const updateProvider = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+
+        // TECHNICAL NORMALIZATION
+        if (req.body.code) req.body.code = (req.body.code as string).trim().toLowerCase();
+        if (req.body.countryCode) req.body.countryCode = (req.body.countryCode as string).trim().toUpperCase();
+
         const provider = await PaymentProvider.findByIdAndUpdate(
             id,
             { ...req.body, updatedBy: req.user?.userId },
