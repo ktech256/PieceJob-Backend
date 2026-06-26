@@ -67,11 +67,12 @@ export const initSocket = (server: any) => {
         socket.join(`sos_incident_${incidentId}`);
     });
 
-    socket.on('update_location', async (data: { jobId: string, coordinates: number[], userId: string, role: string }) => {
+    socket.on('update_location', async (data: { jobId: string, coordinates: number[], userId: string, role: string, heading?: number }) => {
       // 1. Emit to the job room so the customer can track
       io.to(`job_${data.jobId}`).emit('location_updated', {
         jobId: data.jobId,
         coordinates: data.coordinates,
+        heading: data.heading || 0,
         timestamp: new Date()
       });
 

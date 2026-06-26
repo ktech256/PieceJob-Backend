@@ -3,7 +3,7 @@ import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
-import { emitToUser } from '../socket/socket.service';
+import { emitToUser, emitJobUpdate } from '../socket/socket.service';
 import * as broadcastQueue from './job-broadcast.queue';
 import * as notificationService from './notification.service';
 
@@ -114,6 +114,13 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
         { _id: { $in: providers.map(p => p._id) } },
         { $inc: { 'performance.broadcastOpportunities': 1 } }
     );
+
+    // Signal Customer App
+    emitJobUpdate(jobId, 'broadcast_wave', {
+        wave,
+        providerCount: providers.length,
+        status: 'SEARCHING'
+    });
 
     providers.forEach(p => {
       emitToUser(p.userId.toString(), 'NEW_JOB_BROADCAST', {
