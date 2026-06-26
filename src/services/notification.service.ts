@@ -87,17 +87,19 @@ export const notifyUser = async (userId: any, title: string, body: string, data:
         return;
     }
 
+    console.log(`[FCM_AUDIT] Fetching fresh User document for ${targetId} to retrieve token.`);
     const user = await User.findById(targetId);
     if (!user) {
-        console.warn(`[FCM_AUDIT] User ${targetId} not found in database.`);
-        return;
-    }
-    if (!user.fcmToken) {
-        console.warn(`[FCM_AUDIT] User ${targetId} has no FCM token.`);
+        console.warn(`[FCM_AUDIT] FAILED: User ${targetId} not found in database.`);
         return;
     }
 
-    console.log(`[FCM_AUDIT] Sending notification to User ${targetId}...`);
+    if (!user.fcmToken) {
+        console.warn(`[FCM_AUDIT] FAILED: User ${targetId} (${user.email}) has NO FCM token in MongoDB. Last Update: ${user.updatedAt}`);
+        return;
+    }
+
+    console.log(`[FCM_AUDIT] Valid token found for User ${targetId}. Proceeding to send...`);
     return await sendPushNotification(targetId.toString(), user.fcmToken, title, body, data, dataOnly);
 };
 

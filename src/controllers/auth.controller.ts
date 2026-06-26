@@ -106,7 +106,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId, gender, dob, idNumber } = req.body;
+    const { firstName, lastName, email, phoneNumber, password, countryCode, referralCode, deviceId, fcmToken, gender, dob, idNumber } = req.body;
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPhone = phoneNumber.trim();
@@ -150,6 +150,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
       role: UserRole.CUSTOMER,
       countryCode,
       deviceId,
+      fcmToken,
       gender,
       dob,
       idOrPassportNumber: idNumber,
@@ -186,7 +187,7 @@ export const registerProvider = async (req: Request, res: Response) => {
     const {
       firstName, lastName, email, phoneNumber, password, countryCode,
       gender, dob, nationalityType, idNumber, idOrPassportNumber, servicesOffered,
-      referralCode, deviceId
+      referralCode, deviceId, fcmToken
     } = req.body;
 
     const cleanEmail = email.trim().toLowerCase();
@@ -244,6 +245,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       role: UserRole.PROVIDER,
       countryCode,
       deviceId,
+      fcmToken,
       gender,
       dob,
       idOrPassportNumber: actualIdNumber,
@@ -287,7 +289,7 @@ export const registerProvider = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { identifier, password, deviceId, hardwareId } = req.body;
+    const { identifier, password, deviceId, hardwareId, fcmToken } = req.body;
 
     if (!identifier || !password) {
         return res.status(400).json({ success: false, message: 'Identifier and password are required' });
@@ -321,6 +323,7 @@ export const login = async (req: Request, res: Response) => {
 
     // Update device identifiers
     if (deviceId) user.deviceId = deviceId;
+    if (fcmToken) user.fcmToken = fcmToken;
     if (hardwareId) {
         user.hardwareId = hardwareId;
         // PAGE 12: Device Integrity & Multi-account Check

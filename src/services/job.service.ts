@@ -100,7 +100,7 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   console.log(`[MATCHING_AUDIT] Found ${providers.length} eligible providers.`);
   providers.forEach(p => {
       const user = p.userId as any;
-      console.log(`[MATCHING_AUDIT] Provider: ${p._id}, User: ${user?._id}, Name: ${user?.firstName}, Role: ${user?.role}, Token: ${user?.fcmToken ? 'PRESENT' : 'MISSING'}, Tier: ${p.tier}`);
+      console.log(`[FCM_MATCH] Provider: ${p._id}, User: ${user?._id}, Token in DB: ${user?.fcmToken ? 'PRESENT (' + user.fcmToken.substring(0, 10) + '...)' : 'MISSING'}`);
   });
 
   return providers;
