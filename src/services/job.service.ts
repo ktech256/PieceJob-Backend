@@ -135,7 +135,13 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
       notificationService.notifyUser(
           p.userId.toString(),
           'New Job Available',
-          `A new ${job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`
+          `A new ${job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`,
+          {
+              type: 'NEW_JOB_BROADCAST',
+              jobId: job.id,
+              serviceCode: job.serviceCode,
+              click_action: 'FLUTTER_NOTIFICATION_CLICK' // Standard for some plugins, but good for custom handling too
+          }
       );
     });
 
@@ -179,6 +185,24 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     job.version += 1;
 
     await job.save({ session });
+
+    // Termination Signal: Tell other providers to stop ringing
+    const otherProviders = await Provider.find({
+        servicesOffered: job.serviceCode,
+        countryCode: job.countryCode,
+        isOnline: true,
+        userId: { $ne: new mongoose.Types.ObjectId(providerId) }
+    }).session(session);
+
+    otherProviders.forEach(p => {
+        emitToUser(p.userId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
+        notificationService.notifyUser(
+            p.userId.toString(),
+            'Job No Longer Available',
+            'This request was accepted by another provider.',
+            { type: 'JOB_ASSIGNED_ELSEWHERE', jobId }
+        );
+    });
 
     // PAGE 7: Track Accepted Jobs
     provider.performance.acceptedJobs += 1;
