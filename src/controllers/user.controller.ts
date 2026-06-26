@@ -58,9 +58,18 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 export const updateFcmToken = async (req: AuthRequest, res: Response) => {
   try {
     const { fcmToken } = req.body;
-    await User.findByIdAndUpdate(req.user?.userId, { fcmToken });
+    const userId = req.user?.userId;
+
+    console.log(`[FCM_TOKEN_AUDIT] Updating token for User ${userId}`);
+    const oldUser = await User.findById(userId);
+    console.log(`[FCM_TOKEN_AUDIT] Previous token: ${oldUser?.fcmToken ? 'PRESENT' : 'NULL'}`);
+
+    const user = await User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
+    console.log(`[FCM_TOKEN_AUDIT] New token set: ${user?.fcmToken ? 'SUCCESS' : 'FAILED'}`);
+
     res.status(200).json({ success: true, message: 'FCM token updated' });
-  } catch (error) {
+  } catch (error: any) {
+    console.error(`[FCM_TOKEN_AUDIT] FATAL ERROR for User ${req.user?.userId}:`, error.message);
     res.status(500).json({ success: false, message: 'Failed to update FCM token', error });
   }
 };
