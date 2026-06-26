@@ -9,48 +9,74 @@ import * as notificationService from './notification.service';
 
 import * as settingsService from './settings.service';
 import * as pricingService from './pricing.service';
+import { calculateDistance } from '../utils/location';
 
 export const findEligibleProviders = async (job: IJob, wave: number) => {
   console.log(`[MATCHING_AUDIT] Wave ${wave} for Job ${job._id}. Service: ${job.serviceCode}, Country: ${job.countryCode}`);
-
-  // DIAGNOSTIC: Check all providers for this service/country to see why they are rejected
-  const allPotential = await Provider.find({
-      servicesOffered: job.serviceCode,
-      countryCode: job.countryCode
-  }).populate('userId', 'firstName email');
-
-  allPotential.forEach(p => {
-      const user = p.userId as any;
-      const reasons: string[] = [];
-      if (!p.isOnline) reasons.push('Offline');
-      if (p.verificationStatus !== 'APPROVED') reasons.push(`Verification: ${p.verificationStatus}`);
-      if (p.isShadowBanned) reasons.push('Shadow Banned');
-
-      // Tier Check for specific wave
-      if (wave === 1 && ![ProviderTier.ELITE, ProviderTier.PLATINUM].includes(p.tier)) reasons.push(`Tier Mismatch: ${p.tier} (Need Elite/Platinum)`);
-      if (wave === 2 && ![ProviderTier.GOLD].includes(p.tier)) reasons.push(`Tier Mismatch: ${p.tier} (Need Gold)`);
-      if (wave === 3 && ![ProviderTier.SILVER].includes(p.tier)) reasons.push(`Tier Mismatch: ${p.tier} (Need Silver)`);
-
-      if (reasons.length > 0) {
-          console.log(`[MATCHING_AUDIT] REJECTED Provider ${user?.firstName} (${p._id}): ${reasons.join(', ')}`);
-      } else {
-          console.log(`[MATCHING_AUDIT] ELIGIBLE Provider ${user?.firstName} (${p._id}) found.`);
-      }
-  });
+  console.log(`[MATCHING_AUDIT] Job Location: ${JSON.stringify(job.location.coordinates)} (Type: ${typeof job.location.coordinates[0]})`);
 
   const settings = await settingsService.getSettings(job.countryCode);
-
-  // PAGE 5: Enforce Service Catalog Rules
   const service = await Service.findOne({ code: job.serviceCode, isActive: true });
+
   if (!service) {
       console.error(`[MATCHING_AUDIT] FAILED: Service ${job.serviceCode} is inactive or not found.`);
       return [];
   }
 
+  // 1. WAVE DISTANCE LOGIC
+  let maxDistance = settings.matchingRadiusKm * 2 * 1000;
+  if (wave === 1) maxDistance = (settings.matchingRadiusKm / 2.5) * 1000;
+  else if (wave === 2) maxDistance = settings.matchingRadiusKm * 1000;
+
+  // 2. DIAGNOSTIC SWEEP
+  const allPotential = await Provider.find({
+      servicesOffered: job.serviceCode,
+      countryCode: job.countryCode
+  }).populate('userId', 'firstName email fcmToken');
+
+  console.log(`[MATCHING_AUDIT] Diagnostic check: Found ${allPotential.length} providers with service code ${job.serviceCode} in country ${job.countryCode}`);
+
+  allPotential.forEach(p => {
+      const user = p.userId as any;
+      const reasons: string[] = [];
+
+      if (!p.isOnline) reasons.push('Offline');
+      if (p.verificationStatus !== 'APPROVED') reasons.push(`Verif:${p.verificationStatus}`);
+      if (p.isShadowBanned) reasons.push('ShadowBanned');
+      if (p.suspendedUntil && p.suspendedUntil > new Date()) reasons.push('Suspended');
+
+      // Tier Check
+      if (wave === 1 && ![ProviderTier.ELITE, ProviderTier.PLATINUM].includes(p.tier)) reasons.push(`Tier:${p.tier}!=Elite/Plat`);
+      if (wave === 2 && p.tier !== ProviderTier.GOLD) reasons.push(`Tier:${p.tier}!=Gold`);
+      if (wave === 3 && p.tier !== ProviderTier.SILVER) reasons.push(`Tier:${p.tier}!=Silver`);
+
+      // Gender Rule
+      if (service.genderRule === GenderRule.MEN_ONLY && p.gender !== 'M') reasons.push('Gender:MOnly');
+      if (service.genderRule === GenderRule.WOMEN_ONLY && p.gender !== 'F') reasons.push('Gender:WOnly');
+
+      // Verification Level
+      const levelWeights: any = { STANDARD: 1, PROFESSIONAL: 2, TRADE: 3, HIGH_VETTING: 4 };
+      if (levelWeights[p.verificationLevel] < levelWeights[service.verificationLevel]) reasons.push(`Level:${p.verificationLevel}<${service.verificationLevel}`);
+
+      // Distance Check
+      const distance = calculateDistance(p.location.coordinates, job.location.coordinates);
+      if (distance > maxDistance) reasons.push(`Dist:${Math.round(distance/1000)}km>${maxDistance/1000}km`);
+
+      // FCM Token Check
+      if (!user?.fcmToken) reasons.push('FCM Token: MISSING');
+
+      if (reasons.length > 0) {
+          console.log(`[MATCHING_AUDIT] REJECTED ${user?.firstName || 'Unknown'} (${p._id}): ${reasons.join(', ')}. Coords: ${JSON.stringify(p.location.coordinates)}`);
+      } else {
+          console.log(`[MATCHING_AUDIT] ELIGIBLE ${user?.firstName} (${p._id}) found. Dist: ${Math.round(distance)}m`);
+      }
+  });
+
+  // 3. ACTUAL DATABASE QUERY
   const query: any = {
     isOnline: true,
     verificationStatus: 'APPROVED',
-    isShadowBanned: { $ne: true }, // Exclude shadow banned
+    isShadowBanned: { $ne: true },
     $or: [
         { suspendedUntil: { $exists: false } },
         { suspendedUntil: { $lt: new Date() } }
@@ -59,33 +85,19 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     countryCode: job.countryCode
   };
 
-  // ... wave query logic ...
-  if (wave === 1) {
-    query.tier = { $in: [ProviderTier.ELITE, ProviderTier.PLATINUM] };
-  } else if (wave === 2) {
-    query.tier = { $in: [ProviderTier.GOLD] };
-  } else if (wave === 3) {
-    query.tier = { $in: [ProviderTier.SILVER] };
-  }
+  if (wave === 1) query.tier = { $in: [ProviderTier.ELITE, ProviderTier.PLATINUM] };
+  else if (wave === 2) query.tier = ProviderTier.GOLD;
+  else if (wave === 3) query.tier = ProviderTier.SILVER;
 
   if (service.genderRule === GenderRule.MEN_ONLY) query.gender = 'M';
   else if (service.genderRule === GenderRule.WOMEN_ONLY) query.gender = 'F';
 
-  const levelWeights = {
-      [VerificationLevel.STANDARD]: 1,
-      [VerificationLevel.PROFESSIONAL]: 2,
-      [VerificationLevel.TRADE]: 3,
-      [VerificationLevel.HIGH_VETTING]: 4
-  };
+  const levelWeights: any = { STANDARD: 1, PROFESSIONAL: 2, TRADE: 3, HIGH_VETTING: 4 };
   const requiredWeight = levelWeights[service.verificationLevel] || 1;
-  const eligibleLevels = Object.entries(levelWeights).filter(([_, weight]) => weight >= requiredWeight).map(([level, _]) => level);
+  const eligibleLevels = Object.entries(levelWeights).filter(([_, w]: any) => w >= requiredWeight).map(([l]) => l);
   query.verificationLevel = { $in: eligibleLevels };
 
-  let maxDistance = settings.matchingRadiusKm * 2 * 1000;
-  if (wave === 1) maxDistance = (settings.matchingRadiusKm / 2.5) * 1000;
-  else if (wave === 2) maxDistance = settings.matchingRadiusKm * 1000;
-
-  console.log(`[MATCHING_AUDIT] Query:`, JSON.stringify(query));
+  console.log(`[MATCHING_AUDIT] Final Main Query:`, JSON.stringify(query));
 
   const providers = await Provider.find({
     ...query,
@@ -97,10 +109,10 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     }
   }).limit(10).populate('userId', 'fcmToken role firstName');
 
-  console.log(`[MATCHING_AUDIT] Found ${providers.length} eligible providers.`);
+  console.log(`[MATCHING_AUDIT] Main query results: Found ${providers.length} providers.`);
   providers.forEach(p => {
       const user = p.userId as any;
-      console.log(`[FCM_MATCH] Provider: ${p._id}, User: ${user?._id}, Token in DB: ${user?.fcmToken ? 'PRESENT (' + user.fcmToken.substring(0, 10) + '...)' : 'MISSING'}`);
+      console.log(`[FCM_MATCH] Provider: ${p._id}, User: ${user?._id}, Token: ${user?.fcmToken ? 'PRESENT' : 'MISSING'}`);
   });
 
   return providers;

@@ -323,7 +323,10 @@ export const login = async (req: Request, res: Response) => {
 
     // Update device identifiers
     if (deviceId) user.deviceId = deviceId;
-    if (fcmToken) user.fcmToken = fcmToken;
+    if (fcmToken) {
+        console.log(`[FCM_TOKEN_AUDIT] Login: setting token for User ${user._id}`);
+        user.fcmToken = fcmToken;
+    }
     if (hardwareId) {
         user.hardwareId = hardwareId;
         // PAGE 12: Device Integrity & Multi-account Check

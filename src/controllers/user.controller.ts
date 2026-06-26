@@ -60,12 +60,18 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
-    console.log(`[FCM_TOKEN_AUDIT] Updating token for User ${userId}`);
+    console.log(`[FCM_TOKEN_AUDIT] Request to update token for User ${userId}`);
+
+    if (!fcmToken) {
+        console.warn(`[FCM_TOKEN_AUDIT] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring to prevent capability loss.`);
+        return res.status(200).json({ success: true, message: 'Empty token ignored' });
+    }
+
     const oldUser = await User.findById(userId);
-    console.log(`[FCM_TOKEN_AUDIT] Previous token: ${oldUser?.fcmToken ? 'PRESENT' : 'NULL'}`);
+    console.log(`[FCM_TOKEN_AUDIT] Current token in DB: ${oldUser?.fcmToken ? 'PRESENT' : 'NULL'}`);
 
     const user = await User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
-    console.log(`[FCM_TOKEN_AUDIT] New token set: ${user?.fcmToken ? 'SUCCESS' : 'FAILED'}`);
+    console.log(`[FCM_TOKEN_AUDIT] FCM_SYNC_SUCCESS. User: ${userId}, Token: ${fcmToken.substring(0, 10)}...`);
 
     res.status(200).json({ success: true, message: 'FCM token updated' });
   } catch (error: any) {
