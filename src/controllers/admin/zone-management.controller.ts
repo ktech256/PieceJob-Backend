@@ -21,17 +21,24 @@ export const listZones = async (req: AuthRequest, res: Response) => {
 
 export const createZone = async (req: AuthRequest, res: Response) => {
     try {
+        console.log('[BACKEND_ZONE_CREATE] Request Body:', JSON.stringify(req.body, null, 2));
+
         const countryCode = req.user?.countryCode || 'ZA';
-        const zone = new Zone({
+        const zoneData = {
             ...req.body,
             countryCode: req.body.countryCode || countryCode,
             createdBy: req.user?.userId,
             updatedBy: req.user?.userId
-        });
+        };
+
+        console.log('[BACKEND_ZONE_CREATE] Mongo Payload:', JSON.stringify(zoneData, null, 2));
+
+        const zone = new Zone(zoneData);
         await zone.save();
         res.status(201).json({ success: true, data: zone });
     } catch (error: any) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('[BACKEND_ZONE_CREATE] Save Error:', error);
+        res.status(500).json({ success: false, message: error.message, stack: error.stack });
     }
 };
 
