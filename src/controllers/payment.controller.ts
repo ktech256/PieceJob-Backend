@@ -49,13 +49,12 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
         }
 
         if (!paystackService.isValidSignature(rawBody, signature, signingSecret)) {
-            console.warn(`[PAYMENT_WEBHOOK] Invalid signature detected for Job ${jobId}.`);
-            console.log(`[PAYMENT_WEBHOOK] Using Secret ending in: ...${signingSecret.slice(-5)}`);
+            console.warn(`[PAYMENT_WEBHOOK] Invalid signature detected for Job ${jobId}. Signature provided: ${signature.slice(0, 10)}...`);
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
 
-        const gatewayEventId = payload.id || req.headers['x-paystack-id'];
-        console.log(`[PAYMENT_WEBHOOK] Received valid event from ${gateway}. Event ID: ${gatewayEventId}`);
+        const gatewayEventId = payload.id?.toString() || payload.data?.id?.toString() || payload.data?.reference || Date.now().toString();
+        console.log(`[PAYMENT_WEBHOOK] Received valid event: ${event} from ${gateway}. Event ID: ${gatewayEventId}`);
 
         if (await webhookService.isDuplicateWebhook(gateway, gatewayEventId, payload)) {
             console.log(`[PAYMENT_WEBHOOK] Duplicate event ${gatewayEventId} skipped.`);
@@ -100,12 +99,21 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
     }
 };
 
-export const verifyPayment = async (req: AuthRequest, res: Response) => {
+export const verifyPayment = async (req: Request, res: Response) => {
     try {
         const { reference } = req.params;
         console.log(`[PAYMENT_VERIFY] Starting verification for Reference: ${reference}`);
 
-        const verification = await paystackService.verifyTransaction(reference, req.user?.countryCode || 'ZA');
+        // Try to resolve countryCode from Job first if not authenticated (e.g. from Website callback)
+        let countryCode = (req as any).user?.countryCode;
+        if (!countryCode) {
+            const job = await Job.findOne({ paymentReference: reference });
+            if (job) countryCode = job.countryCode;
+        }
+
+        if (!countryCode) countryCode = 'ZA'; // Final fallback
+
+        const verification = await paystackService.verifyTransaction(reference, countryCode);
 
         if (verification.status && verification.data.status === 'success') {
             const jobId = verification.data.metadata.jobId;

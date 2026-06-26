@@ -12,7 +12,7 @@ router.get("/config", authenticate, async (req: AuthRequest, res: Response) => {
   res.json({ success: true, config: { gateway: 'PAYSTACK', currency: settings.currency || 'USD' } });
 });
 
-router.get("/verify/:reference", authenticate, paymentController.verifyPayment);
+router.get("/verify/:reference", paymentController.verifyPayment);
 router.post("/paystack/webhook", paymentController.handlePaystackWebhook);
 router.patch("/job/:jobId/mark-paid", authenticate, paymentAdminController.markJobPaid);
 
