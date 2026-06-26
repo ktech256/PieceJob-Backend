@@ -4,7 +4,11 @@ import PaymentProvider from '../../models/PaymentProvider';
 
 export const listProviders = async (req: AuthRequest, res: Response) => {
     try {
-        const providers = await PaymentProvider.find().sort({ priority: 1 });
+        const countryCode = req.headers['x-country-code'] as string || req.user?.countryCode;
+        const query: any = {};
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+
+        const providers = await PaymentProvider.find(query).sort({ priority: 1 });
         res.status(200).json({ success: true, data: providers });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch payment providers', error });
@@ -13,14 +17,17 @@ export const listProviders = async (req: AuthRequest, res: Response) => {
 
 export const createProvider = async (req: AuthRequest, res: Response) => {
     try {
+        const countryCode = req.headers['x-country-code'] as string || req.user?.countryCode;
+
         const provider = new PaymentProvider({
             ...req.body,
+            countryCode: req.body.countryCode || countryCode,
             updatedBy: req.user?.userId
         });
         await provider.save();
         res.status(201).json({ success: true, data: provider });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to create provider', error });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message || 'Failed to create provider' });
     }
 };
 
@@ -42,7 +49,7 @@ export const getAvailableMethods = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.user?.countryCode || 'ZA';
         const providers = await PaymentProvider.find({
-            countries: countryCode,
+            countryCode: countryCode,
             isActive: true
         }).sort({ priority: 1 });
 

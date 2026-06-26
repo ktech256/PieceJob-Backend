@@ -1,5 +1,5 @@
 import axios from 'axios';
-import * as settingsService from './settings.service';
+import PaymentProvider from '../models/PaymentProvider';
 
 export interface PaystackInitializeResponse {
   status: boolean;
@@ -18,49 +18,75 @@ export const initializeTransaction = async (
   metadata: any,
   countryCode: string
 ): Promise<PaystackInitializeResponse> => {
-  const settings = await settingsService.getSettings(countryCode);
-  const secretKey = settings.integrations.paymentSecretKey;
+  console.log(`[PAYSTACK_TRACE] Step 1: Starting initialization for ${email} in country ${countryCode}`);
 
-  if (!secretKey) {
-    throw new Error('Paystack secret key is not configured for this country.');
+  // 1. Resolve Paystack configuration for this specific country
+  const provider = await PaymentProvider.findOne({
+      code: 'paystack',
+      countryCode: countryCode,
+      isActive: true
+  });
+
+  if (!provider) {
+    console.error(`[PAYSTACK_TRACE] ERROR: No active Paystack configuration found for country ${countryCode}`);
+    throw new Error(`Paystack is not configured for country: ${countryCode}`);
   }
+
+  if (!provider.secretKey) {
+    console.error(`[PAYSTACK_TRACE] ERROR: Paystack secret key missing for country ${countryCode}`);
+    throw new Error(`Paystack secret key is missing for country: ${countryCode}`);
+  }
+
+  console.log(`[PAYSTACK_TRACE] Step 2: Config resolved. Merchant: ${provider.merchantId || 'N/A'}, Env: ${provider.environment}`);
 
   // Paystack amount is in kobo (base unit * 100)
   const amountInBaseUnit = Math.round(amount * 100);
 
-  const response = await axios.post(
-    'https://api.paystack.co/transaction/initialize',
-    {
-      email,
-      amount: amountInBaseUnit,
-      currency,
-      metadata,
-      callback_url: 'piecejob://payment-callback' // Deep link for Android
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
+  console.log(`[PAYSTACK_TRACE] Step 3: Preparing payload. Amount: ${amountInBaseUnit} ${provider.currency || currency}`);
 
-  return response.data;
+  try {
+      const response = await axios.post(
+        'https://api.paystack.co/transaction/initialize',
+        {
+          email,
+          amount: amountInBaseUnit,
+          currency: provider.currency || currency,
+          metadata,
+          callback_url: 'piecejob://payment-callback' // Deep link for Android
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${provider.secretKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log(`[PAYSTACK_TRACE] Step 4: Success. Reference: ${response.data.data.reference}`);
+      return response.data;
+  } catch (axiosError: any) {
+      const errorData = axiosError.response?.data;
+      console.error(`[PAYSTACK_TRACE] FATAL: Gateway Rejected Request. Status: ${axiosError.response?.status}. Message: ${errorData?.message || axiosError.message}`);
+      throw new Error(`Gateway Error: ${errorData?.message || axiosError.message}`);
+  }
 };
 
 export const verifyTransaction = async (reference: string, countryCode: string): Promise<any> => {
-  const settings = await settingsService.getSettings(countryCode);
-  const secretKey = settings.integrations.paymentSecretKey;
+  const provider = await PaymentProvider.findOne({
+      code: 'paystack',
+      countryCode: countryCode,
+      isActive: true
+  });
 
-  if (!secretKey) {
-    throw new Error('Paystack secret key is not configured.');
+  if (!provider || !provider.secretKey) {
+    throw new Error(`Paystack secret key is not configured for country: ${countryCode}`);
   }
 
   const response = await axios.get(
     `https://api.paystack.co/transaction/verify/${reference}`,
     {
       headers: {
-        Authorization: `Bearer ${secretKey}`
+        Authorization: `Bearer ${provider.secretKey}`
       }
     }
   );

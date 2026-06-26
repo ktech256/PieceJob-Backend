@@ -15,7 +15,7 @@ import * as zoneResolverService from '../services/zone-resolver.service';
 import * as fraudService from '../services/fraud.service';
 import * as notificationService from '../services/notification.service';
 import * as testUserService from '../services/test-user.service';
-import * as paystackService from '../services/paystack.service';
+import * as paymentGatewayService from '../services/payment-gateway.service';
 
 function calculateDistance(c1: number[], c2: number[]) {
   const R = 6371e3; // meters
@@ -146,7 +146,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
         serviceCode: job.serviceCode
     };
 
-    const paystackRes = await paystackService.initializeTransaction(
+    const paymentRes = await paymentGatewayService.initializePayment(
         user.email,
         job.bookingFee,
         job.pricingSnapshot?.currencyCode || 'USD',
@@ -154,8 +154,8 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
         job.countryCode
     );
 
-    if (paystackRes.status) {
-        job.paymentReference = paystackRes.data.reference;
+    if (paymentRes.success) {
+        job.paymentReference = paymentRes.reference;
         job.status = JobStatus.PAYMENT_PENDING;
         await job.save();
 
@@ -163,8 +163,8 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
             success: true,
             message: 'Payment initialized',
             data: {
-                paymentUrl: paystackRes.data.authorization_url,
-                reference: paystackRes.data.reference,
+                paymentUrl: paymentRes.paymentUrl,
+                reference: paymentRes.reference,
                 job: {
                     ...job.toObject(),
                     id: job._id,
@@ -173,7 +173,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
             }
         });
     } else {
-        return res.status(400).json({ success: false, message: paystackRes.message });
+        return res.status(400).json({ success: false, message: paymentRes.message });
     }
   } catch (error: any) {
     console.error('Payment initialization failed:', error);
