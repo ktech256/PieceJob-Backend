@@ -56,8 +56,9 @@ export const verifyPayment = async (req: AuthRequest, res: Response) => {
         if (verification.status && verification.data.status === 'success') {
             const jobId = verification.data.metadata.jobId;
             const job = await Job.findById(jobId);
+            if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
-            if (job && job.paymentStatus !== 'PAID') {
+            if (job.paymentStatus !== 'PAID') {
                 await financialService.handleBookingFee(
                     job.id,
                     job.customerId.toString(),
