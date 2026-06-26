@@ -8,6 +8,7 @@ export interface IPaymentProvider extends Document {
     publicKey?: string;
     secretKey?: string;
     webhookSecret?: string;
+    callbackUrl?: string; // Deep link or Web URL for success return
     currency: string; // Base currency for this provider in this country
     priority: number;
     environment: 'sandbox' | 'production';
@@ -23,6 +24,7 @@ const PaymentProviderSchema: Schema = new Schema({
     publicKey: { type: String },
     secretKey: { type: String },
     webhookSecret: { type: String },
+    callbackUrl: { type: String },
     currency: { type: String, default: 'USD' },
     priority: { type: Number, default: 0 },
     environment: { type: String, enum: ['sandbox', 'production'], default: 'sandbox' },

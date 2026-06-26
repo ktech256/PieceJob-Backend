@@ -53,7 +53,7 @@ export const initializeTransaction = async (
           amount: amountInBaseUnit,
           currency: provider.currency || currency,
           metadata,
-          callback_url: 'piecejob://payment-callback' // Deep link for Android
+          callback_url: provider.callbackUrl || 'piecejob://payment-callback'
         },
         {
           headers: {
