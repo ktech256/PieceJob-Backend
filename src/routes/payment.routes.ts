@@ -13,7 +13,7 @@ router.get("/config", authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 router.get("/verify/:reference", authenticate, paymentController.verifyPayment);
-router.post("/webhook/paystack", paymentController.handlePaystackWebhook);
+router.post("/paystack/webhook", paymentController.handlePaystackWebhook);
 router.patch("/job/:jobId/mark-paid", authenticate, paymentAdminController.markJobPaid);
 
 export default router;

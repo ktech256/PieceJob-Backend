@@ -9,25 +9,54 @@ import { emitAdminUpdate, emitJobUpdate } from '../socket/socket.service';
 
 export const handlePaystackWebhook = async (req: Request, res: Response) => {
     const gateway = 'PAYSTACK';
-    const gatewayEventId = req.body.id || req.headers['x-paystack-id'];
+    const signature = req.headers['x-paystack-signature'] as string;
+    const payload = req.body;
 
-    console.log(`[PAYMENT_WEBHOOK] Received event from ${gateway}. Event ID: ${gatewayEventId}`);
-
-    if (await webhookService.isDuplicateWebhook(gateway, gatewayEventId, req.body)) {
-        console.log(`[PAYMENT_WEBHOOK] Duplicate event ${gatewayEventId} skipped.`);
-        return res.status(200).json({ success: true, message: 'Duplicate skipped' });
+    if (!signature) {
+        console.warn(`[PAYMENT_WEBHOOK] Missing signature for ${gateway}`);
+        return res.status(400).json({ success: false, message: 'Missing signature' });
     }
 
     try {
-        const { event, data } = req.body;
+        const { event, data } = payload;
+        const jobId = data.metadata?.jobId;
+
+        if (!jobId) {
+            console.warn(`[PAYMENT_WEBHOOK] Missing Job ID in metadata for ${gateway}`);
+            return res.status(200).json({ success: true, message: 'Job ID missing, ignoring' });
+        }
+
+        const job = await Job.findById(jobId);
+        if (!job) {
+            console.warn(`[PAYMENT_WEBHOOK] Job ${jobId} not found for ${gateway}`);
+            return res.status(200).json({ success: true, message: 'Job not found' });
+        }
+
+        // Resolve config for signature verification
+        const provider = await paystackService.getProviderConfig(job.countryCode);
+        if (!provider || !provider.webhookSecret) {
+            console.error(`[PAYMENT_WEBHOOK] Webhook secret not configured for ${job.countryCode}`);
+            return res.status(500).json({ success: false, message: 'Webhook configuration error' });
+        }
+
+        if (!paystackService.isValidSignature(payload, signature, provider.webhookSecret)) {
+            console.warn(`[PAYMENT_WEBHOOK] Invalid signature detected for Job ${jobId}`);
+            return res.status(401).json({ success: false, message: 'Invalid signature' });
+        }
+
+        const gatewayEventId = payload.id || req.headers['x-paystack-id'];
+        console.log(`[PAYMENT_WEBHOOK] Received valid event from ${gateway}. Event ID: ${gatewayEventId}`);
+
+        if (await webhookService.isDuplicateWebhook(gateway, gatewayEventId, payload)) {
+            console.log(`[PAYMENT_WEBHOOK] Duplicate event ${gatewayEventId} skipped.`);
+            return res.status(200).json({ success: true, message: 'Duplicate skipped' });
+        }
 
         if (event === 'charge.success') {
-            const jobId = data.metadata.jobId;
             console.log(`[PAYMENT_WEBHOOK] Success event for Job ID: ${jobId}. Reference: ${data.reference}`);
 
-            const job = await Job.findById(jobId);
-
-            if (job && job.paymentStatus !== 'PAID') {
+            if (job.paymentStatus !== 'PAID') {
+// ...
                 console.log(`[PAYMENT_WEBHOOK] Processing payment for Job ${jobId}...`);
                 await financialService.handleBookingFee(
                     job.id,

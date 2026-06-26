@@ -1,5 +1,6 @@
 import axios from 'axios';
 import PaymentProvider from '../models/PaymentProvider';
+import crypto from 'crypto';
 
 export interface PaystackInitializeResponse {
   status: boolean;
@@ -53,7 +54,7 @@ export const initializeTransaction = async (
           amount: amountInBaseUnit,
           currency: provider.currency || currency,
           metadata,
-          callback_url: provider.callbackUrl || 'piecejob://payment-callback'
+          callback_url: provider.callbackUrl || 'https://piecejob-website.onrender.com/payments/callback'
         },
         {
           headers: {
@@ -94,4 +95,17 @@ export const verifyTransaction = async (reference: string, countryCode: string):
   );
 
   return response.data;
+};
+
+export const getProviderConfig = async (countryCode: string): Promise<any> => {
+    return await PaymentProvider.findOne({
+        code: { $regex: new RegExp(`^paystack$`, 'i') },
+        countryCode: countryCode,
+        isActive: true
+    });
+};
+
+export const isValidSignature = (payload: any, signature: string, secret: string): boolean => {
+    const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(payload)).digest('hex');
+    return hash === signature;
 };

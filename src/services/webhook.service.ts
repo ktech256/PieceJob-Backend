@@ -33,3 +33,8 @@ export const markWebhookProcessed = async (gateway: string, gatewayEventId: stri
         { status: 'PROCESSED', processedAt: new Date() }
     );
 };
+
+export const validatePaystackSignature = (payload: any, signature: string, secret: string): boolean => {
+    const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(payload)).digest('hex');
+    return hash === signature;
+};
