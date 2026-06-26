@@ -59,7 +59,9 @@ async function seed() {
                 currency: 'ZAR',
                 priority: 2,
                 environment: 'sandbox',
-                isActive: true
+                isActive: true,
+                webhookSecret: 'pj_whsec_8FvK29LmQx7PzR4NsY8aWdJ2HcE91MrTb6XpQ5LzUv7',
+                callbackUrl: 'https://piecejob-website.onrender.com/payments/callback'
             },
             {
                 name: 'Paystack (NG)',
