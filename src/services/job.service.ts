@@ -140,8 +140,12 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
               type: 'NEW_JOB_BROADCAST',
               jobId: job.id,
               serviceCode: job.serviceCode,
-              click_action: 'FLUTTER_NOTIFICATION_CLICK' // Standard for some plugins, but good for custom handling too
-          }
+              address: job.location.address,
+              recipientName: job.recipientName,
+              distance: 'Nearby',
+              earnings: `R ${job.bookingFee}`
+          },
+          true // Send as Data-Only message for custom handling
       );
     });
 
@@ -200,7 +204,8 @@ export const acceptJob = async (jobId: string, providerId: string) => {
             p.userId.toString(),
             'Job No Longer Available',
             'This request was accepted by another provider.',
-            { type: 'JOB_ASSIGNED_ELSEWHERE', jobId }
+            { type: 'JOB_ASSIGNED_ELSEWHERE', jobId },
+            true
         );
     });
 
