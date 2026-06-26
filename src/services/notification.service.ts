@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import NotificationLog from '../models/Notification';
 import User from '../models/User';
@@ -77,17 +78,27 @@ export const sendPushNotification = async (
     }
 };
 
-export const notifyUser = async (userId: string, title: string, body: string, data: any = {}, dataOnly: boolean = false) => {
-    const user = await User.findById(userId);
+export const notifyUser = async (userId: any, title: string, body: string, data: any = {}, dataOnly: boolean = false) => {
+    // Robustly extract ID if an object was passed
+    const targetId = userId?._id || userId;
+
+    if (!targetId || typeof targetId === 'object' && !mongoose.Types.ObjectId.isValid(targetId)) {
+        console.error(`[FCM_AUDIT] FAILED: Invalid User ID passed to notifyUser:`, userId);
+        return;
+    }
+
+    const user = await User.findById(targetId);
     if (!user) {
-        console.warn(`[FCM_AUDIT] User ${userId} not found in database.`);
+        console.warn(`[FCM_AUDIT] User ${targetId} not found in database.`);
         return;
     }
     if (!user.fcmToken) {
-        console.warn(`[FCM_AUDIT] User ${userId} has no FCM token.`);
+        console.warn(`[FCM_AUDIT] User ${targetId} has no FCM token.`);
         return;
     }
-    return await sendPushNotification(userId, user.fcmToken, title, body, data, dataOnly);
+
+    console.log(`[FCM_AUDIT] Sending notification to User ${targetId}...`);
+    return await sendPushNotification(targetId.toString(), user.fcmToken, title, body, data, dataOnly);
 };
 
 export const broadcastToProviders = async (fcmTokens: string[], title: string, body: string, jobData: any): Promise<admin.messaging.BatchResponse | undefined> => {

@@ -12,6 +12,32 @@ import * as pricingService from './pricing.service';
 
 export const findEligibleProviders = async (job: IJob, wave: number) => {
   console.log(`[MATCHING_AUDIT] Wave ${wave} for Job ${job._id}. Service: ${job.serviceCode}, Country: ${job.countryCode}`);
+
+  // DIAGNOSTIC: Check all providers for this service/country to see why they are rejected
+  const allPotential = await Provider.find({
+      servicesOffered: job.serviceCode,
+      countryCode: job.countryCode
+  }).populate('userId', 'firstName email');
+
+  allPotential.forEach(p => {
+      const user = p.userId as any;
+      const reasons: string[] = [];
+      if (!p.isOnline) reasons.push('Offline');
+      if (p.verificationStatus !== 'APPROVED') reasons.push(`Verification: ${p.verificationStatus}`);
+      if (p.isShadowBanned) reasons.push('Shadow Banned');
+
+      // Tier Check for specific wave
+      if (wave === 1 && ![ProviderTier.ELITE, ProviderTier.PLATINUM].includes(p.tier)) reasons.push(`Tier Mismatch: ${p.tier} (Need Elite/Platinum)`);
+      if (wave === 2 && ![ProviderTier.GOLD].includes(p.tier)) reasons.push(`Tier Mismatch: ${p.tier} (Need Gold)`);
+      if (wave === 3 && ![ProviderTier.SILVER].includes(p.tier)) reasons.push(`Tier Mismatch: ${p.tier} (Need Silver)`);
+
+      if (reasons.length > 0) {
+          console.log(`[MATCHING_AUDIT] REJECTED Provider ${user?.firstName} (${p._id}): ${reasons.join(', ')}`);
+      } else {
+          console.log(`[MATCHING_AUDIT] ELIGIBLE Provider ${user?.firstName} (${p._id}) found.`);
+      }
+  });
+
   const settings = await settingsService.getSettings(job.countryCode);
 
   // PAGE 5: Enforce Service Catalog Rules
@@ -116,7 +142,10 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
     });
 
     providers.forEach(p => {
-      emitToUser(p.userId.toString(), 'NEW_JOB_BROADCAST', {
+      // Robustly handle populated vs unpopulated userId
+      const targetUserId = (p.userId as any)._id || p.userId;
+
+      emitToUser(targetUserId.toString(), 'NEW_JOB_BROADCAST', {
         jobId: job.id,
         serviceCode: job.serviceCode,
         location: job.location,
@@ -126,7 +155,7 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
 
       // FCM Notification
       notificationService.notifyUser(
-          p.userId.toString(),
+          targetUserId,
           'New Job Available',
           `A new ${job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`,
           {
@@ -192,9 +221,10 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     }).session(session);
 
     otherProviders.forEach(p => {
-        emitToUser(p.userId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
+        const targetUserId = (p.userId as any)._id || p.userId;
+        emitToUser(targetUserId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
         notificationService.notifyUser(
-            p.userId.toString(),
+            targetUserId,
             'Job No Longer Available',
             'This request was accepted by another provider.',
             { type: 'JOB_ASSIGNED_ELSEWHERE', jobId },
