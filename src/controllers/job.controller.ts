@@ -109,7 +109,15 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
 
     emitAdminUpdate('new_job_created', { jobId: job.id, countryCode: job.countryCode });
 
-    res.status(201).json({ success: true, job, pricing: pricingBreakdown });
+    res.status(201).json({
+        success: true,
+        data: {
+            ...job.toObject(),
+            id: job._id,
+            currency: job.pricingSnapshot?.currencyCode || 'USD'
+        },
+        pricing: pricingBreakdown
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -157,7 +165,11 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
             data: {
                 paymentUrl: paystackRes.data.authorization_url,
                 reference: paystackRes.data.reference,
-                job
+                job: {
+                    ...job.toObject(),
+                    id: job._id,
+                    currency: job.pricingSnapshot?.currencyCode || 'USD'
+                }
             }
         });
     } else {
@@ -175,7 +187,14 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
         const job = await Job.findById(jobId).populate('providerId', 'firstName lastName ratingAvg jobsCompleted');
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
-        res.status(200).json({ success: true, data: job });
+        res.status(200).json({
+            success: true,
+            data: {
+                ...job.toObject(),
+                id: job._id,
+                currency: job.pricingSnapshot?.currencyCode || 'USD'
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch job', error });
     }

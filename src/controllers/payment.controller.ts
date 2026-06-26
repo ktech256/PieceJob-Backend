@@ -74,7 +74,15 @@ export const verifyPayment = async (req: AuthRequest, res: Response) => {
                 emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
             }
 
-            return res.status(200).json({ success: true, message: 'Payment verified', job });
+            return res.status(200).json({
+                success: true,
+                message: 'Payment verified',
+                data: {
+                    ...job.toObject(),
+                    id: job._id,
+                    currency: job.pricingSnapshot?.currencyCode || verification.data.currency
+                }
+            });
         } else {
             return res.status(400).json({ success: false, message: 'Payment not successful' });
         }
