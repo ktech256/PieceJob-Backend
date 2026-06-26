@@ -8,7 +8,7 @@ import * as financialService from '../services/financial.service';
 import Provider from '../models/Provider';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
-import { emitAdminUpdate } from '../socket/socket.service';
+import { emitAdminUpdate, emitJobUpdate, emitToUser } from '../socket/socket.service';
 
 import * as performanceService from '../services/provider-performance.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
