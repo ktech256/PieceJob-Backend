@@ -11,12 +11,13 @@ import * as settingsService from './settings.service';
 import * as pricingService from './pricing.service';
 
 export const findEligibleProviders = async (job: IJob, wave: number) => {
+  console.log(`[MATCHING_AUDIT] Wave ${wave} for Job ${job._id}. Service: ${job.serviceCode}, Country: ${job.countryCode}`);
   const settings = await settingsService.getSettings(job.countryCode);
 
   // PAGE 5: Enforce Service Catalog Rules
   const service = await Service.findOne({ code: job.serviceCode, isActive: true });
   if (!service) {
-      console.error(`Matching failed: Service ${job.serviceCode} is inactive or not found.`);
+      console.error(`[MATCHING_AUDIT] FAILED: Service ${job.serviceCode} is inactive or not found.`);
       return [];
   }
 
@@ -32,7 +33,7 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     countryCode: job.countryCode
   };
 
-  // PAGE 7: TIER-BASED WAVES
+  // ... wave query logic ...
   if (wave === 1) {
     query.tier = { $in: [ProviderTier.ELITE, ProviderTier.PLATINUM] };
   } else if (wave === 2) {
@@ -40,51 +41,43 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   } else if (wave === 3) {
     query.tier = { $in: [ProviderTier.SILVER] };
   }
-  // Wave 4 includes all (Bronze and up)
 
-  // Gender Rule Enforcement
-  if (service.genderRule === GenderRule.MEN_ONLY) {
-      query.gender = 'M';
-  } else if (service.genderRule === GenderRule.WOMEN_ONLY) {
-      query.gender = 'F';
-  }
+  if (service.genderRule === GenderRule.MEN_ONLY) query.gender = 'M';
+  else if (service.genderRule === GenderRule.WOMEN_ONLY) query.gender = 'F';
 
-  // Verification Level Enforcement
-  // Logic: Provider must have at least the required verification level
   const levelWeights = {
       [VerificationLevel.STANDARD]: 1,
       [VerificationLevel.PROFESSIONAL]: 2,
       [VerificationLevel.TRADE]: 3,
       [VerificationLevel.HIGH_VETTING]: 4
   };
-
   const requiredWeight = levelWeights[service.verificationLevel] || 1;
-  const eligibleLevels = Object.entries(levelWeights)
-      .filter(([_, weight]) => weight >= requiredWeight)
-      .map(([level, _]) => level);
-
+  const eligibleLevels = Object.entries(levelWeights).filter(([_, weight]) => weight >= requiredWeight).map(([level, _]) => level);
   query.verificationLevel = { $in: eligibleLevels };
 
   let maxDistance = settings.matchingRadiusKm * 2 * 1000;
+  if (wave === 1) maxDistance = (settings.matchingRadiusKm / 2.5) * 1000;
+  else if (wave === 2) maxDistance = settings.matchingRadiusKm * 1000;
 
-  if (wave === 1) {
-    maxDistance = (settings.matchingRadiusKm / 2.5) * 1000; // Priority providers see it closer first
-  } else if (wave === 2) {
-    maxDistance = settings.matchingRadiusKm * 1000;
-  }
+  console.log(`[MATCHING_AUDIT] Query:`, JSON.stringify(query));
 
-  return await Provider.find({
+  const providers = await Provider.find({
     ...query,
     location: {
       $near: {
-        $geometry: {
-          type: 'Point',
-          coordinates: job.location.coordinates
-        },
+        $geometry: { type: 'Point', coordinates: job.location.coordinates },
         $maxDistance: maxDistance
       }
     }
-  }).limit(10);
+  }).limit(10).populate('userId', 'fcmToken role firstName');
+
+  console.log(`[MATCHING_AUDIT] Found ${providers.length} eligible providers.`);
+  providers.forEach(p => {
+      const user = p.userId as any;
+      console.log(`[MATCHING_AUDIT] Provider: ${p._id}, User: ${user?._id}, Name: ${user?.firstName}, Role: ${user?.role}, Token: ${user?.fcmToken ? 'PRESENT' : 'MISSING'}, Tier: ${p.tier}`);
+  });
+
+  return providers;
 };
 
 export const broadcastJob = async (jobId: string) => {
