@@ -105,7 +105,7 @@ export const getProviderConfig = async (countryCode: string): Promise<any> => {
     });
 };
 
-export const isValidSignature = (payload: any, signature: string, secret: string): boolean => {
-    const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(payload)).digest('hex');
+export const isValidSignature = (rawBody: Buffer, signature: string, secret: string): boolean => {
+    const hash = crypto.createHmac('sha512', secret).update(rawBody).digest('hex');
     return hash === signature;
 };

@@ -10,14 +10,20 @@ import { emitAdminUpdate, emitJobUpdate } from '../socket/socket.service';
 export const handlePaystackWebhook = async (req: Request, res: Response) => {
     const gateway = 'PAYSTACK';
     const signature = req.headers['x-paystack-signature'] as string;
-    const payload = req.body;
+    const rawBody = (req as any).rawBody;
 
     if (!signature) {
         console.warn(`[PAYMENT_WEBHOOK] Missing signature for ${gateway}`);
         return res.status(400).json({ success: false, message: 'Missing signature' });
     }
 
+    if (!rawBody) {
+        console.error(`[PAYMENT_WEBHOOK] Raw body not captured for ${gateway}. Check app.ts configuration.`);
+        return res.status(500).json({ success: false, message: 'Body capture error' });
+    }
+
     try {
+        const payload = req.body;
         const { event, data } = payload;
         const jobId = data.metadata?.jobId;
 
@@ -33,14 +39,18 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
         }
 
         // Resolve config for signature verification
+        // NOTE: Paystack signs webhooks using the SECRET KEY by default.
         const provider = await paystackService.getProviderConfig(job.countryCode);
-        if (!provider || !provider.webhookSecret) {
-            console.error(`[PAYMENT_WEBHOOK] Webhook secret not configured for ${job.countryCode}`);
+        const signingSecret = provider?.secretKey || provider?.webhookSecret;
+
+        if (!signingSecret) {
+            console.error(`[PAYMENT_WEBHOOK] No signing secret (Secret Key or Webhook Secret) configured for ${job.countryCode}`);
             return res.status(500).json({ success: false, message: 'Webhook configuration error' });
         }
 
-        if (!paystackService.isValidSignature(payload, signature, provider.webhookSecret)) {
-            console.warn(`[PAYMENT_WEBHOOK] Invalid signature detected for Job ${jobId}`);
+        if (!paystackService.isValidSignature(rawBody, signature, signingSecret)) {
+            console.warn(`[PAYMENT_WEBHOOK] Invalid signature detected for Job ${jobId}.`);
+            console.log(`[PAYMENT_WEBHOOK] Using Secret ending in: ...${signingSecret.slice(-5)}`);
             return res.status(401).json({ success: false, message: 'Invalid signature' });
         }
 

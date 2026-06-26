@@ -25,7 +25,14 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+
+// Capture RAW BODY for signature verification (Critical for Payment Webhooks)
+app.use(express.json({
+    limit: '50mb',
+    verify: (req: any, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // API Routes (V1 and Dashboard compatibility)
