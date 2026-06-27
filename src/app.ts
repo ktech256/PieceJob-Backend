@@ -42,6 +42,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use((req: any, res, next) => {
     const userId = req.headers['authorization'] ? 'TOKEN_PRESENT' : 'ANONYMOUS';
     console.log(`[HTTP_CRITICAL_AUDIT] ${new Date().toISOString()} | ${req.method} ${req.path} | User: ${userId}`);
+
+    // Log headers to check for issues like incorrect Host or User-Agent
+    console.log(`[HTTP_CRITICAL_AUDIT] HEADERS:`, JSON.stringify(req.headers));
+
     if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
         const safeBody = { ...req.body };
         if (safeBody.password) safeBody.password = '***';
