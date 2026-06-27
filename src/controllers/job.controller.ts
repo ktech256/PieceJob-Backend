@@ -186,6 +186,30 @@ export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const getActiveJob = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const job = await Job.findOne({
+            $or: [
+                { customerId: userId },
+                { providerId: userId }
+            ],
+            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
+        }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName ratingAvg jobsCompleted');
+
+        if (!job) {
+            return res.status(200).json({ success: true, data: null });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: sanitizeJobForMobile(job)
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch active job', error });
+    }
+};
+
 export const getJobById = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;

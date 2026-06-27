@@ -6,6 +6,7 @@ import { UserRole } from '../models/User';
 const router = Router();
 
 router.post('/request', authenticate, authorize([UserRole.CUSTOMER]), jobController.requestJob);
+router.get('/active', authenticate, jobController.getActiveJob);
 router.get('/:jobId', authenticate, jobController.getJobById);
 router.post('/:jobId/pay-booking-fee', authenticate, authorize([UserRole.CUSTOMER]), jobController.payBookingFee);
 router.put('/:jobId/accept', authenticate, authorize([UserRole.PROVIDER]), jobController.acceptJob);
