@@ -297,7 +297,7 @@ export const registerProvider = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { identifier, password, deviceId, hardwareId, fcmToken } = req.body;
+    const { identifier, password, deviceId, hardwareId, fcmToken, appType } = req.body;
 
     if (!identifier || !password) {
         return res.status(400).json({ success: false, message: 'Identifier and password are required' });
@@ -326,6 +326,35 @@ export const login = async (req: Request, res: Response) => {
     if (user.isBanned) {
       logger.auth('LOGIN', false, cleanIdentifier, 'Banned');
       return res.status(403).json({ success: false, message: 'Account is banned' });
+    }
+
+    // Role-based Application Access Validation
+    if (appType === 'PROVIDER_APP' && user.role !== UserRole.PROVIDER) {
+        console.log(`[AUTH_ROLE_CHECK] App: ${appType} | Role: ${user.role} | Result: DENIED`);
+        return res.status(403).json({
+            success: false,
+            message: 'This account is registered as a Customer. Please use the Customer App.'
+        });
+    }
+
+    if (appType === 'CUSTOMER_APP' && user.role !== UserRole.CUSTOMER) {
+        console.log(`[AUTH_ROLE_CHECK] App: ${appType} | Role: ${user.role} | Result: DENIED`);
+        return res.status(403).json({
+            success: false,
+            message: 'This account is registered as a Provider. Please use the Provider App.'
+        });
+    }
+
+    if (appType === 'ADMIN_PORTAL' && (user.role === UserRole.CUSTOMER || user.role === UserRole.PROVIDER)) {
+        console.log(`[AUTH_ROLE_CHECK] App: ${appType} | Role: ${user.role} | Result: DENIED`);
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied: Customer or Provider accounts cannot access the Master Clearance portal.'
+        });
+    }
+
+    if (appType) {
+        console.log(`[AUTH_ROLE_CHECK] App: ${appType} | Role: ${user.role} | Result: ALLOWED`);
     }
 
     // Update device identifiers
