@@ -1,23 +1,24 @@
 import * as performanceService from './provider-performance.service';
 import * as financialService from './financial.service';
 import * as corporateSchedulingService from './corporate-scheduling.service';
+import { logger } from '../utils/logger';
 
 export const initSchedulers = () => {
     // 1. Performance Recalculation (Every 24 hours)
     setInterval(async () => {
-        console.log('Running provider performance evaluation...');
+        logger.debug('Running provider performance evaluation...');
         await performanceService.takePerformanceSnapshot('GLOBAL');
     }, 24 * 60 * 60 * 1000);
 
     // 2. Escrow Release (Every 1 hour)
     setInterval(async () => {
-        console.log('Running escrow release check...');
+        logger.debug('Running escrow release check...');
         await financialService.releaseEscrowFunds();
     }, 60 * 60 * 1000);
 
     // 3. Corporate Job Generation (Every 15 minutes)
     setInterval(async () => {
-        console.log('Processing corporate schedules...');
+        logger.debug('Processing corporate schedules...');
         await corporateSchedulingService.processSchedules();
     }, 15 * 60 * 1000);
 
@@ -27,5 +28,5 @@ export const initSchedulers = () => {
         await runFullEcosystemCheck();
     }, 5 * 60 * 1000);
 
-    console.log('System Schedulers Initialized');
+    logger.info('System Schedulers Initialized');
 };

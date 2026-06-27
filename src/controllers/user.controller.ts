@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User';
 import * as auditService from '../services/audit.service';
 import * as storageService from '../services/storage.service';
+import { logger } from '../utils/logger';
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -60,29 +61,16 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
-    console.log(`[FCM_BACKEND_RECEIVED] User: ${userId}`);
-    console.log(`[FCM_BACKEND_RECEIVED] Received token: ${fcmToken || 'NULL'}`);
-
     if (!fcmToken) {
-        console.warn(`[FCM_BACKEND_RECEIVED] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring.`);
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
 
-    console.log(`[FCM_DB_VERIFY] Attempting MongoDB update for User ${userId}`);
-    const result = await User.updateOne({ _id: userId }, { fcmToken });
-
-    // Read again to confirm save
-    const updatedUser = await User.findById(userId);
-    if (updatedUser && updatedUser.fcmToken === fcmToken) {
-        console.log(`[FCM_DB_VERIFY SUCCESS] User: ${userId}`);
-        console.log(`[FCM_DB_VERIFY SUCCESS] Stored Token: ${updatedUser.fcmToken}`);
-    } else {
-        console.error(`[FCM_DB_VERIFY FAILED] Mismatch! Found ${updatedUser?.fcmToken ? 'DIFFERENT' : 'NULL'} token in DB.`);
-    }
+    await User.updateOne({ _id: userId }, { fcmToken });
+    logger.fcm('REGISTERED', 'SUCCESS', userId!, `Token Len: ${fcmToken.length}`);
 
     res.status(200).json({ success: true, message: 'FCM token updated' });
   } catch (error: any) {
-    console.error(`[FCM_TOKEN_AUDIT] FATAL ERROR for User ${req.user?.userId}:`, error.message);
+    logger.error(`FCM | UPDATE_FAILED | User: ${req.user?.userId} | Error: ${error.message}`);
     res.status(500).json({ success: false, message: 'Failed to update FCM token', error });
   }
 };

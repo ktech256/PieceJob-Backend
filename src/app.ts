@@ -19,12 +19,12 @@ import supportRoutes from './routes/support.routes';
 import analyticsRoutes from './routes/v1/analytics.routes';
 import testRoutes from './routes/test.routes';
 import admin from 'firebase-admin';
+import { logger } from './utils/logger';
 
-// PieceJob Backend - V3.0 Refinement
+// PieceJob Backend - V3.1
 const app = express();
 
-console.log(`[BOOT] PieceJob Backend version 3.0.12 starting at ${new Date().toISOString()}...`);
-console.log(`[BOOT] Forensic DB Audit: ${mongoose.connection.readyState === 1 ? 'CONNECTED' : 'WAITING'}`);
+logger.info(`PieceJob Backend starting...`);
 
 app.use(helmet());
 app.use(cors());
@@ -38,18 +38,17 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// FORENSIC REQUEST LOGGER
+// REQUEST LOGGER (Only for non-health/non-analytics requests or when DEBUG enabled)
 app.use((req: any, res, next) => {
-    const userId = req.headers['authorization'] ? 'TOKEN_PRESENT' : 'ANONYMOUS';
-    console.log(`[HTTP_CRITICAL_AUDIT] ${new Date().toISOString()} | ${req.method} ${req.path} | User: ${userId}`);
+    const isNoisy = req.path === '/health' ||
+                   req.path.includes('/analytics') ||
+                   req.path.includes('/countries') ||
+                   req.path.includes('/admin') ||
+                   req.method === 'GET';
 
-    // Log headers to check for issues like incorrect Host or User-Agent
-    console.log(`[HTTP_CRITICAL_AUDIT] HEADERS:`, JSON.stringify(req.headers));
-
-    if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
-        const safeBody = { ...req.body };
-        if (safeBody.password) safeBody.password = '***';
-        console.log(`[HTTP_CRITICAL_AUDIT] BODY:`, JSON.stringify(safeBody));
+    if (!isNoisy) {
+        const userId = req.headers['authorization'] ? 'TOKEN_PRESENT' : 'ANONYMOUS';
+        logger.debug(`[HTTP] ${req.method} ${req.path} | User: ${userId}`);
     }
     next();
 });

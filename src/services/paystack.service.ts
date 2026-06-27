@@ -1,6 +1,7 @@
 import axios from 'axios';
 import PaymentProvider from '../models/PaymentProvider';
 import crypto from 'crypto';
+import { logger } from '../utils/logger';
 
 export interface PaystackInitializeResponse {
   status: boolean;
@@ -20,7 +21,7 @@ export const initializeTransaction = async (
   countryCode: string,
   config?: any // Optional pre-resolved configuration
 ): Promise<PaystackInitializeResponse> => {
-  console.log(`[PAYSTACK_TRACE] Step 1: Starting initialization for ${email} in country ${countryCode}`);
+  logger.debug(`PAYSTACK | INITIALIZE | Email: ${email} | Country: ${countryCode}`);
 
   // 1. Use provided config or resolve Paystack configuration for this specific country
   const provider = config || await PaymentProvider.findOne({
@@ -30,21 +31,17 @@ export const initializeTransaction = async (
   });
 
   if (!provider) {
-    console.error(`[PAYSTACK_TRACE] ERROR: No active Paystack configuration found for country ${countryCode}. Query criteria: code=paystack, countryCode=${countryCode}, isActive=true`);
+    logger.error(`PAYSTACK | CONFIG_ERROR: No active Paystack configuration found for country ${countryCode}.`);
     throw new Error(`Paystack is not configured for country: ${countryCode}`);
   }
 
   if (!provider.secretKey) {
-    console.error(`[PAYSTACK_TRACE] ERROR: Paystack secret key missing for country ${countryCode} (Config ID: ${provider._id})`);
+    logger.error(`PAYSTACK | CONFIG_ERROR: Paystack secret key missing for country ${countryCode} (Config ID: ${provider._id})`);
     throw new Error(`Paystack secret key is missing for country: ${countryCode}`);
   }
 
-  console.log(`[PAYSTACK_TRACE] Step 2: Config resolved. ID: ${provider._id}, Merchant: ${provider.merchantId || 'N/A'}, Env: ${provider.environment}`);
-
   // Paystack amount is in kobo (base unit * 100)
   const amountInBaseUnit = Math.round(amount * 100);
-
-  console.log(`[PAYSTACK_TRACE] Step 3: Preparing payload. Amount: ${amountInBaseUnit} ${provider.currency || currency}`);
 
   try {
       const response = await axios.post(
@@ -64,11 +61,11 @@ export const initializeTransaction = async (
         }
       );
 
-      console.log(`[PAYSTACK_TRACE] Step 4: Success. Reference: ${response.data.data.reference}`);
+      logger.payment('INITIALIZED', 'PENDING', response.data.data.reference, amount);
       return response.data;
   } catch (axiosError: any) {
       const errorData = axiosError.response?.data;
-      console.error(`[PAYSTACK_TRACE] FATAL: Gateway Rejected Request. Status: ${axiosError.response?.status}. Message: ${errorData?.message || axiosError.message}`);
+      logger.error(`PAYSTACK | INITIALIZE_FAILED | Status: ${axiosError.response?.status} | Msg: ${errorData?.message || axiosError.message}`);
       throw new Error(`Gateway Error: ${errorData?.message || axiosError.message}`);
   }
 };

@@ -11,6 +11,7 @@ import SystemSettings from '../models/SystemSettings';
 import mongoose from 'mongoose';
 import * as presenceService from '../services/provider-presence.service';
 import * as storageService from '../services/storage.service';
+import { logger } from '../utils/logger';
 
 export const getProviderProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -79,7 +80,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
                     submittedAt: new Date(),
                     status: 'PENDING'
                 };
-                console.log(`[AUDIT] Address change requested for verified provider ${userId}`);
+                logger.info(`PROVIDER | PROFILE_UPDATE | Address change requested for verified provider ${userId}`);
             } else {
                 if (city) user.city = city;
                 if (province) user.province = province;
@@ -563,7 +564,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
             }
         });
     } catch (error) {
-        console.error('[STATS_ERROR]', error);
+        logger.error(`PROVIDER | DASHBOARD_STATS_FAILED | User: ${req.user?.userId} | Error: ${error}`);
         res.status(500).json({ success: false, message: 'Stats failed', error });
     }
 };

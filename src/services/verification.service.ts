@@ -5,6 +5,7 @@ import { VerificationLevel } from '../models/Service';
 import AuditLog, { AuditType } from '../models/AuditLog';
 import { notifyUser } from './notification.service';
 import * as auditService from './audit.service';
+import { logger } from '../utils/logger';
 
 export const submitVerification = async (
     providerId: string,
@@ -22,7 +23,7 @@ export const submitVerification = async (
             type
         }).sort({ submittedAt: -1 }).session(session);
 
-        console.log(`[VERIFY_SUBMIT] Provider: ${providerId}, Level: ${type}, Incoming Docs: ${documents.length}`);
+        logger.debug(`VERIFY | SUBMIT | Provider: ${providerId} | Level: ${type} | Docs: ${documents.length}`);
 
         if (latestRequest &&
            (latestRequest.status === VerificationRequestStatus.PENDING ||
@@ -34,10 +35,10 @@ export const submitVerification = async (
             // Only block if it's a completely new, untouched request.
             // If there's any rejection or it's already under review with rejections, allow resubmission.
             if (isPurePending) {
-                console.error(`[VERIFY_LOCK] Submission blocked. Pure pending request ${latestRequest._id} exists.`);
+                logger.warn(`VERIFY | LOCKED | Provider: ${providerId} | Request in progress.`);
                 throw new Error(`A verification request for ${type} is already in progress.`);
             } else {
-                 console.log(`[VERIFY_LOCK] Superseding request ${latestRequest._id} (Status: ${latestRequest.status}, hasRejected: ${hasRejectedDocs})`);
+                 logger.debug(`VERIFY | SUPERSEDE | request ${latestRequest._id}`);
                  // Mark old request as superseded/resubmitted
                  latestRequest.status = VerificationRequestStatus.RESUBMITTED;
                  await latestRequest.save({ session });
@@ -183,7 +184,7 @@ export const reviewRequest = async (
                                 type: 'VERIFICATION_UPDATE',
                                 docType: doc.type,
                                 status: update.status
-                            }).catch(e => console.error('Notification failed', e));
+                            }).catch(e => logger.error(`VERIFY | NOTIFY_FAILED | Error: ${e.message}`));
                         }
                     }
                 }

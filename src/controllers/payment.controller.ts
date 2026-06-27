@@ -6,6 +6,7 @@ import * as financialService from '../services/financial.service';
 import Job, { JobStatus } from '../models/Job';
 import * as jobService from '../services/job.service';
 import { emitAdminUpdate, emitJobUpdate } from '../socket/socket.service';
+import { logger } from '../utils/logger';
 
 export const handlePaystackWebhook = async (req: Request, res: Response) => {
     const gateway = 'PAYSTACK';
@@ -13,12 +14,12 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
     const rawBody = (req as any).rawBody;
 
     if (!signature) {
-        console.warn(`[PAYMENT_WEBHOOK] Missing signature for ${gateway}`);
+        logger.warn(`PAYMENT | WEBHOOK | Missing signature for ${gateway}`);
         return res.status(400).json({ success: false, message: 'Missing signature' });
     }
 
     if (!rawBody) {
-        console.error(`[PAYMENT_WEBHOOK] Raw body not captured for ${gateway}. Check app.ts configuration.`);
+        logger.error(`PAYMENT | WEBHOOK | Raw body not captured for ${gateway}.`);
         return res.status(500).json({ success: false, message: 'Body capture error' });
     }
 
@@ -62,7 +63,7 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
         }
 
         if (event === 'charge.success') {
-            console.log(`[PAYMENT_WEBHOOK] Success event for Job ID: ${jobId}. Reference: ${data.reference}`);
+            logger.payment('WEBHOOK_SUCCESS', 'PAID', data.reference, data.amount / 100);
 
             if (job.paymentStatus !== 'PAID') {
 // ...
@@ -102,7 +103,6 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
 export const verifyPayment = async (req: Request, res: Response) => {
     try {
         const { reference } = req.params;
-        console.log(`[PAYMENT_VERIFY] Starting verification for Reference: ${reference}`);
 
         // Try to resolve countryCode from Job first if not authenticated (e.g. from Website callback)
         let countryCode = (req as any).user?.countryCode;
@@ -117,7 +117,7 @@ export const verifyPayment = async (req: Request, res: Response) => {
 
         if (verification.status && verification.data.status === 'success') {
             const jobId = verification.data.metadata.jobId;
-            console.log(`[PAYMENT_VERIFY] Verification passed for Job ID: ${jobId}`);
+            logger.payment('VERIFY_SUCCESS', 'PAID', reference);
 
             const job = await Job.findById(jobId);
             if (!job) {

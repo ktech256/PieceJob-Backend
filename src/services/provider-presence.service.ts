@@ -4,6 +4,7 @@ import * as fraudService from './fraud.service';
 import Job, { JobStatus } from '../models/Job';
 import * as notificationService from './notification.service';
 import { calculateDistance } from '../utils/location';
+import { logger } from '../utils/logger';
 
 export const handleHeartbeat = async (userId: string, coordinates: number[], hardwareId?: string, isMock?: boolean) => {
     const now = new Date();
@@ -21,6 +22,7 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
     );
 
     if (provider && oldProvider) {
+        logger.heartbeat(userId, true);
         // PAGE 12: Fraud Checks
         if (isMock) {
             await fraudService.applyShadowBan(provider._id.toString(), 'Mock GPS detected');

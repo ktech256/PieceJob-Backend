@@ -1,17 +1,12 @@
 import admin from 'firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../utils/logger';
 
 export const uploadBase64File = async (base64Data: string, folder: string, mimeType: string): Promise<string> => {
     try {
-        const app = admin.app();
         const bucket = admin.storage().bucket();
 
-        console.log("MANDATORY RUNTIME BUCKET AUDIT");
-        console.log("ACTIVE STORAGE BUCKET:", bucket.name);
-        console.log("FIREBASE PROJECT:", app.options.projectId);
-        console.log("STORAGE CONFIG:", app.options.storageBucket);
-
-        console.log(`[STORAGE_TRACE] 5. Firebase upload start. Bucket: ${bucket.name}, Folder: ${folder}, Data Length: ${base64Data.length}`);
+        logger.debug(`STORAGE | UPLOAD_START | Bucket: ${bucket.name} | Folder: ${folder}`);
 
         let ext = 'bin';
         if (mimeType.includes('pdf')) ext = 'pdf';
@@ -28,11 +23,11 @@ export const uploadBase64File = async (base64Data: string, folder: string, mimeT
             public: false
         });
 
-        console.log(`[STORAGE_TRACE] 6. Firebase upload success. Path: ${filename}`);
+        logger.debug(`STORAGE | UPLOAD_SUCCESS | Path: ${filename}`);
         // Return the permanent bucket path
         return filename;
     } catch (error: any) {
-        console.error('Upload Error:', error);
+        logger.error(`STORAGE | UPLOAD_FAILED | Error: ${error.message}`);
         throw new Error(`Failed to upload file to storage: ${error.message}`);
     }
 };
@@ -50,8 +45,8 @@ export const getSignedUrl = async (path: string): Promise<string> => {
         });
 
         return url;
-    } catch (error) {
-        console.error('Signed URL Error:', error);
+    } catch (error: any) {
+        logger.error(`STORAGE | SIGNED_URL_ERROR | Path: ${path} | Error: ${error.message}`);
         return '';
     }
 };
@@ -61,7 +56,7 @@ export const deleteFile = async (path: string): Promise<void> => {
         if (!path || path.startsWith('http')) return;
         const bucket = admin.storage().bucket();
         await bucket.file(path).delete();
-    } catch (error) {
-        console.error('Delete Error:', error);
+    } catch (error: any) {
+        logger.error(`STORAGE | DELETE_ERROR | Path: ${path} | Error: ${error.message}`);
     }
 };

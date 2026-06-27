@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import * as auditService from './audit.service';
 import * as testUserService from './test-user.service';
+import { logger } from '../utils/logger';
 
 export const handleBookingFee = async (jobId: string, customerId: string, amount: number, currency: string, countryCode: string) => {
   const session = await mongoose.startSession();
@@ -160,7 +161,7 @@ export const releaseEscrowFunds = async () => {
     await session.commitTransaction();
   } catch (error) {
     await session.abortTransaction();
-    console.error('Escrow release failed:', error);
+    logger.error('Escrow release failed:', error);
   } finally {
     session.endSession();
   }

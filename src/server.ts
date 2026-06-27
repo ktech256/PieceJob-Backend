@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import initializeFirebase from './config/firebase';
+import { logger } from './utils/logger';
 
 dotenv.config();
 
@@ -25,23 +26,23 @@ initSchedulers();
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/piecejob';
-console.log(`Attempting MongoDB connection to: ${MONGO_URI.split('@')[1] || 'localhost'}`);
+logger.debug(`Attempting MongoDB connection...`);
 
 mongoose.connect(MONGO_URI, {
     serverSelectionTimeoutMS: 5000,
 })
   .then(async () => {
-      console.log('✅ Connected to MongoDB');
+      logger.info('✅ Connected to MongoDB');
       // Initialize dynamic categories
       await categoryController.seedCategories();
       // Resume interrupted broadcasts
       await jobService.resumeBroadcasts();
   })
   .catch((err) => {
-      console.error('❌ MongoDB connection error:', err.message);
-      console.error('Please verify your MONGO_URI in Render environment variables.');
+      logger.error('❌ MongoDB connection error:', err.message);
+      logger.error('Please verify your MONGO_URI in Render environment variables.');
   });
 
 server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  logger.info(`Server is running on port ${port}`);
 });

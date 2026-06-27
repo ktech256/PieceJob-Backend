@@ -4,6 +4,7 @@ import * as providerPresenceService from '../services/provider-presence.service'
 import * as sosService from '../services/sos.service';
 import * as fraudService from '../services/fraud.service';
 import { calculateDistance } from '../utils/location';
+import { logger } from '../utils/logger';
 
 let io: Server;
 
@@ -19,21 +20,21 @@ export const initSocket = (server: any) => {
   });
 
   io.on('connection', (socket: Socket) => {
-    console.log('Client connected:', socket.id);
+    logger.socket('CONNECTED', socket.id);
 
     socket.on('join_job', (jobId: string) => {
       socket.join(`job_${jobId}`);
-      console.log(`Socket ${socket.id} joined room job_${jobId}`);
+      logger.socket('JOIN_ROOM', socket.id, `Room: job_${jobId}`);
     });
 
     socket.on('join_user', (userId: string) => {
         socket.join(`user_${userId}`);
-        console.log(`Socket ${socket.id} joined room user_${userId}`);
+        logger.socket('JOIN_ROOM', socket.id, `Room: user_${userId}`);
     });
 
     socket.on('join_admin', () => {
       socket.join('admin_monitoring');
-      console.log(`Socket ${socket.id} joined admin_monitoring`);
+      logger.socket('JOIN_ROOM', socket.id, 'Room: admin_monitoring');
     });
 
     socket.on('heartbeat', async (data: { userId: string, coordinates: number[], hardwareId?: string, isMockLocation?: boolean }) => {
@@ -106,7 +107,7 @@ export const initSocket = (server: any) => {
     });
 
     socket.on('disconnect', () => {
-      console.log('Client disconnected:', socket.id);
+      logger.socket('DISCONNECTED', socket.id);
     });
   });
 

@@ -16,6 +16,7 @@ import * as fraudService from '../services/fraud.service';
 import * as notificationService from '../services/notification.service';
 import * as testUserService from '../services/test-user.service';
 import * as paymentGatewayService from '../services/payment-gateway.service';
+import { logger } from '../utils/logger';
 
 function calculateDistance(c1: number[], c2: number[]) {
   const R = 6371e3; // meters
@@ -176,7 +177,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
         return res.status(400).json({ success: false, message: paymentRes.message });
     }
   } catch (error: any) {
-    console.error('Payment initialization failed:', error);
+    logger.error(`JOB | PAYMENT_INIT_FAILED | Job: ${req.params.jobId} | Error: ${error.message}`);
     res.status(500).json({ success: false, message: error.message || 'Payment initialization failed' });
   }
 };

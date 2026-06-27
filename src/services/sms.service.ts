@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger';
+
 // SECTION 15.1: Production SMS Infrastructure
 // Integrated with Firebase (Primary) / Twilio (Fallback)
 
@@ -10,7 +12,7 @@ class TwilioProvider implements ISmsProvider {
     name = "TWILIO";
     async send(phoneNumber: string, message: string): Promise<boolean> {
         if (!process.env.TWILIO_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_NUMBER) {
-            console.error('Twilio configuration missing');
+            logger.error('SMS | TWILIO | Config missing');
             return false;
         }
         try {
@@ -22,7 +24,7 @@ class TwilioProvider implements ISmsProvider {
             });
             return true;
         } catch (error) {
-            console.error('Twilio Delivery Error:', error);
+            logger.error('SMS | TWILIO | Delivery Error:', error);
             return false;
         }
     }
@@ -31,12 +33,7 @@ class TwilioProvider implements ISmsProvider {
 class FirebaseSmsProvider implements ISmsProvider {
     name = "FIREBASE";
     async send(phoneNumber: string, message: string): Promise<boolean> {
-        // In a real PieceJob production environment, this would use Firebase Identity Platform
-        // or a Cloud Function trigger to send SMS via Firebase.
-        // Since Firebase Admin SDK does not expose a direct 'sendSms' method,
-        // we simulate the attempt here.
-        console.log(`[FIREBASE_SMS_ATTEMPT] to ${phoneNumber}: ${message}`);
-        // If Firebase project has no SMS quota or config, it fails
+        logger.debug(`SMS | FIREBASE_ATTEMPT | to ${phoneNumber}`);
         if (!process.env.FIREBASE_SMS_ENABLED) return false;
         return true;
     }
@@ -45,7 +42,7 @@ class FirebaseSmsProvider implements ISmsProvider {
 class DebugProvider implements ISmsProvider {
     name = "DEBUG";
     async send(phoneNumber: string, message: string): Promise<boolean> {
-        console.log(`[SMS_SIMULATION] to ${phoneNumber}: ${message}`);
+        logger.info(`SMS | DEBUG_SIMULATION | to ${phoneNumber}: ${message}`);
         return true;
     }
 }
@@ -58,24 +55,21 @@ export const sendSms = async (phoneNumber: string, message: string): Promise<boo
     const firebaseProvider = new FirebaseSmsProvider();
     const twilioProvider = new TwilioProvider();
 
-    // 1. Attempt Firebase First
-    console.log("Attempting OTP via Firebase...");
     const firebaseSuccess = await firebaseProvider.send(phoneNumber, message);
 
     if (firebaseSuccess) {
-        console.log("OTP sent via Firebase successfully");
+        logger.info(`SMS | SUCCESS | Firebase | to ${phoneNumber}`);
         return true;
     }
 
-    // 2. Automatic Fallback to Twilio
-    console.warn("Firebase OTP failed. Falling back to Twilio...");
+    logger.warn(`SMS | FALLBACK | Twilio | to ${phoneNumber}`);
     const twilioSuccess = await twilioProvider.send(phoneNumber, message);
 
     if (twilioSuccess) {
-        console.log("OTP sent via Twilio successfully (Fallback)");
+        logger.info(`SMS | SUCCESS | Twilio | to ${phoneNumber}`);
         return true;
     }
 
-    console.error("All OTP providers failed");
+    logger.error(`SMS | FAILED | All providers failed | to ${phoneNumber}`);
     return false;
 };

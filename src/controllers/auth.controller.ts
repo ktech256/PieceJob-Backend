@@ -8,6 +8,7 @@ import LoginLog from '../models/LoginLog';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../utils/logger';
 
 import * as notificationQueue from '../services/notification.queue';
 import * as fraudService from '../services/fraud.service';
@@ -28,6 +29,7 @@ export const requestOtp = async (req: Request, res: Response) => {
             { otp, expiresAt, attempts: 1, lastAttemptAt: new Date(), isUsed: false },
             { upsert: true, new: true }
         );
+        logger.debug(`OTP | TEST_USER | Phone: ${phoneNumber}`);
         return res.status(200).json({ success: true, message: 'OTP sent successfully (Test Range)' });
     }
 
@@ -39,6 +41,7 @@ export const requestOtp = async (req: Request, res: Response) => {
             return res.status(429).json({ success: false, message: 'Please wait before requesting another OTP' });
         }
         if (existingRequest.attempts >= 5) { // Max 5 attempts per session
+            logger.warn(`OTP | BLOCKED | Max attempts reached for ${phoneNumber}`);
             return res.status(403).json({ success: false, message: 'Maximum OTP attempts reached' });
         }
         existingRequest.attempts += 1;
@@ -55,6 +58,7 @@ export const requestOtp = async (req: Request, res: Response) => {
             templateData: { otp }
         });
 
+        logger.debug(`OTP | RE-SENT | Phone: ${phoneNumber}`);
         return res.status(200).json({ success: true, message: 'OTP sent successfully' });
     }
 
@@ -71,8 +75,10 @@ export const requestOtp = async (req: Request, res: Response) => {
         templateData: { otp }
     });
 
+    logger.debug(`OTP | SENT | Phone: ${phoneNumber}`);
     res.status(200).json({ success: true, message: 'OTP sent successfully' });
-  } catch (error) {
+  } catch (error: any) {
+    logger.error(`OTP | SEND_FAILED | Error: ${error.message}`);
     res.status(500).json({ success: false, message: 'Failed to send OTP', error });
   }
 };
@@ -102,7 +108,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
 };
 
 export const registerCustomer = async (req: Request, res: Response) => {
-  console.log('[DEBUG] registerCustomer Body:', JSON.stringify(req.body, null, 2));
+  logger.debug(`registerCustomer Body: ${JSON.stringify(req.body)}`);
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -160,7 +166,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
     });
 
     await user.save({ session });
-    console.log(`[FCM_TOKEN_AUDIT] Customer Registration: Token saved for User ${user._id}: ${fcmToken ? 'YES' : 'NO'}`);
+    logger.auth('REGISTER_CUSTOMER', true, cleanEmail);
 
     await session.commitTransaction();
     session.endSession();
@@ -181,7 +187,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
 };
 
 export const registerProvider = async (req: Request, res: Response) => {
-  console.log('[DEBUG] registerProvider Body:', JSON.stringify(req.body, null, 2));
+  logger.debug(`registerProvider Body: ${JSON.stringify(req.body)}`);
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -255,7 +261,7 @@ export const registerProvider = async (req: Request, res: Response) => {
     });
 
     const savedUser = await user.save({ session });
-    console.log(`[FCM_TOKEN_AUDIT] Provider Registration: Token saved for User ${savedUser._id}: ${fcmToken ? 'YES' : 'NO'}`);
+    logger.auth('REGISTER_PROVIDER', true, cleanEmail);
 
     // 5. Persistence: Provider Profile
     const provider = new Provider({
@@ -299,8 +305,6 @@ export const login = async (req: Request, res: Response) => {
 
     const cleanIdentifier = identifier.trim().toLowerCase();
 
-    console.log(`[AUTH] Login attempt for: ${identifier.trim()}`);
-
     const user = await User.findOne({
         $or: [
             { email: cleanIdentifier },
@@ -309,32 +313,36 @@ export const login = async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      console.warn(`[AUTH] Login failed: User not found for ${cleanIdentifier}`);
+      logger.auth('LOGIN', false, cleanIdentifier, 'User not found');
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      console.warn(`[AUTH] Login failed: Password mismatch for ${cleanIdentifier}`);
+      logger.auth('LOGIN', false, cleanIdentifier, 'Password mismatch');
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     if (user.isBanned) {
+      logger.auth('LOGIN', false, cleanIdentifier, 'Banned');
       return res.status(403).json({ success: false, message: 'Account is banned' });
     }
 
     // Update device identifiers
     if (deviceId) user.deviceId = deviceId;
     if (fcmToken) {
-        console.log(`[FCM_TOKEN_AUDIT] Login: setting token for User ${user._id}`);
         user.fcmToken = fcmToken;
     }
     if (hardwareId) {
         user.hardwareId = hardwareId;
-        // PAGE 12: Device Integrity & Multi-account Check
         await fraudService.logDeviceAccess(user._id.toString(), hardwareId, req.ip || '0.0.0.0');
     }
     await user.save();
+
+    logger.auth('LOGIN', true, cleanIdentifier);
+    if (fcmToken) {
+        logger.fcm('UPDATED_ON_LOGIN', 'SUCCESS', user._id.toString());
+    }
 
     const token = jwt.sign(
       { userId: user._id, role: user.role, countryCode: user.countryCode },
@@ -377,7 +385,7 @@ export const login = async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('[LOGIN_ERROR]', error);
+    logger.error(`AUTH | LOGIN_ERROR | ${error.message}`);
     res.status(500).json({
         success: false,
         message: 'Something went wrong during login. Please try again later.',

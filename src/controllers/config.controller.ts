@@ -184,14 +184,13 @@ export const resolveZone = async (req: Request, res: Response) => {
 export const getCountries = async (req: Request, res: Response) => {
     try {
         const countries = await Country.find({ isActive: true }).sort({ name: 1 });
-        console.log(`[API] Returning ${countries.length} countries to client`);
         res.status(200).json({
             success: true,
             data: countries,
             countries: countries // Keep legacy key for dashboard compatibility
         });
     } catch (error) {
-        console.error('[API] Error fetching countries:', error);
+        logger.error(`CONFIG | FETCH_COUNTRIES_FAILED | Error: ${error}`);
         res.status(500).json({ success: false, message: 'Failed to fetch countries', error });
     }
 };

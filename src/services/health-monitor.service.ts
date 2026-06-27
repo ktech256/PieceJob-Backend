@@ -2,9 +2,10 @@ import Integration from '../models/Integration';
 import PaymentProvider from '../models/PaymentProvider';
 import axios from 'axios';
 import nodemailer from 'nodemailer';
+import { logger } from '../utils/logger';
 
 export const runFullEcosystemCheck = async () => {
-    console.log('[HEALTH] Starting ecosystem-wide health check...');
+    logger.debug('[HEALTH] Starting ecosystem-wide health check...');
     const integrations = await Integration.find({ isActive: true });
 
     for (const int of integrations) {
@@ -42,7 +43,7 @@ export const runFullEcosystemCheck = async () => {
         await int.save();
     }
 
-    console.log('[HEALTH] Ecosystem check completed.');
+    logger.debug('[HEALTH] Ecosystem check completed.');
 };
 
 const checkGoogleHealth = async (key: string): Promise<boolean> => {
