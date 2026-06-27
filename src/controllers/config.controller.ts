@@ -6,6 +6,7 @@ import ServiceCategoryModel from '../models/ServiceCategory';
 import Provider from '../models/Provider';
 import * as pricingService from '../services/pricing.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
+import { logger } from '../utils/logger';
 
 export const getWorkspaceConfig = async (req: Request, res: Response) => {
   try {

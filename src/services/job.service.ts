@@ -5,7 +5,7 @@ import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
 import { emitToUser, emitJobUpdate } from '../socket/socket.service';
-import * as broadcastQueue from './job-broadcast.queue';
+import { addJobToBroadcastQueue } from './job-broadcast.queue';
 import * as notificationService from './notification.service';
 import { logger } from '../utils/logger';
 
@@ -65,7 +65,7 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   let foundProviders: any[] = [];
   let selectedTierLabel = 'None';
 
-  const stats = { Elite: 0, Platinum: 0, Gold: 0, Silver: 0, Bronze: 0 };
+  const stats: Record<string, number> = { [ProviderTier.ELITE]: 0, [ProviderTier.PLATINUM]: 0, [ProviderTier.GOLD]: 0, [ProviderTier.SILVER]: 0, [ProviderTier.BRONZE]: 0 };
 
   for (let i = startIdx; i < tierPriorities.length; i++) {
       const tiers = tierPriorities[i];
@@ -86,14 +86,14 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
 
           // Update stats for the summary
           providers.forEach(p => {
-              const t = p.tier as keyof typeof stats;
+              const t = p.tier as string;
               if (stats[t] !== undefined) stats[t]++;
           });
           break;
       }
   }
 
-  const summary = `Service: ${job.serviceCode} | Search: Elite:${stats.Elite}, Plat:${stats.Platinum}, Gold:${stats.Gold}, Silver:${stats.Silver}, Bronze:${stats.Bronze} | Selected: ${selectedTierLabel} | Found: ${foundProviders.length}`;
+  const summary = `Service: ${job.serviceCode} | Search: Elite:${stats[ProviderTier.ELITE]}, Plat:${stats[ProviderTier.PLATINUM]}, Gold:${stats[ProviderTier.GOLD]}, Silver:${stats[ProviderTier.SILVER]}, Bronze:${stats[ProviderTier.BRONZE]} | Selected: ${selectedTierLabel} | Found: ${foundProviders.length}`;
   logger.matching(job._id.toString(), wave, summary);
 
   return foundProviders;
@@ -103,14 +103,14 @@ export const broadcastJob = async (jobId: string) => {
   const job = await Job.findById(jobId);
   if (!job || job.status !== JobStatus.BROADCASTED) return;
 
-  await broadcastQueue.addJobToBroadcastQueue(jobId, 1);
+  await addJobToBroadcastQueue(jobId, 1);
 };
 
 export const resumeBroadcasts = async () => {
     const jobs = await Job.find({ status: JobStatus.BROADCASTED });
     logger.info(`MATCHING | RESUMING_BROADCASTS | Count: ${jobs.length}`);
     for (const job of jobs) {
-        await broadcastQueue.addJobToBroadcastQueue(job._id.toString(), 1);
+        await addJobToBroadcastQueue(job._id.toString(), 1);
     }
 };
 
