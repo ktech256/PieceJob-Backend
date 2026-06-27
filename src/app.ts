@@ -23,7 +23,7 @@ import admin from 'firebase-admin';
 // PieceJob Backend - V3.0 Refinement
 const app = express();
 
-console.log(`[BOOT] PieceJob Backend version 3.0.9 starting at ${new Date().toISOString()}...`);
+console.log(`[BOOT] PieceJob Backend version 3.0.12 starting at ${new Date().toISOString()}...`);
 console.log(`[BOOT] Forensic DB Audit: ${mongoose.connection.readyState === 1 ? 'CONNECTED' : 'WAITING'}`);
 
 app.use(helmet());
@@ -37,6 +37,18 @@ app.use(express.json({
     }
 }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// FORENSIC REQUEST LOGGER
+app.use((req: any, res, next) => {
+    const userId = req.headers['authorization'] ? 'TOKEN_PRESENT' : 'ANONYMOUS';
+    console.log(`[HTTP_CRITICAL_AUDIT] ${new Date().toISOString()} | ${req.method} ${req.path} | User: ${userId}`);
+    if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
+        const safeBody = { ...req.body };
+        if (safeBody.password) safeBody.password = '***';
+        console.log(`[HTTP_CRITICAL_AUDIT] BODY:`, JSON.stringify(safeBody));
+    }
+    next();
+});
 
 // API Routes (V1 and Dashboard compatibility)
 app.use('/api/v1/auth', authRoutes);

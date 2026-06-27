@@ -110,27 +110,24 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     }
   }).limit(10).populate('userId', 'fcmToken role firstName');
 
-  console.log(`[MATCHING_AUDIT] Main query results: Found ${providers.length} providers.`);
+  console.log(`[MATCHING_AUDIT] Main query result: Found ${providers.length} providers.`);
 
   for (const p of providers) {
       // FORCE RE-FETCH of User to ensure no population issues
       const user = await User.findById(p.userId).select('fcmToken email firstName');
 
+      console.log(`[DATABASE_AUDIT] Provider: ${p._id} | User: ${p.userId}`);
+
       if (!user) {
-          console.error(`[DATABASE_AUDIT] CRITICAL: Provider ${p._id} has NO associated User record (userId: ${p.userId}).`);
+          console.error(`[DATABASE_AUDIT] CRITICAL: User record NOT FOUND for provider.`);
           continue;
       }
 
       const token = user.fcmToken;
-      console.log(`[DATABASE_AUDIT] MATCH FOUND:`);
-      console.log(`[DATABASE_AUDIT] ProviderID: ${p._id}`);
-      console.log(`[DATABASE_AUDIT] UserID:     ${user._id}`);
-      console.log(`[DATABASE_AUDIT] UserEmail:  ${user.email}`);
-
       if (!token) {
-          console.log(`[DATABASE_AUDIT] FCM Token:  MISSING (is null or undefined)`);
+          console.log(`[DATABASE_AUDIT] User Email: ${user.email} | FCM Token: MISSING (NULL/UNDEFINED)`);
       } else {
-          console.log(`[DATABASE_AUDIT] FCM Token:  PRESENT`);
+          console.log(`[DATABASE_AUDIT] User Email: ${user.email}`);
           console.log(`[DATABASE_AUDIT] TokenLen:   ${token.length}`);
           console.log(`[DATABASE_AUDIT] TokenStart: ${token.substring(0, 25)}`);
           console.log(`[DATABASE_AUDIT] TokenEnd:   ${token.substring(token.length - 10)}`);

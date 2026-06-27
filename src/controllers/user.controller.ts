@@ -60,10 +60,10 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
-    console.log(`[FCM_BACKEND_RECEIVED] User: ${userId}, Token: ${fcmToken?.substring(0, 10)}...`);
+    console.log(`[FCM_BACKEND_RECEIVED] User: ${userId} | Token: ${fcmToken?.substring(0, 15)}...`);
 
     if (!fcmToken) {
-        console.warn(`[FCM_TOKEN_AUDIT] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring.`);
+        console.warn(`[FCM_CONTROLLER_ENTERED] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring.`);
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
 
@@ -73,8 +73,9 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
 
     // Read again to confirm save
     const updatedUser = await User.findById(userId);
-    if (updatedUser && updatedUser.fcmToken === fcmToken) {
-        console.log(`[FCM_DB_VERIFY] SUCCESS: Token verified in MongoDB.`);
+    if (updatedUser && updatedUser.fcmToken === fcmToken && fcmToken) {
+        console.log(`[FCM_DB_VERIFY] SUCCESS: Stored token matches received token. Len=${fcmToken.length}`);
+        console.log(`[FCM_DB_VERIFY] Stored token: ${fcmToken.substring(0, 25)}...${fcmToken.substring(fcmToken.length - 10)}`);
     } else {
         console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Found ${updatedUser?.fcmToken ? 'DIFFERENT' : 'NULL'} token in DB.`);
     }
