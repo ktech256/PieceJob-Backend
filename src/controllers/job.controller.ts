@@ -17,6 +17,7 @@ import * as notificationService from '../services/notification.service';
 import * as testUserService from '../services/test-user.service';
 import * as paymentGatewayService from '../services/payment-gateway.service';
 import { logger } from '../utils/logger';
+import { calculateDistance } from '../utils/location';
 
 const sanitizeJobForMobile = (job: any) => {
     const jobObj = job.toObject ? job.toObject() : job;
