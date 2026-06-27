@@ -43,9 +43,10 @@ export const sendPushNotification = async (
             throw new Error('FIREBASE_SERVICE_ACCOUNT missing');
         }
 
+        console.log(`[FCM_SEND_START] Handing off to Firebase SDK for User ${userId}`);
         const response = await admin.messaging().send(payload);
 
-        console.log(`[FCM_AUDIT] SUCCESS: Firebase accepted message. ID: ${response}`);
+        console.log(`[FCM_FIREBASE_RESPONSE] SUCCESS: MessageId: ${response}`);
 
         await NotificationLog.create({
             userId,

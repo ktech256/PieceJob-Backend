@@ -60,18 +60,21 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
-    console.log(`[FCM_TOKEN_AUDIT] Request to update token for User ${userId}`);
+    console.log(`[FCM_BACKEND_RECEIVED] User: ${userId}, Token: ${fcmToken?.substring(0, 10)}...`);
 
     if (!fcmToken) {
-        console.warn(`[FCM_TOKEN_AUDIT] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring to prevent capability loss.`);
+        console.warn(`[FCM_TOKEN_AUDIT] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring.`);
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
 
-    const oldUser = await User.findById(userId);
-    console.log(`[FCM_TOKEN_AUDIT] Current token in DB: ${oldUser?.fcmToken ? 'PRESENT' : 'NULL'}`);
+    await User.findByIdAndUpdate(userId, { fcmToken });
 
-    const user = await User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
-    console.log(`[FCM_TOKEN_AUDIT] FCM_SYNC_SUCCESS. User: ${userId}, Token: ${fcmToken.substring(0, 10)}...`);
+    // FCM_DB_VERIFY: Read again to confirm save
+    const updatedUser = await User.findById(userId);
+    console.log(`[FCM_DB_VERIFY] User: ${userId}, Stored Token: ${updatedUser?.fcmToken ? 'MATCH' : 'NULL'}`);
+    if (updatedUser?.fcmToken !== fcmToken) {
+        console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Expected ${fcmToken.substring(0, 10)}, found ${updatedUser?.fcmToken?.substring(0, 10)}`);
+    }
 
     res.status(200).json({ success: true, message: 'FCM token updated' });
   } catch (error: any) {

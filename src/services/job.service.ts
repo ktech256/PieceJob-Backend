@@ -112,7 +112,8 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   console.log(`[MATCHING_AUDIT] Main query results: Found ${providers.length} providers.`);
   providers.forEach(p => {
       const user = p.userId as any;
-      console.log(`[FCM_MATCH] Provider: ${p._id}, User: ${user?._id}, Token: ${user?.fcmToken ? 'PRESENT' : 'MISSING'}`);
+      const token = user?.fcmToken || 'NULL';
+      console.log(`[FCM_MATCH] Provider: ${p._id}, User: ${user?._id}, Stored FCM Token: ${token !== 'NULL' ? token.substring(0, 15) + '...' : 'NULL'}`);
   });
 
   return providers;
