@@ -205,7 +205,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     const commissionRate = await pricingService.getCommissionRate(job.countryCode, provider.tier);
 
     job.providerId = providerId as any;
-    job.status = JobStatus.PROVIDER_ACCEPTED;
+    job.status = JobStatus.ACCEPTED;
     job.acceptedAt = new Date();
     job.commissionRateSnapshot = commissionRate;
     job.version += 1;
