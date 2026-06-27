@@ -74,7 +74,7 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     // Read again to confirm save
     const updatedUser = await User.findById(userId);
     if (updatedUser?.fcmToken === fcmToken) {
-        console.log(`[FCM_DB_VERIFY] SUCCESS: Token verified in MongoDB. Len=${updatedUser.fcmToken.length}`);
+        console.log(`[FCM_DB_VERIFY] SUCCESS: Token verified in MongoDB. Len=${updatedUser.fcmToken?.length || 0}`);
     } else {
         console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Found ${updatedUser?.fcmToken ? 'DIFFERENT' : 'NULL'} token in DB.`);
     }
