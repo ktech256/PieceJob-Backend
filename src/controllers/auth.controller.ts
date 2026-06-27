@@ -331,7 +331,10 @@ export const login = async (req: Request, res: Response) => {
     // Update device identifiers
     if (deviceId) user.deviceId = deviceId;
     if (fcmToken) {
+        console.log(`[FCM_CONTROLLER_ENTERED] Login: Received token for User ${user._id}: ${fcmToken.substring(0, 15)}...`);
         user.fcmToken = fcmToken;
+    } else {
+        console.log(`[FCM_CONTROLLER_ENTERED] Login: NO token provided in request body.`);
     }
     if (hardwareId) {
         user.hardwareId = hardwareId;
@@ -339,10 +342,9 @@ export const login = async (req: Request, res: Response) => {
     }
     await user.save();
 
-    logger.auth('LOGIN', true, cleanIdentifier);
-    if (fcmToken) {
-        logger.fcm('UPDATED_ON_LOGIN', 'SUCCESS', user._id.toString());
-    }
+    // VERIFY SAVE
+    const checkUser = await User.findById(user._id);
+    console.log(`[FCM_DB_VERIFY] Post-login check for User ${user._id}: Token is ${checkUser?.fcmToken ? 'PRESENT' : 'MISSING'}`);
 
     const token = jwt.sign(
       { userId: user._id, role: user.role, countryCode: user.countryCode },

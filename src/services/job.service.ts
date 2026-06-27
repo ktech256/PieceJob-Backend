@@ -88,6 +88,17 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
           providers.forEach(p => {
               const t = p.tier as string;
               if (stats[t] !== undefined) stats[t]++;
+
+              // FORENSIC AUDIT DURING MATCHING
+              const user = p.userId as any;
+              console.log(`[DATABASE_AUDIT] Matched Provider: ${p._id}`);
+              console.log(`[DATABASE_AUDIT] User ID: ${user?._id}`);
+              if (user) {
+                  const token = user.fcmToken || 'NULL';
+                  console.log(`[DATABASE_AUDIT] Stored FCM Token: ${token !== 'NULL' ? token.substring(0, 15) + '...' : 'NULL'}`);
+              } else {
+                  console.log(`[DATABASE_AUDIT] User object MISSING in population.`);
+              }
           });
           break;
       }

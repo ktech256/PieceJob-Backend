@@ -61,16 +61,31 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
+    console.log(`[FCM_CONTROLLER_ENTERED] User: ${userId}`);
+    console.log(`[FCM_CONTROLLER_ENTERED] Received token: ${fcmToken || 'NULL'}`);
+
     if (!fcmToken) {
+        console.warn(`[FCM_CONTROLLER_ENTERED] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring.`);
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
 
-    await User.updateOne({ _id: userId }, { fcmToken });
-    logger.fcm('REGISTERED', 'SUCCESS', userId!, `Token Len: ${fcmToken.length}`);
+    console.log(`[FCM_DB_VERIFY] Attempting MongoDB update for User ${userId}`);
+    const result = await User.updateOne({ _id: userId }, { fcmToken });
+    console.log(`[FCM_DB_VERIFY] Update Result: Matched=${result.matchedCount}, Modified=${result.modifiedCount}`);
+
+    // Read again to confirm save
+    const updatedUser = await User.findById(userId);
+    console.log(`[FCM_DB_VERIFY] Stored token: ${updatedUser?.fcmToken || 'NULL'}`);
+
+    if (updatedUser && updatedUser.fcmToken === fcmToken) {
+        console.log(`[FCM_DB_VERIFY] Mongo Save Success for User ${userId}`);
+    } else {
+        console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Found ${updatedUser?.fcmToken ? 'DIFFERENT' : 'NULL'} token in DB.`);
+    }
 
     res.status(200).json({ success: true, message: 'FCM token updated' });
   } catch (error: any) {
-    logger.error(`FCM | UPDATE_FAILED | User: ${req.user?.userId} | Error: ${error.message}`);
+    console.error(`[FCM_TOKEN_AUDIT] FATAL ERROR for User ${req.user?.userId}:`, error.message);
     res.status(500).json({ success: false, message: 'Failed to update FCM token', error });
   }
 };
