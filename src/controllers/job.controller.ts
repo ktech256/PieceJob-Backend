@@ -18,20 +18,20 @@ import * as testUserService from '../services/test-user.service';
 import * as paymentGatewayService from '../services/payment-gateway.service';
 import { logger } from '../utils/logger';
 
-function calculateDistance(c1: number[], c2: number[]) {
-  const R = 6371e3; // meters
-  const lat1 = c1[1] * Math.PI/180;
-  const lat2 = c2[1] * Math.PI/180;
-  const dLat = (c2[1]-c1[1]) * Math.PI/180;
-  const dLon = (c2[0]-c1[0]) * Math.PI/180;
+const sanitizeJobForMobile = (job: any) => {
+    const jobObj = job.toObject ? job.toObject() : job;
+    const providerInfo = jobObj.providerId && typeof jobObj.providerId === 'object' ? jobObj.providerId : null;
+    const providerId = providerInfo ? (providerInfo._id || providerInfo.id) : (jobObj.providerId ? jobObj.providerId.toString() : null);
 
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.cos(lat1) * Math.cos(lat2) *
-          Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c; // in meters
-}
+    return {
+        ...jobObj,
+        id: (jobObj._id || jobObj.id).toString(),
+        customerId: jobObj.customerId ? jobObj.customerId.toString() : null,
+        providerId: providerId ? providerId.toString() : null,
+        providerInfo: providerInfo,
+        currency: jobObj.pricingSnapshot?.currencyCode || 'USD'
+    };
+};
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
   try {
@@ -112,11 +112,7 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({
         success: true,
-        data: {
-            ...job.toObject(),
-            id: job._id,
-            currency: job.pricingSnapshot?.currencyCode || 'USD'
-        },
+        data: sanitizeJobForMobile(job),
         pricing: pricingBreakdown
     });
   } catch (error: any) {
@@ -134,7 +130,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
     }
 
     if (job.paymentStatus === 'PAID') {
-        return res.status(200).json({ success: true, message: 'Job already paid', job });
+        return res.status(200).json({ success: true, message: 'Job already paid', data: sanitizeJobForMobile(job) });
     }
 
     const user = await User.findById(req.user.userId);
@@ -166,11 +162,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
             data: {
                 paymentUrl: paymentRes.paymentUrl,
                 reference: paymentRes.reference,
-                job: {
-                    ...job.toObject(),
-                    id: job._id,
-                    currency: job.pricingSnapshot?.currencyCode || 'USD'
-                }
+                job: sanitizeJobForMobile(job)
             }
         });
     } else {
@@ -182,25 +174,27 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
+    try {
+        const jobs = await Job.find({ status: JobStatus.BROADCASTED }).limit(50);
+        res.status(200).json({
+            success: true,
+            data: jobs.map(j => sanitizeJobForMobile(j))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch available jobs', error });
+    }
+};
+
 export const getJobById = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
         const job = await Job.findById(jobId).populate('providerId', 'firstName lastName ratingAvg jobsCompleted');
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
-        const jobObj = job.toObject();
-        const providerInfo = jobObj.providerId;
-        const providerId = providerInfo ? (providerInfo._id || providerInfo.id) : null;
-
         res.status(200).json({
             success: true,
-            data: {
-                ...jobObj,
-                id: job._id,
-                providerId: providerId,
-                providerInfo: providerInfo,
-                currency: job.pricingSnapshot?.currencyCode || 'USD'
-            }
+            data: sanitizeJobForMobile(job)
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch job', error });
@@ -230,7 +224,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
         'A provider has accepted your request and is on the way.'
     );
 
-    res.status(200).json({ success: true, message: 'Job accepted', job });
+    res.status(200).json({ success: true, message: 'Job accepted', data: sanitizeJobForMobile(job) });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
   }

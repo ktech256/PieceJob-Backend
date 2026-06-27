@@ -153,7 +153,9 @@ export const verifyPayment = async (req: Request, res: Response) => {
                 message: 'Payment verified',
                 data: {
                     ...job.toObject(),
-                    id: job._id,
+                    id: job._id.toString(),
+                    customerId: job.customerId.toString(),
+                    providerId: job.providerId ? job.providerId.toString() : null,
                     currency: job.pricingSnapshot?.currencyCode || verification.data.currency
                 }
             });

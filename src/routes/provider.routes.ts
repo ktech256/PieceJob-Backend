@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as providerController from '../controllers/provider.controller';
+import * as jobController from '../controllers/job.controller';
 import * as verificationController from '../controllers/provider/verification.controller';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { UserRole } from '../models/User';
@@ -24,6 +25,7 @@ router.get('/availability', authenticate, authorize([UserRole.PROVIDER]), provid
 router.patch('/availability', authenticate, authorize([UserRole.PROVIDER]), providerController.updateAvailability);
 router.get('/reviews', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyReviews);
 router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), providerController.getDashboardStats);
+router.get('/jobs/broadcasted', authenticate, jobController.getAvailableJobs);
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);
 router.get('/verification/requirements', authenticate, authorize([UserRole.PROVIDER]), verificationController.getRequirements);
 router.post('/verification/submit', authenticate, authorize([UserRole.PROVIDER]), verificationController.submitMyVerification);
