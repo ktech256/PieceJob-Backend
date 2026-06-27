@@ -270,10 +270,10 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         }
 
         const distance = calculateDistance(providerCoordinates, job.location.coordinates);
-        if (distance > 20) {
+        if (distance > 50) { // Increased from 20 to 50 to match arrival detection radius
             return res.status(403).json({
                 success: false,
-                message: `Proximity verification failed. You are ${Math.round(distance)}m away. Must be within 20m.`
+                message: `Proximity verification failed. You are ${Math.round(distance)}m away. Must be within 50m.`
             });
         }
         job.startedAt = new Date();
@@ -347,7 +347,10 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
     emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
-    res.status(200).json({ success: true, job });
+    // Notify customer about status change
+    emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status });
+
+    res.status(200).json({ success: true, data: sanitizeJobForMobile(job) });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to update job status', error });
   }
