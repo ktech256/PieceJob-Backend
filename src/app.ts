@@ -23,6 +23,9 @@ import admin from 'firebase-admin';
 // PieceJob Backend - V3.0 Refinement
 const app = express();
 
+console.log(`[BOOT] PieceJob Backend version 3.0.7 starting at ${new Date().toISOString()}...`);
+console.log(`[BOOT] Forensic DB Audit: ${mongoose.connection.readyState === 1 ? 'CONNECTED' : 'WAITING'}`);
+
 app.use(helmet());
 app.use(cors());
 

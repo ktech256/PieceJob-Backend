@@ -160,6 +160,7 @@ export const registerCustomer = async (req: Request, res: Response) => {
     });
 
     await user.save({ session });
+    console.log(`[FCM_TOKEN_AUDIT] Customer Registration: Token saved for User ${user._id}: ${fcmToken ? 'YES' : 'NO'}`);
 
     await session.commitTransaction();
     session.endSession();
@@ -254,6 +255,7 @@ export const registerProvider = async (req: Request, res: Response) => {
     });
 
     const savedUser = await user.save({ session });
+    console.log(`[FCM_TOKEN_AUDIT] Provider Registration: Token saved for User ${savedUser._id}: ${fcmToken ? 'YES' : 'NO'}`);
 
     // 5. Persistence: Provider Profile
     const provider = new Provider({

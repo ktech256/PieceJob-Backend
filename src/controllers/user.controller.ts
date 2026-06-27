@@ -67,13 +67,16 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
 
-    await User.findByIdAndUpdate(userId, { fcmToken });
+    console.log(`[FCM_DB_VERIFY] Attempting MongoDB update for User ${userId}`);
+    const result = await User.updateOne({ _id: userId }, { fcmToken });
+    console.log(`[FCM_DB_VERIFY] Update Result: Matched=${result.matchedCount}, Modified=${result.modifiedCount}`);
 
-    // FCM_DB_VERIFY: Read again to confirm save
+    // Read again to confirm save
     const updatedUser = await User.findById(userId);
-    console.log(`[FCM_DB_VERIFY] User: ${userId}, Stored Token: ${updatedUser?.fcmToken ? 'MATCH' : 'NULL'}`);
-    if (updatedUser?.fcmToken !== fcmToken) {
-        console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Expected ${fcmToken.substring(0, 10)}, found ${updatedUser?.fcmToken?.substring(0, 10)}`);
+    if (updatedUser?.fcmToken === fcmToken) {
+        console.log(`[FCM_DB_VERIFY] SUCCESS: Token verified in MongoDB. Len=${updatedUser.fcmToken.length}`);
+    } else {
+        console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Found ${updatedUser?.fcmToken ? 'DIFFERENT' : 'NULL'} token in DB.`);
     }
 
     res.status(200).json({ success: true, message: 'FCM token updated' });

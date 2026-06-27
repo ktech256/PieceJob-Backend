@@ -1,4 +1,5 @@
 import Job, { JobStatus } from '../models/Job';
+import User from '../models/User';
 import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
@@ -110,11 +111,31 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   }).limit(10).populate('userId', 'fcmToken role firstName');
 
   console.log(`[MATCHING_AUDIT] Main query results: Found ${providers.length} providers.`);
-  providers.forEach(p => {
-      const user = p.userId as any;
-      const token = user?.fcmToken || 'NULL';
-      console.log(`[FCM_MATCH] Provider: ${p._id}, User: ${user?._id}, Stored FCM Token: ${token !== 'NULL' ? token.substring(0, 15) + '...' : 'NULL'}`);
-  });
+
+  for (const p of providers) {
+      // FORCE RE-FETCH of User to ensure no population issues
+      const user = await User.findById(p.userId).select('fcmToken email firstName');
+
+      if (!user) {
+          console.error(`[DATABASE_AUDIT] CRITICAL: Provider ${p._id} has NO associated User record (userId: ${p.userId}).`);
+          continue;
+      }
+
+      const token = user.fcmToken;
+      console.log(`[DATABASE_AUDIT] MATCH FOUND:`);
+      console.log(`[DATABASE_AUDIT] ProviderID: ${p._id}`);
+      console.log(`[DATABASE_AUDIT] UserID:     ${user._id}`);
+      console.log(`[DATABASE_AUDIT] UserEmail:  ${user.email}`);
+
+      if (!token) {
+          console.log(`[DATABASE_AUDIT] FCM Token:  MISSING (is null or undefined)`);
+      } else {
+          console.log(`[DATABASE_AUDIT] FCM Token:  PRESENT`);
+          console.log(`[DATABASE_AUDIT] TokenLen:   ${token.length}`);
+          console.log(`[DATABASE_AUDIT] TokenStart: ${token.substring(0, 25)}`);
+          console.log(`[DATABASE_AUDIT] TokenEnd:   ${token.substring(token.length - 10)}`);
+      }
+  }
 
   return providers;
 };
