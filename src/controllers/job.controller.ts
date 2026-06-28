@@ -436,6 +436,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
+    const sanitized = sanitizeJobForMobile(job);
     const statusPayload = { jobId: job.id, status, providerInfo: sanitized.providerInfo };
 
     // 1. Notify participants via their private user rooms (Global Observer)
