@@ -24,6 +24,11 @@ const sanitizeJobForMobile = (job: any) => {
     const providerInfo = jobObj.providerId && typeof jobObj.providerId === 'object' ? jobObj.providerId : null;
     const providerId = providerInfo ? (providerInfo._id || providerInfo.id) : (jobObj.providerId ? jobObj.providerId.toString() : null);
 
+    // Forensic: Ensure status is mapped correctly for mobile
+    if (jobObj.status === 'PROVIDER_ACCEPTED') {
+        jobObj.status = 'ACCEPTED';
+    }
+
     return {
         ...jobObj,
         id: (jobObj._id || jobObj.id).toString(),
@@ -196,15 +201,31 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
                 { providerId: userId }
             ],
             status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
-        }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName ratingAvg jobsCompleted');
+        }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName');
 
         if (!job) {
             return res.status(200).json({ success: true, data: null });
         }
 
+        let providerData = null;
+        if (job.providerId) {
+            const provider = await Provider.findOne({ userId: (job.providerId as any)._id || job.providerId });
+            if (provider) {
+                providerData = {
+                    firstName: (job.providerId as any).firstName,
+                    lastName: (job.providerId as any).lastName,
+                    ratingAvg: provider.ratingAvg,
+                    jobsCompleted: provider.jobsCompleted
+                };
+            }
+        }
+
+        const sanitized = sanitizeJobForMobile(job);
+        if (providerData) sanitized.providerInfo = providerData;
+
         res.status(200).json({
             success: true,
-            data: sanitizeJobForMobile(job)
+            data: sanitized
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch active job', error });
@@ -214,12 +235,28 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
 export const getJobById = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
-        const job = await Job.findById(jobId).populate('providerId', 'firstName lastName ratingAvg jobsCompleted');
+        const job = await Job.findById(jobId).populate('providerId', 'firstName lastName');
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        let providerData = null;
+        if (job.providerId) {
+            const provider = await Provider.findOne({ userId: (job.providerId as any)._id || job.providerId });
+            if (provider) {
+                providerData = {
+                    firstName: (job.providerId as any).firstName,
+                    lastName: (job.providerId as any).lastName,
+                    ratingAvg: provider.ratingAvg,
+                    jobsCompleted: provider.jobsCompleted
+                };
+            }
+        }
+
+        const sanitized = sanitizeJobForMobile(job);
+        if (providerData) sanitized.providerInfo = providerData;
 
         res.status(200).json({
             success: true,
-            data: sanitizeJobForMobile(job)
+            data: sanitized
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch job', error });
@@ -251,7 +288,25 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
         'A provider has accepted your request and is on the way.'
     );
 
-    res.status(200).json({ success: true, message: 'Job accepted', data: sanitizeJobForMobile(job) });
+    // Forensic: Re-fetch with populated provider info for immediate mobile UI update
+    const finalJob = await Job.findById(job.id).populate('providerId', 'firstName lastName');
+    let providerData = null;
+    if (finalJob?.providerId) {
+        const provider = await Provider.findOne({ userId: (finalJob.providerId as any)._id });
+        if (provider) {
+            providerData = {
+                firstName: (finalJob.providerId as any).firstName,
+                lastName: (finalJob.providerId as any).lastName,
+                ratingAvg: provider.ratingAvg,
+                jobsCompleted: provider.jobsCompleted
+            };
+        }
+    }
+
+    const sanitized = sanitizeJobForMobile(finalJob || job);
+    if (providerData) sanitized.providerInfo = providerData;
+
+    res.status(200).json({ success: true, message: 'Job accepted', data: sanitized });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -363,13 +418,32 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
     try {
       const { jobId } = req.params;
       const { reason } = req.body;
-
-      const job = await Job.findById(jobId);
-      if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
-
-      const now = new Date();
       const userId = req.user?.userId;
       const role = req.user?.role;
+
+      logger.info(`JOB_CANCEL_REQUEST_RECEIVED | Job: ${jobId} | User: ${userId} | Role: ${role}`);
+
+      const job = await Job.findById(jobId);
+      if (!job) {
+          logger.warn(`JOB_CANCEL_ROUTE_NOT_FOUND | Job ${jobId} not found in DB`);
+          return res.status(404).json({ success: false, message: 'Job not found' });
+      }
+
+      // Ownership and State Validation
+      if (role === 'CUSTOMER' && job.customerId.toString() !== userId) {
+          return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this job' });
+      }
+      if (role === 'PROVIDER' && job.providerId?.toString() !== userId) {
+          return res.status(403).json({ success: false, message: 'Unauthorized: You are not assigned to this job' });
+      }
+
+      if (job.status === JobStatus.COMPLETED) {
+          return res.status(400).json({ success: false, message: 'Cannot cancel a completed job' });
+      }
+
+      logger.info(`JOB_CANCEL_VALIDATION_SUCCESS | Job: ${jobId}`);
+
+      const now = new Date();
 
       // SECTION 4: Cancellation Grace Windows
       if (job.status === JobStatus.ACCEPTED || job.status === JobStatus.ARRIVED) {
@@ -389,15 +463,16 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
 
       job.status = JobStatus.CANCELLED;
       job.cancelledBy = new mongoose.Types.ObjectId(userId);
-      job.cancellationReason = reason;
+      job.cancellationReason = reason || 'Cancelled via App';
       await job.save();
 
-      logger.info(`CUSTOMER_CANCEL_REQUEST | Job: ${jobId} | User: ${userId}`);
+      logger.info(`JOB_CANCEL_DATABASE_UPDATED | Job: ${jobId} | Status: CANCELLED`);
 
       // Stop every remaining broadcast wave
       try {
           const { clearJobBroadcasts } = require('../services/job-broadcast.queue');
           await clearJobBroadcasts(jobId);
+          logger.info(`JOB_CANCEL_BROADCAST_STOPPED | Job: ${jobId}`);
       } catch (e) {
           logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
       }
@@ -428,6 +503,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
               'Job Cancelled',
               `The job has been cancelled by the ${role?.toLowerCase()}.`
           );
+          logger.info(`JOB_CANCEL_PROVIDER_NOTIFIED | Target: ${notifyTargetId}`);
       }
 
       emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
@@ -435,6 +511,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       // Notify both via Socket
       emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
 
+      logger.info(`JOB_CANCEL_COMPLETED | Job: ${jobId}`);
       res.status(200).json({ success: true, message: 'Job cancelled successfully' });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Cancellation failed', error });
