@@ -318,18 +318,16 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const sanitized = sanitizeJobForMobile(finalJob || job);
     if (providerData) sanitized.providerInfo = providerData;
 
+    const statusPayload = { jobId: job.id, status: JobStatus.ACCEPTED, providerInfo: providerData };
+
     // Notify Customer via Socket (User Room - specific for acceptance transition)
     console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${JobStatus.ACCEPTED} | Target User: ${job.customerId}`);
-    emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', {
-        jobId: job.id,
-        status: JobStatus.ACCEPTED,
-        providerId: req.user!.userId,
-        providerInfo: providerData
-    });
+    emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', statusPayload);
+    emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
 
     // Notify Customer via Socket (Job Room)
     console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${JobStatus.ACCEPTED}`);
-    emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerInfo: providerData });
+    emitJobUpdate(job.id, 'status_updated', statusPayload);
 
     // Notify Customer via FCM
     await notificationService.notifyUser(
@@ -438,11 +436,17 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
-    // Notify customer about status change
-    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${status}`);
-    emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status });
+    const statusPayload = { jobId: job.id, status, providerInfo: sanitized.providerInfo };
 
-    res.status(200).json({ success: true, data: sanitizeJobForMobile(job) });
+    // 1. Notify participants via their private user rooms (Global Observer)
+    emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+    if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+
+    // 2. Notify the specific job room (Tracking Screen)
+    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${status}`);
+    emitJobUpdate(job.id, 'status_updated', statusPayload);
+
+    res.status(200).json({ success: true, data: sanitized });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to update job status', error });
   }

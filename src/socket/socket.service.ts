@@ -116,6 +116,9 @@ export const emitJobUpdate = (jobId: string, event: string, data: any) => {
   if (io) {
     console.log(`[SOCKET_TRACE] EMITTING to job_${jobId} | Event: ${event} | Payload Status: ${data.status}`);
     io.to(`job_${jobId}`).emit(event, data);
+
+    // Also emit to the participants if we have their IDs in the data or if we can fetch them
+    // But better yet, the controllers should call emitToUser explicitly for reliable delivery
   } else {
     console.warn(`[SOCKET_TRACE] io is null, cannot emit ${event}`);
   }
