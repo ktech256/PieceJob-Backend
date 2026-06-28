@@ -84,15 +84,6 @@ export const initSocket = (server: any) => {
       }
     });
 
-    socket.on('update_location', (data: { jobId: string, coordinates: number[] }) => {
-      // Emit to the job room so the customer can track
-      io.to(`job_${data.jobId}`).emit('location_updated', {
-        jobId: data.jobId,
-        coordinates: data.coordinates,
-        timestamp: new Date()
-      });
-    });
-
     socket.on('send_message', async (data: { jobId: string, text: string, senderId: string, receiverId: string }) => {
       // PAGE 12: NLP Abuse Analysis
       await fraudService.analyzeTextForAbuse(data.senderId, data.text, data.jobId);
