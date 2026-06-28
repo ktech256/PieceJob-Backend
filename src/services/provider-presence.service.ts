@@ -59,19 +59,31 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
 
         if (activeJob) {
             const distance = calculateDistance(coordinates, activeJob.location.coordinates);
-            const etaMinutes = Math.ceil(distance / 500); // 30km/h avg = 500m/min
 
-            // Arrival Notifications
-            if (distance <= 30) {
+            // Arrival Notifications (Hardened to prevent spam)
+            const sent = activeJob.notificationsSent || [];
+
+            if (distance <= 50 && !sent.includes('ARRIVED')) {
                 await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider has arrived', 'Your provider is at the location.');
                 activeJob.status = JobStatus.ARRIVED;
+                activeJob.notificationsSent = [...sent, 'ARRIVED'];
                 await activeJob.save();
-            } else if (distance <= 1000 && distance > 500) {
+
+                // Also emit via socket for immediate UI update
+                emitAdminUpdate('job_status_updated', { jobId: activeJob.id, status: JobStatus.ARRIVED });
+                require('../socket/socket.service').emitJobUpdate(activeJob.id, 'status_updated', { jobId: activeJob.id, status: JobStatus.ARRIVED });
+            }
+            else if (distance <= 1000 && distance > 500 && !sent.includes('ALMOST_THERE')) {
                 // ~5 mins away
                 await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is almost there', 'Your provider is approximately 5 minutes away.');
-            } else if (distance <= 5000 && distance > 4500) {
+                activeJob.notificationsSent = [...sent, 'ALMOST_THERE'];
+                await activeJob.save();
+            }
+            else if (distance <= 5000 && distance > 4500 && !sent.includes('TEN_MINUTES')) {
                 // ~10 mins away
                 await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is 10 minutes away', 'Your provider will arrive in approximately 10 minutes.');
+                activeJob.notificationsSent = [...sent, 'TEN_MINUTES'];
+                await activeJob.save();
             }
         }
     }

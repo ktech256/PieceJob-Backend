@@ -268,27 +268,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const { jobId } = req.params;
     const job = await jobService.acceptJob(jobId, req.user!.userId);
 
-    logger.info(`PROVIDER_ACCEPTED | Job: ${job.id} | Provider: ${req.user!.userId}`);
-    emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerId: req.user!.userId });
-
-    // Notify Customer via Socket (Job Room)
-    emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.ACCEPTED });
-
-    // Notify Customer via Socket (User Room - specific for acceptance transition)
-    emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', {
-        jobId: job.id,
-        status: JobStatus.ACCEPTED,
-        providerId: req.user!.userId
-    });
-
-    // Notify Customer via FCM
-    await notificationService.notifyUser(
-        job.customerId.toString(),
-        'Job Accepted',
-        'A provider has accepted your request and is on the way.'
-    );
-
-    // Forensic: Re-fetch with populated provider info for immediate mobile UI update
+    // Re-fetch with populated provider info for immediate mobile UI update
     const finalJob = await Job.findById(job.id).populate('providerId', 'firstName lastName');
     let providerData = null;
     if (finalJob?.providerId) {
@@ -305,6 +285,24 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
 
     const sanitized = sanitizeJobForMobile(finalJob || job);
     if (providerData) sanitized.providerInfo = providerData;
+
+    // Notify Customer via Socket (User Room - specific for acceptance transition)
+    emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', {
+        jobId: job.id,
+        status: JobStatus.ACCEPTED,
+        providerId: req.user!.userId,
+        providerInfo: providerData
+    });
+
+    // Notify Customer via Socket (Job Room)
+    emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerInfo: providerData });
+
+    // Notify Customer via FCM
+    await notificationService.notifyUser(
+        job.customerId.toString(),
+        'Job Accepted',
+        'A provider has accepted your request and is on the way.'
+    );
 
     res.status(200).json({ success: true, message: 'Job accepted', data: sanitized });
   } catch (error: any) {
