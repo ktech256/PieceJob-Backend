@@ -27,6 +27,18 @@ export const addJobToBroadcastQueue = async (jobId: string, wave: number = 1) =>
     });
 };
 
+export const clearJobBroadcasts = async (jobId: string) => {
+    // BullMQ: Remove all waves for this job
+    const waves = [1, 2, 3, 4];
+    for (const wave of waves) {
+        const repeatJobId = `job-${jobId}-wave-${wave}`;
+        const job = await broadcastQueue.getJob(repeatJobId);
+        if (job) {
+            await job.remove();
+        }
+    }
+};
+
 const worker = new Worker('job-broadcasts', async (job: Job) => {
     const { jobId, wave } = job.data;
     logger.debug(`Processing Broadcast Wave ${wave} for Job ${jobId}`);

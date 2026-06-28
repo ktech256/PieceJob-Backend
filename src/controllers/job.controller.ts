@@ -230,6 +230,8 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
   try {
     const { jobId } = req.params;
     const job = await jobService.acceptJob(jobId, req.user!.userId);
+
+    logger.info(`PROVIDER_ACCEPTED | Job: ${job.id} | Provider: ${req.user!.userId}`);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerId: req.user!.userId });
 
     // Notify Customer via Socket (Job Room)
@@ -345,6 +347,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     job.status = status;
     await job.save();
 
+    logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
     // Notify customer about status change
@@ -388,6 +391,16 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       job.cancelledBy = new mongoose.Types.ObjectId(userId);
       job.cancellationReason = reason;
       await job.save();
+
+      logger.info(`CUSTOMER_CANCEL_REQUEST | Job: ${jobId} | User: ${userId}`);
+
+      // Stop every remaining broadcast wave
+      try {
+          const { clearJobBroadcasts } = require('../services/job-broadcast.queue');
+          await clearJobBroadcasts(jobId);
+      } catch (e) {
+          logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
+      }
 
       // Reset provider status to ONLINE if they are still isOnline
       if (job.providerId) {
