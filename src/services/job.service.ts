@@ -212,6 +212,14 @@ export const acceptJob = async (jobId: string, providerId: string) => {
 
     await job.save({ session });
 
+    // Stop every remaining broadcast wave for this job
+    try {
+        const { clearJobBroadcasts } = require('./job-broadcast.queue');
+        await clearJobBroadcasts(jobId);
+    } catch (e) {
+        logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
+    }
+
     logger.info(`JOB | ACCEPTED | Job: ${jobId} | Provider: ${providerId}`);
 
     // Termination Signal: Tell other providers to stop ringing
