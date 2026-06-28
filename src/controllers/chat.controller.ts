@@ -56,11 +56,15 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             mediaType
         });
 
+        console.log(`[FORENSIC] BACKEND_CHAT_RECEIVED | Job: ${jobId} | From: ${senderId} | To: ${receiverId}`);
+
         await message.save();
+        console.log(`[FORENSIC] CHAT_DATABASE_SAVE | Message: ${message._id}`);
 
         const populatedMessage = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePicture');
 
         // 1. Emit via Socket to Job Room (for live updates in Chat Screen)
+        console.log(`[FORENSIC] CHAT_SOCKET_EMIT | Room: job_${jobId}`);
         emitJobUpdate(jobId, 'new_message', populatedMessage);
 
         // 2. Emit to Receiver's User Room (for unread counts/global notifications)

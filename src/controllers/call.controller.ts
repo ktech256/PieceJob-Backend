@@ -10,6 +10,8 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
         const { jobId, receiverId } = req.body;
         const callerId = req.user?.userId;
 
+        console.log(`[FORENSIC] BACKEND_CALL_RECEIVED | Job: ${jobId} | From: ${callerId} | To: ${receiverId}`);
+
         const job = await Job.findById(jobId);
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
@@ -24,10 +26,12 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
 
         // Optional: Signal receiver via Socket
         const caller = await User.findById(callerId);
+        console.log(`[FORENSIC] CALL_SOCKET_EMITTED | Target User Room: user_${receiverId}`);
         emitToUser(receiverId, 'incoming_call_intent', {
             jobId,
             callerId,
-            callerName: caller?.firstName
+            callerName: caller?.firstName,
+            callerPhone: caller?.phoneNumber
         });
 
         res.status(201).json({ success: true, callId: call._id });
