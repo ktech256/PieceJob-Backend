@@ -20,6 +20,7 @@ import * as financeController from '../controllers/admin/finance.controller';
 import * as invoiceController from '../controllers/admin/invoice.controller';
 import * as pricingAdminController from '../controllers/admin/pricing.controller';
 import * as performanceAdminController from '../controllers/admin/provider-performance.controller';
+import * as communicationAdminController from '../controllers/admin/communication.controller';
 import * as customerAdminController from '../controllers/admin/customer.controller';
 import * as corporateAdminController from '../controllers/admin/corporate.controller';
 import * as walletAdminController from '../controllers/admin/wallet.controller';
@@ -125,6 +126,11 @@ router.patch('/tickets/:id/resolve', hasPermission('MANAGE_SUPPORT'), ticketAdmi
 router.get('/tickets/:id/chat-vault', hasPermission('VIEW_CHATS'), ticketAdminController.getChatVault);
 router.post('/tickets/:id/settle', hasPermission('MANAGE_FINANCE'), ticketAdminController.processEscrowSettlement);
 router.get('/disputes', hasPermission('MANAGE_DISPUTES'), disputeController.getDisputes);
+
+// Communication (PAGE 11)
+router.get('/communication/chats', hasPermission('VIEW_CHATS'), communicationAdminController.listAllChats);
+router.get('/communication/calls', hasPermission('VIEW_AUDIT'), communicationAdminController.listAllCalls);
+router.get('/communication/reviews', hasPermission('VIEW_AUDIT'), communicationAdminController.listAllReviews);
 
 // SOS Hub (PAGE 10)
 router.get('/sos/incidents', hasPermission('MANAGE_SOS'), sosAdminController.listIncidents);

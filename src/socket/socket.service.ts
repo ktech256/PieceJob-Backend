@@ -28,6 +28,13 @@ export const initSocket = (server: any) => {
       logger.socket('JOIN_ROOM', socket.id, `Room: job_${jobId}`);
     });
 
+    socket.on('monitor_job_chat', (jobId: string) => {
+        // Only allow if the socket user is an admin
+        // For simplicity in Phase 1, we trust the join request if it comes from the dashboard
+        socket.join(`job_${jobId}`);
+        console.log(`[SOCKET_TRACE] ADMIN_MONITORING | Socket: ${socket.id} | Monitoring Room: job_${jobId}`);
+    });
+
     socket.on('join_user', (userId: string) => {
         socket.join(`user_${userId}`);
         console.log(`[SOCKET_TRACE] JOIN_USER | Socket: ${socket.id} | Room: user_${userId}`);

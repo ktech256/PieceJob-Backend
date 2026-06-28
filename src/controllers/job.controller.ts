@@ -266,6 +266,7 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
                 providerData = {
                     firstName: (job.providerId as any).firstName,
                     lastName: (job.providerId as any).lastName,
+                    phoneNumber: (job.providerId as any).phoneNumber,
                     ratingAvg: provider.ratingAvg,
                     jobsCompleted: provider.jobsCompleted,
                     profilePicture: (job.providerId as any).profilePicture
@@ -276,11 +277,12 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
         const sanitized = sanitizeJobForMobile(job);
         if (providerData) sanitized.providerInfo = providerData;
 
-        // Include customer info for provider to see who they are rating
+        // Include customer info for provider to see who they are rating/calling
         if (req.user?.role === 'PROVIDER' && job.customerId) {
             sanitized.customerInfo = {
                 firstName: (job.customerId as any).firstName,
                 lastName: (job.customerId as any).lastName,
+                phoneNumber: (job.customerId as any).phoneNumber,
                 profilePicture: (job.customerId as any).profilePicture
             };
         }
@@ -557,10 +559,12 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
     }
   };
 
+import Review from '../models/Review';
+
 export const rateJob = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
-        const { rating, comment } = req.body;
+        const { rating, comment, tags } = req.body;
         const userId = req.user?.userId;
         const role = req.user?.role;
 
@@ -569,11 +573,15 @@ export const rateJob = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, message: 'Invalid job state for rating' });
         }
 
+        let reviewedUserId: string | undefined;
+
         if (role === 'CUSTOMER') {
             if (job.customerId.toString() !== userId) return res.status(403).json({ success: false, message: 'Unauthorized' });
             if (job.customerRated) return res.status(400).json({ success: false, message: 'You have already rated this job' });
 
             job.customerRated = true;
+            reviewedUserId = job.providerId?.toString();
+
             if (job.providerId) {
                 const provider = await Provider.findOne({ userId: job.providerId });
                 if (provider) {
@@ -588,14 +596,29 @@ export const rateJob = async (req: AuthRequest, res: Response) => {
             if (job.providerRated) return res.status(400).json({ success: false, message: 'You have already rated this job' });
 
             job.providerRated = true;
-            // For now, we update the customer directly if needed.
-            // In full implementation, customers also have ratings.
+            reviewedUserId = job.customerId.toString();
+
             const customer = await User.findById(job.customerId);
             if (customer) {
-                // customer.rating = ...
-                // await customer.save();
+                // Future: Update customer rating
             }
         }
+
+        if (!reviewedUserId) {
+            return res.status(400).json({ success: false, message: 'Review target not found' });
+        }
+
+        // Save formal Review record
+        const review = new Review({
+            jobId,
+            reviewerId: userId,
+            reviewedUserId,
+            reviewerRole: role,
+            rating,
+            comment,
+            tags
+        });
+        await review.save();
 
         if (job.customerRated && job.providerRated) {
             job.status = JobStatus.RATED;

@@ -43,9 +43,22 @@ export const raiseDispute = async (req: AuthRequest, res: Response) => {
 
 export const getDisputes = async (req: AuthRequest, res: Response) => {
   try {
-    const disputes = await Dispute.find({ countryCode: req.user?.countryCode })
-      .populate('raisedBy', 'firstName lastName role')
+    const { countryCode, status } = req.query;
+    const query: any = {};
+    if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+    if (status) query.status = status;
+
+    const disputes = await Dispute.find(query)
+      .populate('raisedBy', 'firstName lastName role profilePicture')
+      .populate({
+        path: 'jobId',
+        populate: [
+            { path: 'customerId', select: 'firstName lastName profilePicture' },
+            { path: 'providerId', select: 'firstName lastName profilePicture' }
+        ]
+      })
       .sort({ createdAt: -1 });
+
     res.status(200).json({ success: true, disputes });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch disputes', error });
