@@ -419,6 +419,9 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
 
       emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
 
+      // Notify both via Socket
+      emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
+
       res.status(200).json({ success: true, message: 'Job cancelled successfully' });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Cancellation failed', error });
