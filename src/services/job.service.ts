@@ -37,7 +37,8 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
         { suspendedUntil: { $lt: new Date() } }
     ],
     servicesOffered: job.serviceCode,
-    countryCode: job.countryCode
+    countryCode: job.countryCode,
+    userId: { $nin: job.notifiedProviderIds || [] }
   };
 
   if (service.genderRule === GenderRule.MEN_ONLY) baseQuery.gender = 'M';
@@ -131,6 +132,14 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
 
     logger.debug(`Executing Broadcast Wave ${wave} for Job ${jobId}`);
     const providers = await findEligibleProviders(job, wave);
+    const providerUserIds = providers.map(p => (p.userId as any)._id || p.userId);
+
+    // Track notified providers to avoid duplicates in next waves
+    if (providerUserIds.length > 0) {
+        await Job.findByIdAndUpdate(jobId, {
+            $addToSet: { notifiedProviderIds: { $each: providerUserIds } }
+        });
+    }
 
     // Track Broadcast Opportunities
     await Provider.updateMany(

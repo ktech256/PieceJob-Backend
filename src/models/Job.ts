@@ -66,6 +66,7 @@ export interface IJob extends Document {
   };
 
   notificationsSent?: string[];
+  notifiedProviderIds: mongoose.Types.ObjectId[];
 
   customerRated?: boolean;
   providerRated?: boolean;
@@ -119,6 +120,7 @@ const JobSchema: Schema = new Schema({
   },
 
   notificationsSent: { type: [String], default: [] },
+  notifiedProviderIds: { type: [Schema.Types.ObjectId], ref: 'User', default: [] },
 
   customerRated: { type: Boolean, default: false },
   providerRated: { type: Boolean, default: false },
