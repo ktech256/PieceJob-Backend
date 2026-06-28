@@ -18,6 +18,6 @@ router.get('/active', authenticate, jobController.getActiveJob);
 router.get('/:jobId', authenticate, jobController.getJobById);
 router.post('/:jobId/pay-booking-fee', authenticate, authorize([UserRole.CUSTOMER]), jobController.payBookingFee);
 router.put('/:jobId/accept', authenticate, authorize([UserRole.PROVIDER]), jobController.acceptJob);
-router.post('/:jobId/rate', authenticate, authorize([UserRole.CUSTOMER]), jobController.rateJob);
+router.post('/:jobId/rate', authenticate, authorize([UserRole.CUSTOMER, UserRole.PROVIDER]), jobController.rateJob);
 
 export default router;

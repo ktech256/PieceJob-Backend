@@ -200,11 +200,20 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
                 { customerId: userId },
                 { providerId: userId }
             ],
-            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
-        }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName');
+            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
+        }).sort({ updatedAt: -1 })
+          .populate('providerId', 'firstName lastName profilePicture')
+          .populate('customerId', 'firstName lastName profilePicture');
 
         if (!job) {
             return res.status(200).json({ success: true, data: null });
+        }
+
+        // Logic to close "active" state if user has already rated a completed job
+        const isCustomer = job.customerId.toString() === userId;
+        if (job.status === JobStatus.COMPLETED) {
+            if (isCustomer && job.customerRated) return res.status(200).json({ success: true, data: null });
+            if (!isCustomer && job.providerRated) return res.status(200).json({ success: true, data: null });
         }
 
         let providerData = null;
@@ -215,13 +224,23 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
                     firstName: (job.providerId as any).firstName,
                     lastName: (job.providerId as any).lastName,
                     ratingAvg: provider.ratingAvg,
-                    jobsCompleted: provider.jobsCompleted
+                    jobsCompleted: provider.jobsCompleted,
+                    profilePicture: (job.providerId as any).profilePicture
                 };
             }
         }
 
         const sanitized = sanitizeJobForMobile(job);
         if (providerData) sanitized.providerInfo = providerData;
+
+        // Include customer info for provider
+        if (req.user?.role === 'PROVIDER' && job.customerId) {
+            sanitized.customerInfo = {
+                firstName: (job.customerId as any).firstName,
+                lastName: (job.customerId as any).lastName,
+                profilePicture: (job.customerId as any).profilePicture
+            };
+        }
 
         res.status(200).json({
             success: true,
@@ -235,7 +254,9 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
 export const getJobById = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
-        const job = await Job.findById(jobId).populate('providerId', 'firstName lastName');
+        const job = await Job.findById(jobId)
+            .populate('providerId', 'firstName lastName profilePicture')
+            .populate('customerId', 'firstName lastName profilePicture');
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
         let providerData = null;
@@ -246,13 +267,23 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
                     firstName: (job.providerId as any).firstName,
                     lastName: (job.providerId as any).lastName,
                     ratingAvg: provider.ratingAvg,
-                    jobsCompleted: provider.jobsCompleted
+                    jobsCompleted: provider.jobsCompleted,
+                    profilePicture: (job.providerId as any).profilePicture
                 };
             }
         }
 
         const sanitized = sanitizeJobForMobile(job);
         if (providerData) sanitized.providerInfo = providerData;
+
+        // Include customer info for provider to see who they are rating
+        if (req.user?.role === 'PROVIDER' && job.customerId) {
+            sanitized.customerInfo = {
+                firstName: (job.customerId as any).firstName,
+                lastName: (job.customerId as any).lastName,
+                profilePicture: (job.customerId as any).profilePicture
+            };
+        }
 
         res.status(200).json({
             success: true,
@@ -278,7 +309,8 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
                 firstName: (finalJob.providerId as any).firstName,
                 lastName: (finalJob.providerId as any).lastName,
                 ratingAvg: provider.ratingAvg,
-                jobsCompleted: provider.jobsCompleted
+                jobsCompleted: provider.jobsCompleted,
+                profilePicture: (finalJob.providerId as any).profilePicture
             };
         }
     }
@@ -520,27 +552,44 @@ export const rateJob = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
         const { rating, comment } = req.body;
+        const userId = req.user?.userId;
+        const role = req.user?.role;
 
         const job = await Job.findById(jobId);
-        if (!job || job.status !== JobStatus.COMPLETED) {
+        if (!job || (job.status !== JobStatus.COMPLETED && job.status !== JobStatus.RATED)) {
             return res.status(400).json({ success: false, message: 'Invalid job state for rating' });
         }
 
-        job.status = JobStatus.RATED;
-        // In a full implementation, we'd have a Review model.
-        // For now, we update the provider directly.
-        if (job.providerId) {
-            const provider = await Provider.findOne({ userId: job.providerId });
-            if (provider) {
-                const totalRating = (provider.ratingAvg * provider.jobsCompleted) + rating;
-                provider.ratingAvg = totalRating / (provider.jobsCompleted + 1);
-                // Note: jobsCompleted was incremented during status change to COMPLETED
-                await provider.save();
+        if (role === 'CUSTOMER') {
+            if (job.customerId.toString() !== userId) return res.status(403).json({ success: false, message: 'Unauthorized' });
+            if (job.customerRated) return res.status(400).json({ success: false, message: 'You have already rated this job' });
 
-                // PAGE 7: Trigger performance & tier evaluation
-                await performanceService.recalculateProviderMetrics(provider._id.toString());
-                await performanceService.evaluateTier(provider._id.toString());
+            job.customerRated = true;
+            if (job.providerId) {
+                const provider = await Provider.findOne({ userId: job.providerId });
+                if (provider) {
+                    const totalRating = (provider.ratingAvg * provider.jobsCompleted) + rating;
+                    provider.ratingAvg = totalRating / (provider.jobsCompleted + 1);
+                    await provider.save();
+                    await performanceService.recalculateProviderMetrics(provider._id.toString());
+                }
             }
+        } else if (role === 'PROVIDER') {
+            if (job.providerId?.toString() !== userId) return res.status(403).json({ success: false, message: 'Unauthorized' });
+            if (job.providerRated) return res.status(400).json({ success: false, message: 'You have already rated this job' });
+
+            job.providerRated = true;
+            // For now, we update the customer directly if needed.
+            // In full implementation, customers also have ratings.
+            const customer = await User.findById(job.customerId);
+            if (customer) {
+                // customer.rating = ...
+                // await customer.save();
+            }
+        }
+
+        if (job.customerRated && job.providerRated) {
+            job.status = JobStatus.RATED;
         }
 
         await job.save();

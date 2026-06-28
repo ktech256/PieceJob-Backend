@@ -67,6 +67,9 @@ export interface IJob extends Document {
 
   notificationsSent?: string[];
 
+  customerRated?: boolean;
+  providerRated?: boolean;
+
   isTestJob: boolean;
   version: number;
   createdAt: Date;
@@ -116,6 +119,9 @@ const JobSchema: Schema = new Schema({
   },
 
   notificationsSent: { type: [String], default: [] },
+
+  customerRated: { type: Boolean, default: false },
+  providerRated: { type: Boolean, default: false },
 
   isTestJob: { type: Boolean, default: false },
   version: { type: Number, default: 1 }
