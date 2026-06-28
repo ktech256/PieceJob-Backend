@@ -246,6 +246,8 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     provider.currentAvailabilityStatus = 'BUSY';
     await provider.save({ session });
 
+    console.log(`[FORENSIC] DB_UPDATE_FINISHED | Job: ${jobId} | New Status: ${job.status}`);
+
     await session.commitTransaction();
     return job;
   } catch (error: any) {

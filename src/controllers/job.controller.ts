@@ -319,6 +319,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     if (providerData) sanitized.providerInfo = providerData;
 
     // Notify Customer via Socket (User Room - specific for acceptance transition)
+    console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${JobStatus.ACCEPTED} | Target User: ${job.customerId}`);
     emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', {
         jobId: job.id,
         status: JobStatus.ACCEPTED,
@@ -327,6 +328,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     });
 
     // Notify Customer via Socket (Job Room)
+    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${JobStatus.ACCEPTED}`);
     emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.ACCEPTED, providerInfo: providerData });
 
     // Notify Customer via FCM
@@ -432,10 +434,12 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     job.status = status;
     await job.save();
 
+    console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${status}`);
     logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
     // Notify customer about status change
+    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${status}`);
     emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status });
 
     res.status(200).json({ success: true, data: sanitizeJobForMobile(job) });

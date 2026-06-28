@@ -24,11 +24,13 @@ export const initSocket = (server: any) => {
 
     socket.on('join_job', (jobId: string) => {
       socket.join(`job_${jobId}`);
+      console.log(`[SOCKET_TRACE] JOIN_JOB | Socket: ${socket.id} | Room: job_${jobId}`);
       logger.socket('JOIN_ROOM', socket.id, `Room: job_${jobId}`);
     });
 
     socket.on('join_user', (userId: string) => {
         socket.join(`user_${userId}`);
+        console.log(`[SOCKET_TRACE] JOIN_USER | Socket: ${socket.id} | Room: user_${userId}`);
         logger.socket('JOIN_ROOM', socket.id, `Room: user_${userId}`);
     });
 
@@ -112,7 +114,10 @@ export const initSocket = (server: any) => {
 
 export const emitJobUpdate = (jobId: string, event: string, data: any) => {
   if (io) {
+    console.log(`[SOCKET_TRACE] EMITTING to job_${jobId} | Event: ${event} | Payload Status: ${data.status}`);
     io.to(`job_${jobId}`).emit(event, data);
+  } else {
+    console.warn(`[SOCKET_TRACE] io is null, cannot emit ${event}`);
   }
 };
 
