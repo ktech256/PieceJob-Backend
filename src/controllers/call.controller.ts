@@ -15,6 +15,11 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
         const job = await Job.findById(jobId);
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
+        const terminalStatuses = ['COMPLETED', 'CANCELLED', 'RATED', 'CLOSED'];
+        if (terminalStatuses.includes(job.status)) {
+            return res.status(403).json({ success: false, message: `Calls are disabled for a ${job.status} job` });
+        }
+
         const call = new Call({
             jobId,
             callerId,

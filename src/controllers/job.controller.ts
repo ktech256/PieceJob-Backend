@@ -371,6 +371,11 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     const job = await Job.findById(jobId);
     if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
+    const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED];
+    if (terminalStatuses.includes(job.status)) {
+        return res.status(400).json({ success: false, message: `Cannot update status of a ${job.status} job` });
+    }
+
     if (distanceTravelled) job.distanceTravelled = distanceTravelled;
 
     // SECTION 4.1 & 5.1: Proximity Hardening for STARTED state
@@ -499,8 +504,9 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
           return res.status(403).json({ success: false, message: 'Unauthorized: You are not assigned to this job' });
       }
 
-      if (job.status === JobStatus.COMPLETED) {
-          return res.status(400).json({ success: false, message: 'Cannot cancel a completed job' });
+      const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED];
+      if (terminalStatuses.includes(job.status)) {
+          return res.status(400).json({ success: false, message: `Cannot cancel a ${job.status} job` });
       }
 
       logger.info(`JOB_CANCEL_VALIDATION_SUCCESS | Job: ${jobId}`);

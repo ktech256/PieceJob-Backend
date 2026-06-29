@@ -51,6 +51,11 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         const job = await Job.findById(jobId);
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
+        const terminalStatuses = ['COMPLETED', 'CANCELLED', 'RATED', 'CLOSED'];
+        if (terminalStatuses.includes(job.status)) {
+            return res.status(403).json({ success: false, message: `Chat is disabled for a ${job.status} job` });
+        }
+
         const isParticipant = job.customerId.toString() === senderId || job.providerId?.toString() === senderId;
         if (!isParticipant) {
             return res.status(403).json({ success: false, message: 'Unauthorized: You are not a participant of this job' });
