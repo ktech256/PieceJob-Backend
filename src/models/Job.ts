@@ -32,6 +32,12 @@ export interface IJob extends Document {
     coordinates: number[];
     address?: string;
   };
+  pickupLocation?: {
+    type: string;
+    coordinates: number[];
+    address?: string;
+  };
+  distanceTravelled?: number; // in meters
   bookingFee: number;
   serviceFee?: number;
 
@@ -89,6 +95,12 @@ const JobSchema: Schema = new Schema({
     coordinates: { type: [Number], required: true },
     address: { type: String }
   },
+  pickupLocation: {
+    type: { type: String, default: 'Point' },
+    coordinates: { type: [Number] },
+    address: { type: String }
+  },
+  distanceTravelled: { type: Number, default: 0 },
   bookingFee: { type: Number, required: true },
   serviceFee: { type: Number },
   isForSomeoneElse: { type: Boolean, default: false },

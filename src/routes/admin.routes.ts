@@ -131,6 +131,7 @@ router.get('/disputes', hasPermission('MANAGE_DISPUTES'), disputeController.getD
 router.get('/communication/chats', hasPermission('VIEW_CHATS'), communicationAdminController.listAllChats);
 router.get('/communication/calls', hasPermission('VIEW_AUDIT'), communicationAdminController.listAllCalls);
 router.get('/communication/reviews', hasPermission('VIEW_AUDIT'), communicationAdminController.listAllReviews);
+router.get('/communication/disputes', hasPermission('VIEW_AUDIT'), communicationAdminController.listAllDisputes);
 
 // SOS Hub (PAGE 10)
 router.get('/sos/incidents', hasPermission('MANAGE_SOS'), sosAdminController.listIncidents);

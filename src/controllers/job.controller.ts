@@ -41,7 +41,7 @@ const sanitizeJobForMobile = (job: any) => {
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
   try {
-    const { serviceCode, coordinates, address, isEmergency, isForSomeoneElse, recipientName, recipientPhone } = req.body;
+    const { serviceCode, coordinates, address, pickupCoordinates, pickupAddress, isEmergency, isForSomeoneElse, recipientName, recipientPhone } = req.body;
     let { zoneId } = req.body;
 
     // 1. Determine which zone contains customer coordinates
@@ -86,6 +86,15 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
       countryCode: req.user?.countryCode,
       cityOrZoneId: zoneId,
       location: {
+        type: 'Point',
+        coordinates,
+        address
+      },
+      pickupLocation: pickupCoordinates ? {
+        type: 'Point',
+        coordinates: pickupCoordinates,
+        address: pickupAddress
+      } : {
         type: 'Point',
         coordinates,
         address
@@ -347,10 +356,12 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
 export const updateJobStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { jobId } = req.params;
-    const { status, providerCoordinates } = req.body;
+    const { status, providerCoordinates, distanceTravelled } = req.body;
 
     const job = await Job.findById(jobId);
     if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+    if (distanceTravelled) job.distanceTravelled = distanceTravelled;
 
     // SECTION 4.1 & 5.1: Proximity Hardening for STARTED state
     if (status === JobStatus.STARTED) {
