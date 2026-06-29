@@ -23,9 +23,9 @@ export const listAllChats = async (req: AuthRequest, res: Response) => {
 
         // Complex filters requiring Job join
         const jobMatch: any = {};
-        if (countryCode && countryCode !== 'GLOBAL') jobMatch.countryCode = countryCode;
-        if (jobStatus) jobMatch.status = jobStatus;
-        if (serviceCode) jobMatch.serviceCode = serviceCode;
+        if (countryCode && countryCode !== 'GLOBAL') jobMatch['job.countryCode'] = countryCode;
+        if (jobStatus) jobMatch['job.status'] = jobStatus;
+        if (serviceCode) jobMatch['job.serviceCode'] = serviceCode;
 
         const chats = await Message.aggregate([
             { $match: query },
@@ -42,7 +42,7 @@ export const listAllChats = async (req: AuthRequest, res: Response) => {
                 as: 'job'
             }},
             { $unwind: '$job' },
-            { $match: jobMatch }, // Apply job-level filters
+            { $match: jobMatch }, // Apply job-level filters with correct nested paths
             { $lookup: {
                 from: 'users',
                 localField: 'job.customerId',
