@@ -4,7 +4,8 @@ export enum CallStatus {
   MISSED = 'MISSED',
   REJECTED = 'REJECTED',
   ANSWERED = 'ANSWERED',
-  CANCELLED = 'CANCELLED'
+  CANCELLED = 'CANCELLED',
+  BUSY = 'BUSY'
 }
 
 export interface ICall extends Document {

@@ -106,6 +106,11 @@ export const initSocket = (server: any) => {
       });
     });
 
+    socket.on('call_signal', (data: { jobId: string, receiverId: string, signal: string, senderId: string }) => {
+        console.log(`[SOCKET_TRACE] CALL_SIGNAL | Signal: ${data.signal} | From: ${data.senderId} | To: ${data.receiverId}`);
+        io.to(`user_${data.receiverId}`).emit('call_signal_received', data);
+    });
+
     socket.on('disconnect', () => {
       logger.socket('DISCONNECTED', socket.id);
     });

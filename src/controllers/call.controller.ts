@@ -33,7 +33,8 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
             callerId,
             callId: call._id,
             callerName: caller?.firstName,
-            callerPhone: caller?.phoneNumber
+            callerPhone: caller?.phoneNumber,
+            callerPhoto: caller?.profilePicture
         });
 
         res.status(201).json({ success: true, data: { callId: call._id } });
