@@ -22,7 +22,7 @@ export const listTickets = async (req: AuthRequest, res: Response) => {
             .populate('assignedTo', 'firstName lastName')
             .sort({ createdAt: -1 });
 
-        res.status(200).json({ success: true, tickets });
+        res.status(200).json({ success: true, data: tickets });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to list tickets', error });
     }
@@ -44,7 +44,7 @@ export const getTicketDetail = async (req: AuthRequest, res: Response) => {
 
         if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
 
-        res.status(200).json({ success: true, ticket });
+        res.status(200).json({ success: true, data: ticket });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch ticket detail', error });
     }
@@ -83,7 +83,7 @@ export const assignTicket = async (req: AuthRequest, res: Response) => {
             systemSource: 'ADMIN_DASHBOARD'
         });
 
-        res.status(200).json({ success: true, ticket });
+        res.status(200).json({ success: true, data: ticket });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Assignment failed', error });
     }
@@ -111,7 +111,7 @@ export const getChatVault = async (req: AuthRequest, res: Response) => {
             systemSource: 'ADMIN_DASHBOARD'
         });
 
-        res.status(200).json({ success: true, messages });
+        res.status(200).json({ success: true, data: messages });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Vault access failed', error });
     }
@@ -170,7 +170,7 @@ export const resolveTicket = async (req: AuthRequest, res: Response) => {
             console.log(`[COMPLIANCE] Criminal check mandated for provider ${ticket.userId} due to verified complaint.`);
         }
 
-        res.status(200).json({ success: true, ticket });
+        res.status(200).json({ success: true, data: ticket });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Resolution failed', error });
     }

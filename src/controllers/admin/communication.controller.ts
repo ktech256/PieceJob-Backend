@@ -59,7 +59,7 @@ export const listAllChats = async (req: AuthRequest, res: Response) => {
             { $unwind: { path: '$provider', preserveNullAndEmptyArrays: true } }
         ]);
 
-        res.status(200).json({ success: true, chats });
+        res.status(200).json({ success: true, data: chats });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to list chats', error });
     }
@@ -102,7 +102,7 @@ export const listAllCalls = async (req: AuthRequest, res: Response) => {
         // Filter out calls where job didn't match (if any job filters applied)
         const filteredCalls = Object.keys(jobQuery).length > 0 ? calls.filter(c => c.jobId !== null) : calls;
 
-        res.status(200).json({ success: true, calls: filteredCalls });
+        res.status(200).json({ success: true, data: filteredCalls });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to list calls', error });
     }
@@ -144,7 +144,7 @@ export const listAllReviews = async (req: AuthRequest, res: Response) => {
 
         const filteredReviews = Object.keys(jobQuery).length > 0 ? reviews.filter(r => r.jobId !== null) : reviews;
 
-        res.status(200).json({ success: true, reviews: filteredReviews });
+        res.status(200).json({ success: true, data: filteredReviews });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to list reviews', error });
     }
@@ -184,7 +184,7 @@ export const listAllDisputes = async (req: AuthRequest, res: Response) => {
 
         const filteredDisputes = Object.keys(jobQuery).length > 0 ? disputes.filter(d => d.jobId !== null) : disputes;
 
-        res.status(200).json({ success: true, disputes: filteredDisputes });
+        res.status(200).json({ success: true, data: filteredDisputes });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to list disputes', error });
     }

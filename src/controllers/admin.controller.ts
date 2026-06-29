@@ -24,7 +24,7 @@ export const getPendingVerifications = async (req: AuthRequest, res: Response) =
       countryCode: req.user?.countryCode
     }).populate('userId', 'firstName lastName email');
 
-    res.status(200).json({ success: true, providers });
+    res.status(200).json({ success: true, data: providers });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch verifications', error });
   }
@@ -118,7 +118,7 @@ export const getFinancialOverview = async (req: AuthRequest, res: Response) => {
 
     res.status(200).json({
         success: true,
-        stats: {
+        data: {
             totalRevenue: revenueAgg[0]?.total || 0,
             pendingPayouts: pendingPayoutsAgg[0]?.total || 0,
             activeEscrow: escrowAgg[0]?.total || 0
@@ -135,7 +135,7 @@ export const getDetailedLedger = async (req: AuthRequest, res: Response) => {
         const logs = await Ledger.find(query)
             .sort({ createdAt: -1 })
             .limit(50);
-        res.status(200).json({ success: true, logs });
+        res.status(200).json({ success: true, data: logs });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch ledger', error });
     }

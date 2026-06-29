@@ -22,11 +22,16 @@ import { calculateDistance } from '../utils/location';
 const sanitizeJobForMobile = (job: any) => {
     const jobObj = job.toObject ? job.toObject() : job;
 
-    const providerInfo = jobObj.providerId && typeof jobObj.providerId === 'object' ? jobObj.providerId : null;
+    // Populated objects have a firstName field. ObjectIds do not.
+    let providerInfo = (jobObj.providerId && typeof jobObj.providerId === 'object' && 'firstName' in jobObj.providerId) ? jobObj.providerId : null;
     const providerId = providerInfo ? (providerInfo._id || providerInfo.id) : (jobObj.providerId ? jobObj.providerId.toString() : null);
 
-    const customerInfo = jobObj.customerId && typeof jobObj.customerId === 'object' ? jobObj.customerId : null;
+    let customerInfo = (jobObj.customerId && typeof jobObj.customerId === 'object' && 'firstName' in jobObj.customerId) ? jobObj.customerId : null;
     const customerId = customerInfo ? (customerInfo._id || customerInfo.id) : (jobObj.customerId ? jobObj.customerId.toString() : null);
+
+    // Map profilePhoto to profilePicture for Android DTO compatibility
+    if (providerInfo && providerInfo.profilePhoto) providerInfo.profilePicture = providerInfo.profilePhoto;
+    if (customerInfo && customerInfo.profilePhoto) customerInfo.profilePicture = customerInfo.profilePhoto;
 
     // Forensic: Ensure status is mapped correctly for mobile
     if (jobObj.status === 'PROVIDER_ACCEPTED') {
@@ -216,8 +221,8 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
             ],
             status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 })
-          .populate('providerId', 'firstName lastName profilePicture')
-          .populate('customerId', 'firstName lastName profilePicture');
+          .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
+          .populate('customerId', 'firstName lastName profilePhoto phoneNumber');
 
         if (!job) {
             return res.status(200).json({ success: true, data: null });
@@ -239,7 +244,7 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
                     lastName: (job.providerId as any).lastName,
                     ratingAvg: provider.ratingAvg,
                     jobsCompleted: provider.jobsCompleted,
-                    profilePicture: (job.providerId as any).profilePicture
+                    profilePicture: (job.providerId as any).profilePhoto
                 };
             }
         }
@@ -247,12 +252,12 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
         const sanitized = sanitizeJobForMobile(job);
         if (providerData) sanitized.providerInfo = providerData;
 
-        // Include customer info for provider
+        // Include customer info for provider to see who they are rating
         if (req.user?.role === 'PROVIDER' && job.customerId) {
             sanitized.customerInfo = {
                 firstName: (job.customerId as any).firstName,
                 lastName: (job.customerId as any).lastName,
-                profilePicture: (job.customerId as any).profilePicture
+                profilePicture: (job.customerId as any).profilePhoto
             };
         }
 
@@ -269,8 +274,8 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
         const job = await Job.findById(jobId)
-            .populate('providerId', 'firstName lastName profilePicture')
-            .populate('customerId', 'firstName lastName profilePicture');
+            .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
+            .populate('customerId', 'firstName lastName profilePhoto phoneNumber');
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
         let providerData = null;
@@ -283,7 +288,7 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
                     phoneNumber: (job.providerId as any).phoneNumber,
                     ratingAvg: provider.ratingAvg,
                     jobsCompleted: provider.jobsCompleted,
-                    profilePicture: (job.providerId as any).profilePicture
+                    profilePicture: (job.providerId as any).profilePhoto
                 };
             }
         }
@@ -297,7 +302,7 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
                 firstName: (job.customerId as any).firstName,
                 lastName: (job.customerId as any).lastName,
                 phoneNumber: (job.customerId as any).phoneNumber,
-                profilePicture: (job.customerId as any).profilePicture
+                profilePicture: (job.customerId as any).profilePhoto
             };
         }
 
@@ -316,7 +321,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const job = await jobService.acceptJob(jobId, req.user!.userId);
 
     // Re-fetch with populated provider info for immediate mobile UI update
-    const finalJob = await Job.findById(job.id).populate('providerId', 'firstName lastName');
+    const finalJob = await Job.findById(job.id).populate('providerId', 'firstName lastName profilePhoto phoneNumber');
     let providerData = null;
     if (finalJob?.providerId) {
         const provider = await Provider.findOne({ userId: (finalJob.providerId as any)._id });
@@ -326,7 +331,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
                 lastName: (finalJob.providerId as any).lastName,
                 ratingAvg: provider.ratingAvg,
                 jobsCompleted: provider.jobsCompleted,
-                profilePicture: (finalJob.providerId as any).profilePicture
+                profilePicture: (finalJob.providerId as any).profilePhoto
             };
         }
     }

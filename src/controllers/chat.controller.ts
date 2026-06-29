@@ -25,9 +25,18 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
 
         const messages = await Message.find({ jobId })
             .sort({ createdAt: 1 })
-            .populate('senderId', 'firstName lastName role profilePicture');
+            .populate('senderId', 'firstName lastName role profilePhoto');
 
-        res.status(200).json({ success: true, data: messages });
+        // Map profilePhoto to profilePicture for Android
+        const data = messages.map(m => {
+            const obj = m.toObject();
+            if (obj.senderId && typeof obj.senderId === 'object') {
+                (obj.senderId as any).profilePicture = (obj.senderId as any).profilePhoto;
+            }
+            return obj;
+        });
+
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch messages', error });
     }
@@ -61,11 +70,16 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         await message.save();
         console.log(`[FORENSIC] CHAT_DATABASE_SAVE | Message: ${message._id}`);
 
-        const populatedMessage = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePicture');
+        const populatedMessage = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+
+        const data = populatedMessage?.toObject();
+        if (data && data.senderId && typeof data.senderId === 'object') {
+            (data.senderId as any).profilePicture = (data.senderId as any).profilePhoto;
+        }
 
         // 1. Emit via Socket to Job Room (for live updates in Chat Screen)
         console.log(`[FORENSIC] CHAT_SOCKET_EMIT | Room: job_${jobId}`);
-        emitJobUpdate(jobId, 'new_message', populatedMessage);
+        emitJobUpdate(jobId, 'new_message', data);
 
         // 2. Emit to Receiver's User Room (for unread counts/global notifications)
         emitToUser(receiverId, 'unread_message', { jobId, senderId });
@@ -84,7 +98,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             }
         );
 
-        res.status(201).json({ success: true, data: populatedMessage });
+        res.status(201).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to send message', error });
     }

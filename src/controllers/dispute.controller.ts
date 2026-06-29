@@ -35,7 +35,7 @@ export const raiseDispute = async (req: AuthRequest, res: Response) => {
         );
     }
 
-    res.status(201).json({ success: true, disputeId: dispute.id });
+    res.status(201).json({ success: true, data: { disputeId: dispute.id } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to raise dispute', error });
   }
@@ -59,7 +59,7 @@ export const getDisputes = async (req: AuthRequest, res: Response) => {
       })
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ success: true, disputes });
+    res.status(200).json({ success: true, data: disputes });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch disputes', error });
   }
@@ -79,7 +79,7 @@ export const getMyDisputes = async (req: AuthRequest, res: Response) => {
             ]
         }).sort({ createdAt: -1 });
 
-        res.status(200).json({ success: true, disputes });
+        res.status(200).json({ success: true, data: disputes });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch your disputes', error });
     }
@@ -112,7 +112,7 @@ export const updateDisputeStatus = async (req: AuthRequest, res: Response) => {
       ipAddress: req.ip
     });
 
-    res.status(200).json({ success: true, dispute });
+    res.status(200).json({ success: true, data: dispute });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Update failed', error });
   }

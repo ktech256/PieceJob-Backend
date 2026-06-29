@@ -38,7 +38,7 @@ export const getMyTickets = async (req: AuthRequest, res: Response) => {
     try {
         const tickets = await SupportTicket.find({ userId: req.user?.userId })
             .sort({ createdAt: -1 });
-        res.status(200).json({ success: true, tickets });
+        res.status(200).json({ success: true, data: tickets });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Fetch failed', error });
     }
@@ -49,7 +49,7 @@ export const getTicketDetails = async (req: AuthRequest, res: Response) => {
         const { ticketId } = req.params;
         const ticket = await SupportTicket.findOne({ _id: ticketId, userId: req.user?.userId });
         if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
-        res.status(200).json({ success: true, ticket });
+        res.status(200).json({ success: true, data: ticket });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Fetch failed', error });
     }
@@ -72,7 +72,7 @@ export const addTicketMessage = async (req: AuthRequest, res: Response) => {
         });
 
         await ticket.save();
-        res.status(200).json({ success: true, message: 'Message added', ticket });
+        res.status(200).json({ success: true, message: 'Message added', data: ticket });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to add message', error });
     }

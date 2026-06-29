@@ -36,7 +36,7 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
             callerPhone: caller?.phoneNumber
         });
 
-        res.status(201).json({ success: true, callId: call._id });
+        res.status(201).json({ success: true, data: { callId: call._id } });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to log call', error });
     }
@@ -55,7 +55,7 @@ export const updateCallStatus = async (req: AuthRequest, res: Response) => {
         call.endTime = new Date();
 
         await call.save();
-        res.status(200).json({ success: true, call });
+        res.status(200).json({ success: true, data: call });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to update call status', error });
     }
@@ -69,7 +69,7 @@ export const getJobCallHistory = async (req: AuthRequest, res: Response) => {
             .populate('callerId', 'firstName lastName')
             .populate('receiverId', 'firstName lastName');
 
-        res.status(200).json({ success: true, calls });
+        res.status(200).json({ success: true, data: calls });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch call history', error });
     }
