@@ -4,6 +4,7 @@ import Call, { CallStatus } from '../models/Call';
 import Job from '../models/Job';
 import User from '../models/User';
 import { emitToUser } from '../socket/socket.service';
+import * as notificationService from '../services/notification.service';
 
 export const logCallInitiation = async (req: AuthRequest, res: Response) => {
     try {
@@ -30,8 +31,9 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
         await call.save();
         console.log(`[FORENSIC] CALL_DATABASE_SAVE | Call: ${call._id}`);
 
-        // Optional: Signal receiver via Socket
         const caller = await User.findById(callerId);
+
+        // 1. Signal receiver via Socket (Foreground)
         console.log(`[FORENSIC] CALL_SOCKET_EMITTED | To User: ${receiverId} | Call: ${call._id}`);
         emitToUser(receiverId, 'incoming_call_intent', {
             jobId,
@@ -41,6 +43,21 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
             callerPhone: caller?.phoneNumber,
             callerPhoto: caller?.profilePhoto
         });
+
+        // 2. Notify receiver via FCM (Background/Lockscreen)
+        try {
+            await notificationService.notifyUser(receiverId, 'Incoming PieceJob Call', `${caller?.firstName} is calling...`, {
+                type: 'INCOMING_CALL',
+                jobId: jobId.toString(),
+                callerId: callerId?.toString() || '',
+                callId: call._id.toString(),
+                callerName: caller?.firstName || 'Someone',
+                callerPhone: caller?.phoneNumber || '',
+                callerPhoto: caller?.profilePhoto || ''
+            }, true); // dataOnly = true
+        } catch (fcmError) {
+            console.error(`[FORENSIC] CALL_FCM_FAILED | Error: ${fcmError}`);
+        }
 
         res.status(201).json({ success: true, data: { callId: call._id } });
     } catch (error) {
