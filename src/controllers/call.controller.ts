@@ -23,13 +23,15 @@ export const logCallInitiation = async (req: AuthRequest, res: Response) => {
         });
 
         await call.save();
+        console.log(`[FORENSIC] CALL_DATABASE_SAVE | Call: ${call._id}`);
 
         // Optional: Signal receiver via Socket
         const caller = await User.findById(callerId);
-        console.log(`[FORENSIC] CALL_SOCKET_EMITTED | Target User Room: user_${receiverId}`);
+        console.log(`[FORENSIC] CALL_SOCKET_EMITTED | To User: ${receiverId} | Call: ${call._id}`);
         emitToUser(receiverId, 'incoming_call_intent', {
             jobId,
             callerId,
+            callId: call._id,
             callerName: caller?.firstName,
             callerPhone: caller?.phoneNumber
         });

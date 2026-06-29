@@ -27,7 +27,7 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
             .sort({ createdAt: 1 })
             .populate('senderId', 'firstName lastName role profilePicture');
 
-        res.status(200).json({ success: true, messages });
+        res.status(200).json({ success: true, data: messages });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch messages', error });
     }
@@ -84,7 +84,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             }
         );
 
-        res.status(201).json({ success: true, message: populatedMessage });
+        res.status(201).json({ success: true, data: populatedMessage });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to send message', error });
     }

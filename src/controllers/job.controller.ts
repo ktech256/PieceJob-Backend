@@ -21,8 +21,12 @@ import { calculateDistance } from '../utils/location';
 
 const sanitizeJobForMobile = (job: any) => {
     const jobObj = job.toObject ? job.toObject() : job;
+
     const providerInfo = jobObj.providerId && typeof jobObj.providerId === 'object' ? jobObj.providerId : null;
     const providerId = providerInfo ? (providerInfo._id || providerInfo.id) : (jobObj.providerId ? jobObj.providerId.toString() : null);
+
+    const customerInfo = jobObj.customerId && typeof jobObj.customerId === 'object' ? jobObj.customerId : null;
+    const customerId = customerInfo ? (customerInfo._id || customerInfo.id) : (jobObj.customerId ? jobObj.customerId.toString() : null);
 
     // Forensic: Ensure status is mapped correctly for mobile
     if (jobObj.status === 'PROVIDER_ACCEPTED') {
@@ -32,9 +36,10 @@ const sanitizeJobForMobile = (job: any) => {
     return {
         ...jobObj,
         id: (jobObj._id || jobObj.id).toString(),
-        customerId: jobObj.customerId ? jobObj.customerId.toString() : null,
+        customerId: customerId ? customerId.toString() : null,
         providerId: providerId ? providerId.toString() : null,
         providerInfo: providerInfo,
+        customerInfo: customerInfo,
         currency: jobObj.pricingSnapshot?.currencyCode || 'USD'
     };
 };
