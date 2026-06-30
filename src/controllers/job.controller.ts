@@ -135,7 +135,7 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
     await job.save();
 
     // Auto-save location for reuse (Issue 3)
-    userContextService.autoSaveLocation(req.user!.userId, address, coordinates);
+    await userContextService.autoSaveLocation(req.user!.userId, address, coordinates);
 
     emitAdminUpdate('new_job_created', { jobId: job.id, countryCode: job.countryCode });
 
@@ -461,7 +461,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         fraudService.analyzeJobCompletion(job.id);
 
         // Track frequent address (Issue 2)
-        userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+        await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
     }
 
     job.status = status;

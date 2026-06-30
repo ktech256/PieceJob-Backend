@@ -20,8 +20,10 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
         userData.pendingAddress.proofOfResidenceUrl = await storageService.getSignedUrl(userData.pendingAddress.proofOfResidenceUrl);
     }
 
-    res.status(200).json({ success: true, user: userData });
-  } catch (error) {
+    console.log(`[FORENSIC] GET_PROFILE | User: ${userData._id} | Name: ${userData.firstName} ${userData.lastName}`);
+    res.status(200).json({ success: true, data: userData });
+  } catch (error: any) {
+    console.error(`[FORENSIC] GET_PROFILE | Error: ${error.message}`);
     res.status(500).json({ success: false, message: 'Failed to fetch profile', error });
   }
 };
@@ -50,7 +52,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         });
     }
 
-    res.status(200).json({ success: true, user });
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Update failed', error });
   }
