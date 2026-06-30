@@ -41,6 +41,25 @@ export interface IUser extends Document {
   city?: string;
   province?: string;
   address?: string;
+  addresses?: {
+    label: string; // Home, Work, Other
+    address: string;
+    coordinates: number[];
+    isDefault: boolean;
+  }[];
+  savedLocations?: {
+    name: string;
+    address: string;
+    coordinates: number[];
+  }[];
+  paymentMethods?: {
+    brand: string;
+    last4: string;
+    expMonth: number;
+    expYear: number;
+    token: string;
+    isDefault: boolean;
+  }[];
   pendingAddress?: {
     province: string;
     city: string;
@@ -53,6 +72,25 @@ export interface IUser extends Document {
     name: string;
     phone: string;
     relationship: string;
+  };
+  emergencyContacts?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  }[];
+  language?: string;
+  country?: string;
+  privacySettings?: {
+    profileVisibility: 'PUBLIC' | 'PRIVATE';
+    shareLocation: boolean;
+    dataSharing: boolean;
+    marketingPreferences: boolean;
+  };
+  subscription?: {
+    plan: 'BASIC' | 'PLUS';
+    status: 'ACTIVE' | 'CANCELLED' | 'EXPIRED';
+    startDate: Date;
+    expiryDate: Date;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -80,6 +118,25 @@ const UserSchema: Schema = new Schema({
   city: { type: String },
   province: { type: String },
   address: { type: String },
+  addresses: [{
+    label: { type: String },
+    address: { type: String },
+    coordinates: { type: [Number] },
+    isDefault: { type: Boolean, default: false }
+  }],
+  savedLocations: [{
+    name: { type: String },
+    address: { type: String },
+    coordinates: { type: [Number] }
+  }],
+  paymentMethods: [{
+    brand: { type: String },
+    last4: { type: String },
+    expMonth: { type: Number },
+    expYear: { type: Number },
+    token: { type: String },
+    isDefault: { type: Boolean, default: false }
+  }],
   pendingAddress: {
     province: { type: String },
     city: { type: String },
@@ -92,6 +149,25 @@ const UserSchema: Schema = new Schema({
     name: { type: String },
     phone: { type: String },
     relationship: { type: String }
+  },
+  emergencyContacts: [{
+    name: { type: String },
+    phone: { type: String },
+    relationship: { type: String }
+  }],
+  language: { type: String, default: 'en' },
+  country: { type: String },
+  privacySettings: {
+    profileVisibility: { type: String, enum: ['PUBLIC', 'PRIVATE'], default: 'PUBLIC' },
+    shareLocation: { type: Boolean, default: true },
+    dataSharing: { type: Boolean, default: true },
+    marketingPreferences: { type: Boolean, default: true }
+  },
+  subscription: {
+    plan: { type: String, enum: ['BASIC', 'PLUS'], default: 'BASIC' },
+    status: { type: String, enum: ['ACTIVE', 'CANCELLED', 'EXPIRED'], default: 'ACTIVE' },
+    startDate: { type: Date },
+    expiryDate: { type: Date }
   },
   referralCode: { type: String, unique: true },
   referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
