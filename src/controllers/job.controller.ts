@@ -16,6 +16,7 @@ import * as fraudService from '../services/fraud.service';
 import * as notificationService from '../services/notification.service';
 import * as testUserService from '../services/test-user.service';
 import * as paymentGatewayService from '../services/payment-gateway.service';
+import * as userContextService from '../services/user-context.service';
 import { logger } from '../utils/logger';
 import { calculateDistance } from '../utils/location';
 
@@ -132,6 +133,9 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
     });
 
     await job.save();
+
+    // Auto-save location for reuse (Issue 3)
+    userContextService.autoSaveLocation(req.user!.userId, address, coordinates);
 
     emitAdminUpdate('new_job_created', { jobId: job.id, countryCode: job.countryCode });
 
@@ -455,6 +459,9 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
         // PAGE 12: Fraud Analysis (Fake Completion)
         fraudService.analyzeJobCompletion(job.id);
+
+        // Track frequent address (Issue 2)
+        userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
     }
 
     job.status = status;

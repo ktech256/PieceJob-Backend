@@ -60,7 +60,10 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 export const getAddresses = async (req: AuthRequest, res: Response) => {
     try {
         const user = await User.findById(req.user?.userId).select('addresses');
-        res.status(200).json({ success: true, data: user?.addresses || [] });
+        const addresses = user?.addresses || [];
+        // Sort by usageCount descending
+        addresses.sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0));
+        res.status(200).json({ success: true, data: addresses });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch addresses', error });
     }
@@ -130,7 +133,10 @@ export const deleteAddress = async (req: AuthRequest, res: Response) => {
 export const getSavedLocations = async (req: AuthRequest, res: Response) => {
     try {
         const user = await User.findById(req.user?.userId).select('savedLocations');
-        res.status(200).json({ success: true, data: user?.savedLocations || [] });
+        const locations = user?.savedLocations || [];
+        // Sort by lastUsedAt descending
+        locations.sort((a, b) => (b.lastUsedAt?.getTime() || 0) - (a.lastUsedAt?.getTime() || 0));
+        res.status(200).json({ success: true, data: locations });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch saved locations', error });
     }

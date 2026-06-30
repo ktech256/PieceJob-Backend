@@ -46,11 +46,15 @@ export interface IUser extends Document {
     address: string;
     coordinates: number[];
     isDefault: boolean;
+    usageCount?: number;
+    lastUsedAt?: Date;
   }[];
   savedLocations?: {
     name: string;
     address: string;
     coordinates: number[];
+    usageCount?: number;
+    lastUsedAt?: Date;
   }[];
   paymentMethods?: {
     brand: string;
@@ -122,12 +126,16 @@ const UserSchema: Schema = new Schema({
     label: { type: String },
     address: { type: String },
     coordinates: { type: [Number] },
-    isDefault: { type: Boolean, default: false }
+    isDefault: { type: Boolean, default: false },
+    usageCount: { type: Number, default: 1 },
+    lastUsedAt: { type: Date, default: Date.now }
   }],
   savedLocations: [{
     name: { type: String },
     address: { type: String },
-    coordinates: { type: [Number] }
+    coordinates: { type: [Number] },
+    usageCount: { type: Number, default: 1 },
+    lastUsedAt: { type: Date, default: Date.now }
   }],
   paymentMethods: [{
     brand: { type: String },
