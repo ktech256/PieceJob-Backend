@@ -117,3 +117,25 @@ export const broadcastToProviders = async (fcmTokens: string[], title: string, b
         console.error('[FCM_AUDIT] Multicast Fatal Error:', error);
     }
 };
+
+export const notifyDevices = async (tokens: string[], title: string, body: string, data: any = {}) => {
+    if (tokens.length === 0) return;
+
+    const message: admin.messaging.MulticastMessage = {
+        notification: { title, body },
+        data: {
+            ...data,
+            timestamp: new Date().toISOString()
+        },
+        tokens,
+        android: {
+            priority: 'high'
+        }
+    };
+
+    try {
+        return await admin.messaging().sendEachForMulticast(message);
+    } catch (error) {
+        logger.error(`FCM | MULTICAST_FAILED | Error: ${error}`);
+    }
+};

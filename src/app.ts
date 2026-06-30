@@ -19,6 +19,8 @@ import supportRoutes from './routes/support.routes';
 import callRoutes from './routes/call.routes';
 import livekitRoutes from './routes/livekit.routes';
 import analyticsRoutes from './routes/v1/analytics.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import marketingRoutes from './routes/marketing.routes';
 import testRoutes from './routes/test.routes';
 import admin from 'firebase-admin';
 import { logger } from './utils/logger';
@@ -73,6 +75,8 @@ app.use('/api/v1/config', configRoutes);
 app.use('/api/v1/corporate', corporateRoutes);
 app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/api/v1/marketing', marketingRoutes);
 app.use('/api/test', testRoutes);
 
 // Dashboard Aliases (Mounting under /api for dashboard lib/api/axios.ts)

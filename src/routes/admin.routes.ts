@@ -29,6 +29,7 @@ import * as ticketAdminController from '../controllers/admin/ticket.controller';
 import * as adminUserController from '../controllers/admin/admin-user.controller';
 import * as sosAdminController from '../controllers/sos.controller';
 import * as integrationController from '../controllers/admin/integration.controller';
+import * as marketingAdminController from '../controllers/admin/marketing.controller';
 import * as paymentRoutingController from '../controllers/admin/payment-provider.controller';
 import templateRouter from './admin/notification-template.routes';
 import { authenticate, authorize } from '../middleware/auth.middleware';
@@ -203,12 +204,15 @@ router.post('/performance/recalculate', hasPermission('MANAGE_PROVIDERS'), perfo
 
 // Users (PAGE 7)
 router.get('/users/customers', hasPermission('MANAGE_CUSTOMERS'), customerAdminController.listCustomers);
-router.get('/users/customers/:id', hasPermission('MANAGE_CUSTOMERS'), customerAdminController.getCustomerDetail);
-router.get('/users/corporate', hasPermission('MANAGE_CUSTOMERS'), corporateAdminController.listCompanies);
-router.patch('/users/corporate/:id/status', hasPermission('MANAGE_CUSTOMERS'), corporateAdminController.updateCompanyStatus);
-router.get('/users/corporate/:id/schedules', hasPermission('MANAGE_CUSTOMERS'), corporateAdminController.getCompanySchedules);
-router.patch('/users/corporate/:id/documents/:docId', hasPermission('MANAGE_CUSTOMERS'), corporateAdminController.updateDocumentStatus);
+// ...
 router.post('/users/wallet/mutate', hasPermission('MANAGE_WALLETS'), walletAdminController.manualWalletMutation);
+
+// Marketing (NEW)
+router.get('/marketing/promotions', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.listPromotions);
+router.post('/marketing/promotions', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.createPromotion);
+router.patch('/marketing/promotions/:id', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.updatePromotion);
+router.delete('/marketing/promotions/:id', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.deletePromotion);
+router.post('/marketing/notifications/push', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.sendCustomPush);
 
 // Test Seeding & Cleanup
 router.delete('/maintenance/test-users', authorize([UserRole.SUPER_ADMIN]), adminController.cleanupTestUsers);
