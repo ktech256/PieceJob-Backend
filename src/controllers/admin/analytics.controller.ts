@@ -33,8 +33,8 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
             Country.findOne({ code: countryCode }),
             SystemSettings.findOne({ countryCode })
         ]);
-        targetCurrency = settings?.currencyCode || country?.currency || 'USD';
-        currencySymbol = settings?.currencySymbol || country?.currencySymbol || country?.currency || '';
+        targetCurrency = country?.currency || 'USD';
+        currencySymbol = country?.currencySymbol || country?.currency || '';
     }
 
     const [growth, efficiency, financials, revenueTrends] = await Promise.all([

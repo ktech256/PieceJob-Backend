@@ -47,8 +47,8 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
             platformFee: settings?.platformFee || 0,
             minimumCharge: settings?.minimumCharge || 0,
             taxPercentage: settings?.taxPercentage || 0,
-            currencyCode: settings?.currencyCode || country.currency,
-            currencySymbol: settings?.currencySymbol || country.currencySymbol || country.currency,
+            currencyCode: country.currency,
+            currencySymbol: country.currencySymbol || country.currency,
             nightFeeEnabled: settings?.nightFeeEnabled || false,
             weekendFeeEnabled: settings?.weekendFeeEnabled || false
         }

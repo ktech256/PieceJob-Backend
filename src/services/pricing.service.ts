@@ -3,6 +3,7 @@ import CommissionRule from '../models/CommissionRule';
 import Job from '../models/Job';
 import { JobStatus } from '../models/Job';
 import * as settingsService from './settings.service';
+import Country from '../models/Country';
 import { ProviderTier } from '../models/Provider';
 import mongoose from 'mongoose';
 
@@ -28,7 +29,14 @@ export const calculateJobPrice = async (
     zoneId?: string,
     isEmergency: boolean = false
 ): Promise<PricingBreakdown> => {
-    const settings = await settingsService.getSettings(countryCode);
+    const [settings, country] = await Promise.all([
+        settingsService.getSettings(countryCode),
+        Country.findOne({ code: countryCode })
+    ]);
+
+    if (!country) {
+        throw new Error(`Country configuration for '${countryCode}' not found.`);
+    }
 
     // 1. Resolve Rules (Highest priority first)
     // Hierarchy: ZONE > SERVICE > COUNTRY
@@ -134,8 +142,8 @@ export const calculateJobPrice = async (
         taxAmount,
         taxPercentage: settings.taxPercentage,
         totalAmount: total,
-        currency: settings.currencyCode || settings.currency,
-        currencySymbol: settings.currencySymbol || settings.currencyCode || settings.currency,
+        currency: country.currency,
+        currencySymbol: country.currencySymbol || country.currency,
         surgeMultiplier
     };
 };

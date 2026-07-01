@@ -5,7 +5,6 @@ export interface ISystemSettings extends Document {
   matchingRadiusKm: number;
   baseBookingFee: number;
   platformCommissionPercent: number;
-  currency: string;
   surgeMultiplierMax: number;
   escrowCoolingPeriodHours: number;
   cancellationGraceProviderSec: number;
@@ -21,10 +20,6 @@ export interface ISystemSettings extends Document {
   calloutFee: number;
   cancellationFee: number;
 
-  // Currency & Tax
-  currencyCode: string; // e.g. "ZAR"
-  currencySymbol: string; // e.g. "R"
-  currencyPrecision: number; // e.g. 2
   taxName: string; // e.g. "VAT"
   taxPercentage: number;
   isTaxInclusive: boolean;
@@ -66,7 +61,6 @@ const SystemSettingsSchema: Schema = new Schema({
   matchingRadiusKm: { type: Number, default: 5 },
   baseBookingFee: { type: Number, default: 50 },
   platformCommissionPercent: { type: Number, default: 15 },
-  currency: { type: String },
   surgeMultiplierMax: { type: Number, default: 2.5 },
   escrowCoolingPeriodHours: { type: Number, default: 12 },
   cancellationGraceProviderSec: { type: Number, default: 90 },
@@ -82,9 +76,6 @@ const SystemSettingsSchema: Schema = new Schema({
   calloutFee: { type: Number, default: 0 },
   cancellationFee: { type: Number, default: 0 },
 
-  currencyCode: { type: String },
-  currencySymbol: { type: String },
-  currencyPrecision: { type: Number, default: 2 },
   taxName: { type: String, default: 'VAT' },
   taxPercentage: { type: Number, default: 0 },
   isTaxInclusive: { type: Boolean, default: true },
