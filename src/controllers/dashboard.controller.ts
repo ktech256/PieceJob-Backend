@@ -16,9 +16,14 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
         const countryCode = req.user?.countryCode || 'ZA';
 
-        // 1. User Profile ( firstName )
+        console.log(`[FORENSIC] DASHBOARD | Loading for User: ${userId} | Country: ${countryCode}`);
+
+        // 1. User Profile
         const user = await User.findById(userId).select('firstName lastName email profilePhoto addresses savedLocations');
-        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        if (!user) {
+            console.error(`[FORENSIC] DASHBOARD | User ${userId} not found`);
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
 
         // 2. Wallet Balance
         const wallet = await Wallet.findOne({ userId });
@@ -26,16 +31,33 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             balanceMain: wallet?.balanceMain || 0,
             balanceCredit: wallet?.balanceCredit || 0,
             balanceReferral: wallet?.balanceReferral || 0,
-            currency: wallet?.currency || 'USD'
+            currency: wallet?.currency || 'R'
         };
 
         // 3. Active Job
-        const activeJob = await Job.findOne({
+        const activeJobRaw = await Job.findOne({
             customerId: userId,
             status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName profilePhoto');
 
-        // 4. Promotions (Active and Role matched)
+        let activeJob = null;
+        if (activeJobRaw) {
+            const aj = activeJobRaw.toObject() as any;
+            const p = aj.providerId as any;
+            if (p && typeof p === 'object') {
+                aj.providerId = p._id; // Restore as string to avoid Android parsing crash
+                aj.providerInfo = {
+                    firstName: p.firstName,
+                    lastName: p.lastName,
+                    profilePicture: p.profilePhoto ? await storageService.getSignedUrl(p.profilePhoto) : null,
+                    ratingAvg: 0,
+                    jobsCompleted: 0
+                };
+            }
+            activeJob = aj;
+        }
+
+        // 4. Promotions
         const now = new Date();
         const rawPromotions = await Promotion.find({
             isActive: true,
@@ -58,12 +80,13 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             endDate: { $gte: now }
         }).sort({ createdAt: -1 });
 
-        // 5. Latest Activity (Last 5 jobs or ledger entries)
+        // 5. Latest Activity
         const recentJobs = await Job.find({ customerId: userId })
             .sort({ createdAt: -1 })
-            .limit(5);
+            .limit(10);
 
         const latestActivity = recentJobs.map(j => ({
+            _id: j._id,
             id: j._id,
             type: 'JOB',
             status: j.status,
@@ -77,43 +100,72 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         const lng = parseFloat(req.query.lng as string);
 
         let topRatedNearby: any[] = [];
-        const providerQuery: any = {
-            isOnline: true,
-            currentAvailabilityStatus: 'ONLINE',
-            verificationStatus: 'APPROVED',
-            countryCode
-        };
 
         if (!isNaN(lat) && !isNaN(lng)) {
-            providerQuery.location = {
-                $near: {
-                    $geometry: { type: 'Point', coordinates: [lng, lat] },
-                    $maxDistance: 50000 // 50km
-                }
-            };
+            // Use aggregation for distance + rating sorting
+            const aggregatedProviders = await Provider.aggregate([
+                {
+                    $geoNear: {
+                        near: { type: "Point", coordinates: [lng, lat] },
+                        distanceField: "dist.calculated",
+                        maxDistance: 50000,
+                        query: { isOnline: true, currentAvailabilityStatus: 'ONLINE', verificationStatus: 'APPROVED', countryCode },
+                        spherical: true
+                    }
+                },
+                { $sort: { ratingAvg: -1, "dist.calculated": 1 } },
+                { $limit: 10 },
+                {
+                    $lookup: {
+                        from: "users",
+                        localField: "userId",
+                        foreignField: "_id",
+                        as: "user"
+                    }
+                },
+                { $unwind: "$user" }
+            ]);
+
+            topRatedNearby = await Promise.all(aggregatedProviders.map(async (p) => {
+                let photo = p.user.profilePhoto;
+                if (photo) photo = await storageService.getSignedUrl(photo);
+
+                return {
+                    id: p._id,
+                    name: `${p.user.firstName || ''} ${p.user.lastName || ''}`.trim(),
+                    photo,
+                    rating: p.ratingAvg,
+                    tier: p.tier,
+                    services: p.servicesOffered,
+                    distance: p.dist.calculated
+                };
+            }));
+        } else {
+            // Fallback: No location, just sort by rating
+            const rawProviders = await Provider.find({
+                isOnline: true,
+                currentAvailabilityStatus: 'ONLINE',
+                verificationStatus: 'APPROVED',
+                countryCode
+            }).sort({ ratingAvg: -1 }).limit(10).populate('userId', 'firstName lastName profilePhoto');
+
+            topRatedNearby = await Promise.all(rawProviders.map(async (p) => {
+                const u = p.userId as any;
+                if (!u) return null;
+                let photo = u.profilePhoto;
+                if (photo) photo = await storageService.getSignedUrl(photo);
+
+                return {
+                    id: p._id,
+                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+                    photo,
+                    rating: p.ratingAvg,
+                    tier: p.tier,
+                    services: p.servicesOffered
+                };
+            }));
+            topRatedNearby = topRatedNearby.filter(p => p !== null);
         }
-
-        const rawProviders = await Provider.find(providerQuery)
-            .sort({ ratingAvg: -1 })
-            .limit(10)
-            .populate('userId', 'firstName lastName profilePhoto');
-
-        topRatedNearby = await Promise.all(rawProviders.map(async (p) => {
-            const u = p.userId as any;
-            if (!u) return null;
-            let photo = u.profilePhoto;
-            if (photo) photo = await storageService.getSignedUrl(photo);
-
-            return {
-                id: p._id,
-                name: `${u.firstName || ''} ${u.lastName || ''}`.trim(),
-                photo,
-                rating: p.ratingAvg,
-                tier: p.tier,
-                services: p.servicesOffered
-            };
-        }));
-        topRatedNearby = topRatedNearby.filter(p => p !== null);
 
         // 7. Recommended Services
         const usedServiceCodes = [...new Set(recentJobs.map(j => j.serviceCode))];
@@ -124,7 +176,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 { code: { $in: usedServiceCodes } },
                 { countryCode: { $in: ['GLOBAL', countryCode] } }
             ]
-        }).limit(10);
+        }).limit(20);
 
         const providerCounts = await Provider.aggregate([
             { $match: { isOnline: true, currentAvailabilityStatus: 'ONLINE', countryCode } },
@@ -148,6 +200,8 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             return (b as any).onlineCount - (a as any).onlineCount;
         });
 
+        console.log(`[FORENSIC] DASHBOARD | Sending response for ${userId}`);
+
         res.status(200).json({
             success: true,
             data: {
@@ -165,10 +219,11 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 referralCampaign,
                 latestActivity,
                 topRatedNearby,
-                recommendations: enhancedRecommendations
+                recommendations: enhancedRecommendations.slice(0, 10)
             }
         });
     } catch (error: any) {
+        console.error(`[FORENSIC] DASHBOARD | ERROR: ${error.message}`);
         logger.error(`DASHBOARD | GET_CUSTOMER_FAILED | Error: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
