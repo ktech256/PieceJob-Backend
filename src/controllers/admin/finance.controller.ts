@@ -6,10 +6,20 @@ import * as reconciliationService from '../../services/reconciliation.service';
 import * as statementService from '../../services/statement.service';
 import { StatementType } from '../../models/Statement';
 
+import Country from '../../models/Country';
+import SystemSettings from '../../models/SystemSettings';
+
 export const getOverview = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
         const query: any = { countryCode };
+
+        const [country, settings] = await Promise.all([
+            Country.findOne({ code: countryCode }),
+            SystemSettings.findOne({ countryCode })
+        ]);
+
+        const currencySymbol = settings?.currencySymbol || country?.currency || '$';
 
         const revenueAgg = await Ledger.aggregate([
             { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } } },
@@ -38,6 +48,8 @@ export const getOverview = async (req: AuthRequest, res: Response) => {
                 netCommission: commissionAgg[0]?.total || 0,
                 pendingPayouts: pendingPayoutsAgg[0]?.total || 0,
                 activeEscrow: escrowAgg[0]?.total || 0,
+                currency: settings?.currencyCode || country?.currency || 'USD',
+                currencySymbol: currencySymbol,
                 mismatchErrors: 0 // Will be wired to reconciliation result
             }
         });

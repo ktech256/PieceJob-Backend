@@ -247,7 +247,9 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
 
 export const getCustomerPromotions = async (req: AuthRequest, res: Response) => {
     try {
-        const countryCode = req.user?.countryCode || 'ZA';
+        const countryCode = req.user?.countryCode;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'Country code missing' });
+
         const now = new Date();
         const rawPromotions = await Promotion.find({
             isActive: true,

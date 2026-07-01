@@ -18,6 +18,7 @@ export interface PricingBreakdown {
     taxPercentage: number;
     totalAmount: number;
     currency: string;
+    currencySymbol: string;
     surgeMultiplier: number;
 }
 
@@ -134,6 +135,7 @@ export const calculateJobPrice = async (
         taxPercentage: settings.taxPercentage,
         totalAmount: total,
         currency: settings.currencyCode || settings.currency,
+        currencySymbol: settings.currencySymbol || '$',
         surgeMultiplier
     };
 };

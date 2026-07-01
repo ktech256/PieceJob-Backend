@@ -6,6 +6,7 @@ import Job, { JobStatus } from '../../models/Job';
 import Ledger, { TransactionType } from '../../models/Ledger';
 import ExchangeRate from '../../models/ExchangeRate';
 import Country from '../../models/Country';
+import SystemSettings from '../../models/SystemSettings';
 import PanicAlert from '../../models/PanicAlert';
 import Dispute from '../../models/Dispute';
 import * as analyticsService from '../../services/analytics.service';
@@ -25,9 +26,15 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
     }
 
     let targetCurrency = 'USD';
+    let currencySymbol = '$';
+
     if (!isGlobal) {
-        const country = await Country.findOne({ code: countryCode });
-        targetCurrency = country?.currency || 'USD';
+        const [country, settings] = await Promise.all([
+            Country.findOne({ code: countryCode }),
+            SystemSettings.findOne({ countryCode })
+        ]);
+        targetCurrency = settings?.currencyCode || country?.currency || 'USD';
+        currencySymbol = settings?.currencySymbol || '$';
     }
 
     const [growth, efficiency, financials, revenueTrends] = await Promise.all([
@@ -57,6 +64,7 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
 
     const analytics = {
         currency: targetCurrency,
+        currencySymbol: currencySymbol,
         growth,
         efficiency,
         financials,

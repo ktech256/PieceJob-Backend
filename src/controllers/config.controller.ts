@@ -27,14 +27,15 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
 
     res.status(200).json({
       success: true,
-      config: {
+      data: {
         country: {
             name: country.name,
             code: country.code,
             currency: country.currency,
             timezone: country.timezone,
             language: country.language,
-            locale: country.locale
+            locale: country.locale,
+            flagEmoji: country.flagEmoji
         },
         settings: {
             matchingRadiusKm: settings?.matchingRadiusKm || 5,
@@ -45,7 +46,8 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
             platformFee: settings?.platformFee || 0,
             minimumCharge: settings?.minimumCharge || 0,
             taxPercentage: settings?.taxPercentage || 0,
-            currencyCode: settings?.currencyCode || 'USD',
+            currencyCode: settings?.currencyCode || country.currency,
+            currencySymbol: settings?.currencySymbol || '$',
             nightFeeEnabled: settings?.nightFeeEnabled || false,
             weekendFeeEnabled: settings?.weekendFeeEnabled || false
         }
@@ -67,7 +69,9 @@ export const getPublicCategories = async (req: Request, res: Response) => {
 
 export const getPublicServices = async (req: Request, res: Response) => {
     try {
-        const countryCode = req.headers['x-country-code'] as string || 'ZA';
+        const countryCode = req.headers['x-country-code'] as string;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'x-country-code header required' });
+
         const userGender = req.query.gender as string; // 'M' or 'F'
         const lat = req.query.lat ? parseFloat(req.query.lat as string) : null;
         const lng = req.query.lng ? parseFloat(req.query.lng as string) : null;
@@ -80,7 +84,6 @@ export const getPublicServices = async (req: Request, res: Response) => {
             isActive: true
         };
 
-        // GENDER FILTERING LOGIC (RC-2 CRITICAL)
         if (userGender) {
             const allowedRules = ['BOTH'];
             if (userGender === 'M') allowedRules.push('MEN_ONLY');
@@ -91,22 +94,17 @@ export const getPublicServices = async (req: Request, res: Response) => {
         const services = await Service.find(query).sort({ code: 1 });
         const categories = await ServiceCategoryModel.find({ isDeleted: false, isActive: true }).sort({ sortOrder: 1 });
 
-        // Fetch online providers for count calculation
         const providerQuery: any = {
-            countryCode: countryCode === 'GLOBAL' ? { $exists: true } : countryCode,
+            countryCode,
             isOnline: true,
             currentAvailabilityStatus: 'ONLINE',
             verificationStatus: 'APPROVED'
         };
 
-        // Radius Filtering if coordinates provided
         if (lat !== null && lng !== null) {
             providerQuery.location = {
                 $near: {
-                    $geometry: {
-                        type: 'Point',
-                        coordinates: [lng, lat]
-                    },
+                    $geometry: { type: 'Point', coordinates: [lng, lat] },
                     $maxDistance: radiusKm * 1000
                 }
             };
@@ -157,7 +155,8 @@ export const getPublicServices = async (req: Request, res: Response) => {
 export const getPriceEstimate = async (req: Request, res: Response) => {
     try {
         const { serviceCode, zoneId, isEmergency } = req.query;
-        const countryCode = req.headers['x-country-code'] as string || 'ZA';
+        const countryCode = req.headers['x-country-code'] as string;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'x-country-code header required' });
 
         const estimate = await pricingService.calculateJobPrice(
             serviceCode as string,
@@ -175,7 +174,8 @@ export const getPriceEstimate = async (req: Request, res: Response) => {
 export const resolveZone = async (req: Request, res: Response) => {
     try {
         const { lat, lng } = req.query;
-        const countryCode = req.headers['x-country-code'] as string || 'ZA';
+        const countryCode = req.headers['x-country-code'] as string;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'x-country-code header required' });
 
         const zone = await zoneResolverService.resolveZoneForLocation(
             [parseFloat(lng as string), parseFloat(lat as string)],
@@ -194,7 +194,7 @@ export const getCountries = async (req: Request, res: Response) => {
         res.status(200).json({
             success: true,
             data: countries,
-            countries: countries // Keep legacy key for dashboard compatibility
+            countries: countries
         });
     } catch (error) {
         logger.error(`CONFIG | FETCH_COUNTRIES_FAILED | Error: ${error}`);
@@ -202,18 +202,14 @@ export const getCountries = async (req: Request, res: Response) => {
     }
 };
 
-export const getLanguages = async (req: Request, res: Response) => {
-    // ...
-};
-
 export const globalSearch = async (req: Request, res: Response) => {
     try {
         const query = req.query.q as string;
+        const countryCode = req.headers['x-country-code'] as string;
+
         if (!query || query.length < 2) {
             return res.status(200).json({ success: true, data: [] });
         }
-
-        const countryCode = req.headers['x-country-code'] as string || 'ZA';
 
         // 1. Search Services
         const services = await Service.find({

@@ -271,7 +271,7 @@ export const registerProvider = async (req: Request, res: Response) => {
       nationalityType: nationalityType || 'Citizen',
       idOrPassportNumber: actualIdNumber,
       servicesOffered,
-      countryCode: countryCode || 'ZA',
+      countryCode: countryCode,
       location: { coordinates: [0, 0] }
     });
 

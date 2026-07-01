@@ -69,7 +69,10 @@ export const getMyCommissionRate = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        const rate = await pricingService.getCommissionRate(req.user?.countryCode || 'ZA', provider.tier);
+        const countryCode = req.user?.countryCode;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'Country code missing' });
+
+        const rate = await pricingService.getCommissionRate(countryCode, provider.tier);
         res.status(200).json({ success: true, commissionRate: rate });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch commission rate', error });

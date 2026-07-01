@@ -57,7 +57,9 @@ export const updateProvider = async (req: AuthRequest, res: Response) => {
 
 export const getAvailableMethods = async (req: AuthRequest, res: Response) => {
     try {
-        const countryCode = req.user?.countryCode || 'ZA';
+        const countryCode = req.user?.countryCode || req.headers['x-country-code'] as string;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'Country code missing' });
+
         const providers = await PaymentProvider.find({
             countryCode: countryCode,
             isActive: true
