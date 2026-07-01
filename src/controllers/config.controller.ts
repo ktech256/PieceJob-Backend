@@ -32,6 +32,7 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
             name: country.name,
             code: country.code,
             currency: country.currency,
+            currencySymbol: country.currencySymbol,
             timezone: country.timezone,
             language: country.language,
             locale: country.locale,
@@ -47,7 +48,7 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
             minimumCharge: settings?.minimumCharge || 0,
             taxPercentage: settings?.taxPercentage || 0,
             currencyCode: settings?.currencyCode || country.currency,
-            currencySymbol: settings?.currencySymbol || '$',
+            currencySymbol: settings?.currencySymbol || country.currencySymbol || country.currency,
             nightFeeEnabled: settings?.nightFeeEnabled || false,
             weekendFeeEnabled: settings?.weekendFeeEnabled || false
         }

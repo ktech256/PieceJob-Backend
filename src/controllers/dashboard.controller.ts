@@ -36,7 +36,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        const currencySymbol = settings?.currencySymbol || country?.currency || '$';
+        const currencySymbol = settings?.currencySymbol || country?.currencySymbol || country?.currency;
 
         // 2. Wallet Balance
         const wallet = await Wallet.findOne({ userId });

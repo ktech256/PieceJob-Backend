@@ -26,15 +26,15 @@ export const getOperationalAnalytics = async (req: AuthRequest, res: Response) =
     }
 
     let targetCurrency = 'USD';
-    let currencySymbol = '$';
+    let currencySymbol = '';
 
     if (!isGlobal) {
         const [country, settings] = await Promise.all([
             Country.findOne({ code: countryCode }),
             SystemSettings.findOne({ countryCode })
         ]);
-        targetCurrency = settings?.currencyCode || country?.currency || 'USD';
-        currencySymbol = settings?.currencySymbol || '$';
+        targetCurrency = settings?.currencyCode || country?.currency;
+        currencySymbol = settings?.currencySymbol || country?.currencySymbol || country?.currency;
     }
 
     const [growth, efficiency, financials, revenueTrends] = await Promise.all([

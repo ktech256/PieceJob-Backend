@@ -19,7 +19,7 @@ export const getOverview = async (req: AuthRequest, res: Response) => {
             SystemSettings.findOne({ countryCode })
         ]);
 
-        const currencySymbol = settings?.currencySymbol || country?.currency || '$';
+        const currencySymbol = settings?.currencySymbol || country?.currencySymbol || country?.currency;
 
         const revenueAgg = await Ledger.aggregate([
             { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } } },
@@ -48,7 +48,7 @@ export const getOverview = async (req: AuthRequest, res: Response) => {
                 netCommission: commissionAgg[0]?.total || 0,
                 pendingPayouts: pendingPayoutsAgg[0]?.total || 0,
                 activeEscrow: escrowAgg[0]?.total || 0,
-                currency: settings?.currencyCode || country?.currency || 'USD',
+                currency: settings?.currencyCode || country?.currency,
                 currencySymbol: currencySymbol,
                 mismatchErrors: 0 // Will be wired to reconciliation result
             }

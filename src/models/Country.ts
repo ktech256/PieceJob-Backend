@@ -4,6 +4,7 @@ export interface ICountry extends Document {
   code: string; // ISO 3166-1 alpha-2
   name: string;
   currency: string;
+  currencySymbol: string;
   timezone: string; // e.g. Africa/Johannesburg
   language: string; // e.g. en
   locale: string;   // e.g. en-ZA
@@ -16,6 +17,7 @@ const CountrySchema: Schema = new Schema({
   code: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   currency: { type: String, required: true },
+  currencySymbol: { type: String },
   timezone: { type: String, required: true, default: 'UTC' },
   language: { type: String, required: true, default: 'en' },
   locale: { type: String, required: true, default: 'en-US' },

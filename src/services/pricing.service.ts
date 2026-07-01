@@ -135,7 +135,7 @@ export const calculateJobPrice = async (
         taxPercentage: settings.taxPercentage,
         totalAmount: total,
         currency: settings.currencyCode || settings.currency,
-        currencySymbol: settings.currencySymbol || '$',
+        currencySymbol: settings.currencySymbol || settings.currencyCode || settings.currency,
         surgeMultiplier
     };
 };
