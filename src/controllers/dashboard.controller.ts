@@ -229,3 +229,27 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+export const getCustomerPromotions = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.user?.countryCode || 'ZA';
+        const now = new Date();
+        const rawPromotions = await Promotion.find({
+            isActive: true,
+            startDate: { $lte: now },
+            endDate: { $gte: now },
+            targetRole: { $in: ['CUSTOMER', 'ALL'] },
+            $or: [{ countryCode }, { countryCode: { $exists: false } }, { countryCode: 'GLOBAL' }]
+        }).sort({ priority: -1 }).limit(5);
+
+        const promotions = await Promise.all(rawPromotions.map(async (p) => {
+            const obj = p.toObject();
+            if (obj.imageUrl) obj.imageUrl = await storageService.getSignedUrl(obj.imageUrl);
+            return obj;
+        }));
+
+        res.status(200).json({ success: true, data: promotions });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

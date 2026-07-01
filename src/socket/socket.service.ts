@@ -41,6 +41,12 @@ export const initSocket = (server: any) => {
         logger.socket('JOIN_ROOM', socket.id, `Room: user_${userId}`);
     });
 
+    socket.on('join_workspace', (countryCode: string) => {
+        socket.join(`workspace_${countryCode}`);
+        console.log(`[SOCKET_TRACE] JOIN_WORKSPACE | Socket: ${socket.id} | Room: workspace_${countryCode}`);
+        logger.socket('JOIN_ROOM', socket.id, `Room: workspace_${countryCode}`);
+    });
+
     socket.on('join_admin', () => {
       socket.join('admin_monitoring');
       logger.socket('JOIN_ROOM', socket.id, 'Room: admin_monitoring');
@@ -139,5 +145,12 @@ export const emitJobUpdate = (jobId: string, event: string, data: any) => {
 export const emitToUser = (userId: string, event: string, data: any) => {
   if (io) {
     io.to(`user_${userId}`).emit(event, data);
+  }
+};
+
+export const emitToWorkspace = (countryCode: string, event: string, data: any) => {
+  if (io) {
+    console.log(`[SOCKET_TRACE] EMITTING to workspace_${countryCode} | Event: ${event}`);
+    io.to(`workspace_${countryCode}`).emit(event, data);
   }
 };

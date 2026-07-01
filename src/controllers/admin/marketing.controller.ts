@@ -5,6 +5,7 @@ import ReferralCampaign from '../../models/ReferralCampaign';
 import User, { UserRole } from '../../models/User';
 import * as storageService from '../../services/storage.service';
 import * as notificationService from '../../services/notification.service';
+import * as socketService from '../../socket/socket.service';
 import { logger } from '../../utils/logger';
 
 // --- PROMOTIONS ---
@@ -31,6 +32,10 @@ export const createPromotion = async (req: AuthRequest, res: Response) => {
         });
 
         await promotion.save();
+
+        // Real-time Update (Issue 1)
+        socketService.emitToWorkspace(countryCode, 'PROMOTIONS_UPDATED', { type: 'CREATE', workspace: countryCode });
+
         res.status(201).json({ success: true, data: promotion });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
@@ -71,6 +76,11 @@ export const updatePromotion = async (req: AuthRequest, res: Response) => {
         if (update.endDate) update.endDate = new Date(update.endDate);
 
         const promotion = await Promotion.findByIdAndUpdate(id, update, { new: true });
+
+        if (promotion) {
+            socketService.emitToWorkspace(promotion.countryCode || 'GLOBAL', 'PROMOTIONS_UPDATED', { type: 'UPDATE', workspace: promotion.countryCode });
+        }
+
         res.status(200).json({ success: true, data: promotion });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
@@ -93,7 +103,11 @@ export const deletePromotion = async (req: AuthRequest, res: Response) => {
             }
         }
 
+        const workspace = promo.countryCode || 'GLOBAL';
         await Promotion.findByIdAndDelete(id);
+
+        socketService.emitToWorkspace(workspace, 'PROMOTIONS_UPDATED', { type: 'DELETE', workspace });
+
         res.status(200).json({ success: true, message: 'Promotion deleted successfully' });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });

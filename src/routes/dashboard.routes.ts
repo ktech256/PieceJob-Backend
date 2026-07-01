@@ -5,5 +5,6 @@ import { authenticate } from '../middleware/auth.middleware';
 const router = Router();
 
 router.get('/customer', authenticate, dashboardController.getCustomerDashboard);
+router.get('/customer/promotions', authenticate, dashboardController.getCustomerPromotions);
 
 export default router;
