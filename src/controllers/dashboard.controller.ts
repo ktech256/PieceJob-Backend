@@ -73,7 +73,6 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         }));
 
         // 6. Top Rated Providers Nearby
-        // In a real scenario, we'd use $near with customer current location if provided in query
         const lat = parseFloat(req.query.lat as string);
         const lng = parseFloat(req.query.lng as string);
 
@@ -101,36 +100,53 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
 
         topRatedNearby = await Promise.all(rawProviders.map(async (p) => {
             const u = p.userId as any;
-            let photo = u?.profilePhoto;
+            if (!u) return null;
+            let photo = u.profilePhoto;
             if (photo) photo = await storageService.getSignedUrl(photo);
 
             return {
                 id: p._id,
-                name: `${u?.firstName || ''} ${u?.lastName || ''}`.trim(),
+                name: `${u.firstName || ''} ${u.lastName || ''}`.trim(),
                 photo,
                 rating: p.ratingAvg,
                 tier: p.tier,
-                services: p.servicesOffered,
-                // distance would be calculated by $near but we don't have it in field unless using aggregation
+                services: p.servicesOffered
             };
         }));
+        topRatedNearby = topRatedNearby.filter(p => p !== null);
 
         // 7. Recommended Services
-        // Logic: Services used before + popular services in country
         const usedServiceCodes = [...new Set(recentJobs.map(j => j.serviceCode))];
-        const popularServices = await Service.find({
-            countryCode,
-            isActive: true,
-            code: { $nin: usedServiceCodes }
-        }).sort({ usageCount: -1 }).limit(5);
 
         const recommendations = await Service.find({
-            code: { $in: usedServiceCodes },
-            isActive: true
+            isActive: true,
+            $or: [
+                { code: { $in: usedServiceCodes } },
+                { countryCode: { $in: ['GLOBAL', countryCode] } }
+            ]
+        }).limit(10);
+
+        const providerCounts = await Provider.aggregate([
+            { $match: { isOnline: true, currentAvailabilityStatus: 'ONLINE', countryCode } },
+            { $unwind: "$servicesOffered" },
+            { $group: { _id: "$servicesOffered", count: { $sum: 1 } } }
+        ]);
+
+        const enhancedRecommendations = recommendations.map(s => {
+            const countObj = providerCounts.find(pc => pc._id === s.code);
+            return {
+                ...s.toObject(),
+                onlineCount: countObj?.count || 0,
+                onlineCountLabel: `${countObj?.count || 0} Online`
+            };
         });
 
-        // Merge
-        const finalRecommendations = [...recommendations, ...popularServices].slice(0, 6);
+        enhancedRecommendations.sort((a, b) => {
+            const aUsed = usedServiceCodes.includes(a.code) ? 1 : 0;
+            const bUsed = usedServiceCodes.includes(b.code) ? 1 : 0;
+            if (aUsed !== bUsed) return bUsed - aUsed;
+            return (b as any).onlineCount - (a as any).onlineCount;
+        });
 
         res.status(200).json({
             success: true,
@@ -149,7 +165,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 referralCampaign,
                 latestActivity,
                 topRatedNearby,
-                recommendations: finalRecommendations
+                recommendations: enhancedRecommendations
             }
         });
     } catch (error: any) {
