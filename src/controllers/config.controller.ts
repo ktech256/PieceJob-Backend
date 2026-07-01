@@ -10,13 +10,19 @@ import { logger } from '../utils/logger';
 
 export const getWorkspaceConfig = async (req: Request, res: Response) => {
   try {
-    const countryCode = req.headers['x-country-code'] as string || 'ZA';
+    const countryCode = req.headers['x-country-code'] as string;
 
-    const country = await Country.findOne({ code: countryCode });
-    const settings = await SystemSettings.findOne({ countryCode });
+    if (!countryCode) {
+        return res.status(400).json({ success: false, message: 'x-country-code header required.' });
+    }
+
+    const [country, settings] = await Promise.all([
+        Country.findOne({ code: countryCode }),
+        SystemSettings.findOne({ countryCode })
+    ]);
 
     if (!country) {
-        return res.status(404).json({ success: false, message: 'Country configuration not found' });
+        return res.status(404).json({ success: false, message: `Country configuration for '${countryCode}' not found.` });
     }
 
     res.status(200).json({

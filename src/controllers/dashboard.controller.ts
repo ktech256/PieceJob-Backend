@@ -8,22 +8,35 @@ import Promotion from '../models/Promotion';
 import ReferralCampaign from '../models/ReferralCampaign';
 import Provider from '../models/Provider';
 import Service from '../models/Service';
+import Country from '../models/Country';
 import * as storageService from '../services/storage.service';
+import * as settingsService from '../services/settings.service';
 import { logger } from '../utils/logger';
 
 export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
-        const countryCode = req.user?.countryCode || 'ZA';
+        const countryCode = req.user?.countryCode;
+
+        if (!countryCode) {
+            return res.status(400).json({ success: false, message: 'Workspace/Country code not resolved for user.' });
+        }
 
         console.log(`[FORENSIC] DASHBOARD | Loading for User: ${userId} | Country: ${countryCode}`);
 
-        // 1. User Profile
-        const user = await User.findById(userId).select('firstName lastName email profilePhoto addresses savedLocations');
+        // 1. User Profile & Settings for currency fallback
+        const [user, settings, country] = await Promise.all([
+            User.findById(userId).select('firstName lastName email profilePhoto addresses savedLocations'),
+            settingsService.getSettings(countryCode),
+            Country.findOne({ code: countryCode })
+        ]);
+
         if (!user) {
             console.error(`[FORENSIC] DASHBOARD | User ${userId} not found`);
             return res.status(404).json({ success: false, message: 'User not found' });
         }
+
+        const currencySymbol = settings?.currencySymbol || country?.currency || '$';
 
         // 2. Wallet Balance
         const wallet = await Wallet.findOne({ userId });
@@ -31,7 +44,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             balanceMain: wallet?.balanceMain || 0,
             balanceCredit: wallet?.balanceCredit || 0,
             balanceReferral: wallet?.balanceReferral || 0,
-            currency: wallet?.currency || 'R'
+            currency: wallet?.currency || currencySymbol
         };
 
         // 3. Active Job
@@ -93,7 +106,8 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             status: j.status,
             serviceCode: j.serviceCode,
             amount: j.bookingFee + (j.serviceFee || 0),
-            createdAt: j.createdAt
+            createdAt: j.createdAt,
+            currency: walletData.currency // Attach currency for proper UI display
         }));
 
         // 6. Top Rated Providers Nearby
@@ -220,7 +234,8 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 referralCampaign,
                 latestActivity,
                 topRatedNearby,
-                recommendations: enhancedRecommendations.slice(0, 10)
+                recommendations: enhancedRecommendations.slice(0, 10),
+                currency: currencySymbol // GLOBAL CONTEXT FOR APP
             }
         });
     } catch (error: any) {
