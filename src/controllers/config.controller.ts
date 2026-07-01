@@ -202,6 +202,21 @@ export const getCountries = async (req: Request, res: Response) => {
     }
 };
 
+export const getLanguages = async (req: Request, res: Response) => {
+    try {
+        // Return supported system languages
+        const languages = [
+            { code: 'en', name: 'English' },
+            { code: 'zu', name: 'isiZulu' },
+            { code: 'xh', name: 'isiXhosa' },
+            { code: 'af', name: 'Afrikaans' }
+        ];
+        res.status(200).json({ success: true, data: languages });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch languages' });
+    }
+};
+
 export const globalSearch = async (req: Request, res: Response) => {
     try {
         const query = req.query.q as string;
