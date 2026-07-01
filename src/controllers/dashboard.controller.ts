@@ -73,17 +73,18 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             return obj;
         }));
 
-        // 4b. Referral Campaign
+        // 4b. Referral Campaign (Isolated by Country)
         const referralCampaign = await ReferralCampaign.findOne({
             isActive: true,
             startDate: { $lte: now },
-            endDate: { $gte: now }
+            endDate: { $gte: now },
+            countryCode
         }).sort({ createdAt: -1 });
 
-        // 5. Latest Activity
+        // 5. Latest Activity (Limited to 3 records as per Issue 1)
         const recentJobs = await Job.find({ customerId: userId })
             .sort({ createdAt: -1 })
-            .limit(10);
+            .limit(3);
 
         const latestActivity = recentJobs.map(j => ({
             _id: j._id,

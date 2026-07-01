@@ -8,6 +8,7 @@ export interface IReferralCampaign extends Document {
     startDate: Date;
     endDate: Date;
     isActive: boolean;
+    countryCode: string;
     bannerUrl?: string;
     termsUrl?: string;
     createdAt: Date;
@@ -22,10 +23,11 @@ const ReferralCampaignSchema: Schema = new Schema({
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     isActive: { type: Boolean, default: true },
+    countryCode: { type: String, required: true },
     bannerUrl: { type: String },
     termsUrl: { type: String }
 }, { timestamps: true });
 
-ReferralCampaignSchema.index({ isActive: 1, startDate: 1, endDate: 1 });
+ReferralCampaignSchema.index({ countryCode: 1, isActive: 1, startDate: 1, endDate: 1 });
 
 export default mongoose.model<IReferralCampaign>('ReferralCampaign', ReferralCampaignSchema);

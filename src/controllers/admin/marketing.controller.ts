@@ -13,6 +13,10 @@ export const createPromotion = async (req: AuthRequest, res: Response) => {
     try {
         const { title, description, imageUrl, ctaText, deepLink, startDate, endDate, priority, targetRole, countryCode } = req.body;
 
+        if (!countryCode) {
+            return res.status(400).json({ success: false, message: 'Country Code is required for workspace isolation.' });
+        }
+
         const promotion = new Promotion({
             title,
             description,
@@ -35,7 +39,15 @@ export const createPromotion = async (req: AuthRequest, res: Response) => {
 
 export const listPromotions = async (req: AuthRequest, res: Response) => {
     try {
-        const promotions = await Promotion.find().sort({ priority: -1, createdAt: -1 });
+        const countryCode = req.query.countryCode as string;
+        const query: any = {};
+
+        // Workspace isolation: Only show global or country-specific promos
+        if (countryCode && countryCode !== 'GLOBAL') {
+            query.$or = [{ countryCode }, { countryCode: 'GLOBAL' }];
+        }
+
+        const promotions = await Promotion.find(query).sort({ priority: -1, createdAt: -1 });
 
         // Signed URLs for images
         const data = await Promise.all(promotions.map(async (p) => {
@@ -69,19 +81,36 @@ export const deletePromotion = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const promo = await Promotion.findById(id);
-        if (promo?.imageUrl) await storageService.deleteFile(promo.imageUrl);
+        if (!promo) {
+            return res.status(404).json({ success: false, message: 'Promotion not found' });
+        }
+
+        if (promo.imageUrl) {
+            try {
+                await storageService.deleteFile(promo.imageUrl);
+            } catch (storageErr) {
+                logger.warn(`Failed to delete promotion image from storage: ${promo.imageUrl}`);
+            }
+        }
+
         await Promotion.findByIdAndDelete(id);
-        res.status(200).json({ success: true, message: 'Promotion deleted' });
+        res.status(200).json({ success: true, message: 'Promotion deleted successfully' });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-// --- CUSTOM PUSH NOTIFICATIONS ---
+// --- REFERRAL CAMPAIGNS ---
 
 export const listReferralCampaigns = async (req: AuthRequest, res: Response) => {
     try {
-        const campaigns = await ReferralCampaign.find().sort({ createdAt: -1 });
+        const countryCode = req.query.countryCode as string;
+        const query: any = {};
+        if (countryCode && countryCode !== 'GLOBAL') {
+            query.countryCode = countryCode;
+        }
+
+        const campaigns = await ReferralCampaign.find(query).sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: campaigns });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
@@ -90,7 +119,12 @@ export const listReferralCampaigns = async (req: AuthRequest, res: Response) => 
 
 export const createReferralCampaign = async (req: AuthRequest, res: Response) => {
     try {
-        const campaign = new ReferralCampaign(req.body);
+        const data = req.body;
+        if (!data.countryCode) {
+            return res.status(400).json({ success: false, message: 'Country Code required for referral campaign isolation.' });
+        }
+
+        const campaign = new ReferralCampaign(data);
         await campaign.save();
         res.status(201).json({ success: true, data: campaign });
     } catch (error: any) {
@@ -116,29 +150,32 @@ export const deleteReferralCampaign = async (req: AuthRequest, res: Response) =>
     }
 };
 
+// --- CUSTOM PUSH NOTIFICATIONS ---
+
 export const sendCustomPush = async (req: AuthRequest, res: Response) => {
     try {
-        const { target, title, body, imageUrl, deepLink, countryCode, province, city, serviceType, userId } = req.body;
+        const { target, title, body, imageUrl, deepLink, countryCode, province, city, userId } = req.body;
 
-        logger.info(`ADMIN | SEND_CUSTOM_PUSH | Target: ${target} | Title: ${title}`);
+        if (!countryCode || countryCode === 'GLOBAL') {
+            return res.status(400).json({ success: false, message: 'Explicit country code target is required to prevent cross-workspace dispatch leakage.' });
+        }
 
-        const query: any = {};
+        logger.info(`ADMIN | SEND_CUSTOM_PUSH | Target: ${target} | Workspace: ${countryCode} | Title: ${title}`);
+
+        const query: any = { countryCode };
+
         if (target === 'CUSTOMERS') query.role = UserRole.CUSTOMER;
         else if (target === 'PROVIDERS') query.role = UserRole.PROVIDER;
 
-        if (countryCode) query.countryCode = countryCode;
         if (province) query.province = province;
         if (city) query.city = city;
         if (userId) query._id = userId;
-
-        // Note: Filters by serviceType or location-radius would require more complex queries
-        // for now we stick to user-model fields.
 
         const users = await User.find(query).select('fcmToken role');
         const tokens = users.map(u => u.fcmToken).filter(t => !!t) as string[];
 
         if (tokens.length === 0) {
-            return res.status(404).json({ success: false, message: 'No users found with valid push tokens for this target.' });
+            return res.status(404).json({ success: false, message: `No users found in workspace '${countryCode}' with valid push tokens.` });
         }
 
         const payload = {
@@ -157,7 +194,7 @@ export const sendCustomPush = async (req: AuthRequest, res: Response) => {
             await notificationService.notifyDevices(chunk, title, body, payload);
         }
 
-        res.status(200).json({ success: true, message: `Notification sent to ${tokens.length} devices.` });
+        res.status(200).json({ success: true, message: `Notification sent to ${tokens.length} devices in workspace ${countryCode}.` });
     } catch (error: any) {
         logger.error(`ADMIN | SEND_CUSTOM_PUSH_FAILED | Error: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
