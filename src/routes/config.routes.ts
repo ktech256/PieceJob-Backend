@@ -12,6 +12,7 @@ router.get('/pricing/estimate', configController.getPriceEstimate);
 router.get('/zones/resolve', configController.resolveZone);
 router.get('/countries', configController.getCountries);
 router.get('/languages', configController.getLanguages);
+router.get('/search', configController.globalSearch);
 router.get('/integrations', integrationController.getPublicConfig);
 router.get('/payment-methods', paymentRoutingController.getAvailableMethods);
 

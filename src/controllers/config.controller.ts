@@ -197,22 +197,70 @@ export const getCountries = async (req: Request, res: Response) => {
 };
 
 export const getLanguages = async (req: Request, res: Response) => {
+    // ...
+};
+
+export const globalSearch = async (req: Request, res: Response) => {
     try {
-        const languages = [
-            { code: 'en', name: 'English' },
-            { code: 'af', name: 'Afrikaans' },
-            { code: 'zu', name: 'Zulu' },
-            { code: 'xh', name: 'Xhosa' },
-            { code: 'tn', name: 'Tswana' },
-            { code: 'fr', name: 'French' },
-            { code: 'pt', name: 'Portuguese' }
-        ];
+        const query = req.query.q as string;
+        if (!query || query.length < 2) {
+            return res.status(200).json({ success: true, data: [] });
+        }
+
+        const countryCode = req.headers['x-country-code'] as string || 'ZA';
+
+        // 1. Search Services
+        const services = await Service.find({
+            $or: [
+                { name: { $regex: query, $options: 'i' } },
+                { description: { $regex: query, $options: 'i' } }
+            ],
+            countryCode: { $in: ['GLOBAL', countryCode] },
+            isActive: true
+        }).limit(10);
+
+        // 2. Search Categories
+        const categories = await ServiceCategoryModel.find({
+            name: { $regex: query, $options: 'i' },
+            isActive: true
+        }).limit(5);
+
+        // 3. Search Providers
+        const providers = await Provider.find({
+            countryCode,
+            isOnline: true,
+            verificationStatus: 'APPROVED'
+        }).populate({
+            path: 'userId',
+            match: {
+                $or: [
+                    { firstName: { $regex: query, $options: 'i' } },
+                    { lastName: { $regex: query, $options: 'i' } }
+                ]
+            },
+            select: 'firstName lastName profilePhoto'
+        }).limit(10);
+
+        const foundProviders = providers.filter(p => p.userId !== null);
+
         res.status(200).json({
             success: true,
-            data: languages,
-            languages: languages // Keep legacy key
+            data: {
+                services,
+                categories,
+                providers: foundProviders.map(p => {
+                    const u = p.userId as any;
+                    return {
+                        id: p._id,
+                        name: `${u.firstName} ${u.lastName}`,
+                        photo: u.profilePhoto,
+                        rating: p.ratingAvg,
+                        services: p.servicesOffered
+                    };
+                })
+            }
         });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch languages', error });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
     }
 };

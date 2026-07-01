@@ -5,6 +5,7 @@ import Wallet from '../models/Wallet';
 import Job, { JobStatus } from '../models/Job';
 import Ledger from '../models/Ledger';
 import Promotion from '../models/Promotion';
+import ReferralCampaign from '../models/ReferralCampaign';
 import Provider from '../models/Provider';
 import Service from '../models/Service';
 import * as storageService from '../services/storage.service';
@@ -49,6 +50,13 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             if (obj.imageUrl) obj.imageUrl = await storageService.getSignedUrl(obj.imageUrl);
             return obj;
         }));
+
+        // 4b. Referral Campaign
+        const referralCampaign = await ReferralCampaign.findOne({
+            isActive: true,
+            startDate: { $lte: now },
+            endDate: { $gte: now }
+        }).sort({ createdAt: -1 });
 
         // 5. Latest Activity (Last 5 jobs or ledger entries)
         const recentJobs = await Job.find({ customerId: userId })
@@ -138,6 +146,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 wallet: walletData,
                 activeJob,
                 promotions,
+                referralCampaign,
                 latestActivity,
                 topRatedNearby,
                 recommendations: finalRecommendations

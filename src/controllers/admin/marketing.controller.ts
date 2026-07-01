@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import Promotion from '../../models/Promotion';
+import ReferralCampaign from '../../models/ReferralCampaign';
 import User, { UserRole } from '../../models/User';
 import * as storageService from '../../services/storage.service';
 import * as notificationService from '../../services/notification.service';
@@ -77,6 +78,43 @@ export const deletePromotion = async (req: AuthRequest, res: Response) => {
 };
 
 // --- CUSTOM PUSH NOTIFICATIONS ---
+
+export const listReferralCampaigns = async (req: AuthRequest, res: Response) => {
+    try {
+        const campaigns = await ReferralCampaign.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: campaigns });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const createReferralCampaign = async (req: AuthRequest, res: Response) => {
+    try {
+        const campaign = new ReferralCampaign(req.body);
+        await campaign.save();
+        res.status(201).json({ success: true, data: campaign });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateReferralCampaign = async (req: AuthRequest, res: Response) => {
+    try {
+        const campaign = await ReferralCampaign.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.status(200).json({ success: true, data: campaign });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const deleteReferralCampaign = async (req: AuthRequest, res: Response) => {
+    try {
+        await ReferralCampaign.findByIdAndDelete(req.params.id);
+        res.status(200).json({ success: true, message: 'Campaign deleted' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 export const sendCustomPush = async (req: AuthRequest, res: Response) => {
     try {

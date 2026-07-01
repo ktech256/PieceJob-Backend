@@ -11,6 +11,11 @@ router.get('/promotions', authenticate, authorize([UserRole.ADMIN, UserRole.SUPE
 router.patch('/promotions/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.updatePromotion);
 router.delete('/promotions/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.deletePromotion);
 
+router.get('/referrals', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.listReferralCampaigns);
+router.post('/referrals', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.createReferralCampaign);
+router.patch('/referrals/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.updateReferralCampaign);
+router.delete('/referrals/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.deleteReferralCampaign);
+
 router.post('/notifications/push', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.sendCustomPush);
 
 export default router;
