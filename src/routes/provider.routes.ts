@@ -26,6 +26,7 @@ router.patch('/notifications', authenticate, authorize([UserRole.PROVIDER]), pro
 router.get('/availability', authenticate, authorize([UserRole.PROVIDER]), providerController.getAvailability);
 router.patch('/availability', authenticate, authorize([UserRole.PROVIDER]), providerController.updateAvailability);
 router.get('/reviews', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyReviews);
+router.get('/jobs', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyJobs);
 router.get('/dashboard-stats', authenticate, authorize([UserRole.PROVIDER]), providerController.getDashboardStats);
 router.get('/jobs/broadcasted', authenticate, jobController.getAvailableJobs);
 router.get('/verification/status', authenticate, authorize([UserRole.PROVIDER]), verificationController.getMyStatus);

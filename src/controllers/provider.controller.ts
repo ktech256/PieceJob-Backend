@@ -509,6 +509,49 @@ export const updateNotificationSettings = async (req: AuthRequest, res: Response
     }
 };
 
+export const getMyJobs = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const { status } = req.query;
+
+        const query: any = { providerId: userId };
+        if (status) {
+            query.status = status === 'ACTIVE'
+                ? { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
+                : status;
+        }
+
+        const jobs = await Job.find(query)
+            .sort({ createdAt: -1 })
+            .populate('customerId', 'firstName lastName profilePhoto phoneNumber')
+            .limit(100);
+
+        const formatted = await Promise.all(jobs.map(async (j) => {
+            const obj: any = j.toObject();
+            if (obj.customerId && typeof obj.customerId === 'object') {
+                if (obj.customerId.profilePhoto) {
+                    obj.customerId.profilePicture = await storageService.getSignedUrl(obj.customerId.profilePhoto);
+                }
+                obj.customerInfo = {
+                    firstName: obj.customerId.firstName,
+                    lastName: obj.customerId.lastName,
+                    profilePicture: obj.customerId.profilePicture,
+                    phoneNumber: obj.customerId.phoneNumber
+                };
+            }
+            return {
+                ...obj,
+                id: obj._id.toString(),
+                serviceName: obj.serviceName || obj.serviceCode
+            };
+        }));
+
+        res.status(200).json({ success: true, data: formatted });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch jobs', error });
+    }
+};
+
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;

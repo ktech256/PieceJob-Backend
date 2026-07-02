@@ -42,6 +42,42 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const getConversations = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+
+        // Find all jobs where this user is a participant
+        const jobs = await Job.find({
+            $or: [{ customerId: userId }, { providerId: userId }],
+            status: { $nin: ['DRAFT', 'REQUEST_CREATED', 'PAYMENT_PENDING', 'BROADCASTED'] }
+        }).populate('customerId', 'firstName lastName profilePhoto')
+          .populate('providerId', 'firstName lastName profilePhoto');
+
+        const conversations = await Promise.all(jobs.map(async (job) => {
+            const lastMessage = await Message.findOne({ jobId: job._id })
+                .sort({ createdAt: -1 });
+
+            const otherUser = job.customerId.toString() === userId ? job.providerId : job.customerId;
+
+            return {
+                jobId: job._id,
+                serviceName: job.serviceName || job.serviceCode,
+                status: job.status,
+                otherUser: otherUser,
+                lastMessage: lastMessage?.text || (lastMessage?.mediaType ? 'Sent an attachment' : 'No messages yet'),
+                lastMessageTime: lastMessage?.createdAt || job.updatedAt,
+                unreadCount: await Message.countDocuments({ jobId: job._id, receiverId: userId, isRead: false })
+            };
+        }));
+
+        conversations.sort((a, b) => b.lastMessageTime.getTime() - a.lastMessageTime.getTime());
+
+        res.status(200).json({ success: true, data: conversations });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch conversations', error });
+    }
+};
+
 export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId, receiverId, text, mediaUrl, mediaType } = req.body;
