@@ -158,11 +158,39 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
       const targetUserId = (p.userId as any)._id || p.userId;
       const user = p.userId as any;
 
+      const distanceMeters = calculateDistance(p.location.coordinates, job.location.coordinates);
+      let distanceLabel = 'Nearby';
+      if (distanceMeters !== Infinity && !isNaN(distanceMeters)) {
+          const distanceKm = (distanceMeters / 1000).toFixed(1);
+          distanceLabel = distanceMeters < 1000 ? `${Math.round(distanceMeters)}m away` : `${distanceKm}km away`;
+      }
+
+      // HIDE SPECIFIC ADDRESS: "139 Erasmus St, Flora Park, Polokwane, 0699," -> "Flora Park, Polokwane"
+      const rawAddress = job.location.address || '';
+      const addressParts = rawAddress.split(',').map(p => p.trim()).filter(p => p.length > 0);
+
+      let obscuredAddress = 'Nearby Location';
+      if (addressParts.length >= 3) {
+          obscuredAddress = `${addressParts[1]}, ${addressParts[2]}`;
+      } else if (addressParts.length >= 1) {
+          obscuredAddress = addressParts[0];
+      }
+
+      const obscuredLocation = {
+          type: 'Point',
+          coordinates: job.location.coordinates,
+          address: obscuredAddress
+      };
+
+      console.log(`[PRIVACY_AUDIT] Obscuring address for provider ${targetUserId}: "${rawAddress}" -> "${obscuredAddress}" | Distance: ${distanceLabel}`);
+
       emitToUser(targetUserId.toString(), 'NEW_JOB_BROADCAST', {
         jobId: job.id,
         serviceCode: job.serviceCode,
         serviceName: job.serviceName,
-        location: job.location,
+        location: obscuredLocation,
+        address: obscuredAddress,
+        distance: distanceLabel,
         isForSomeoneElse: job.isForSomeoneElse,
         recipientName: job.recipientName
       });
@@ -171,16 +199,15 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
       notificationService.notifyUser(
           targetUserId,
           'New Job Available',
-          `A new ${job.serviceName || job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`,
+          `A new ${job.serviceName || job.serviceCode} request is ${distanceLabel}.`,
           {
               type: 'NEW_JOB_BROADCAST',
               jobId: job.id,
               serviceCode: job.serviceCode,
               serviceName: job.serviceName,
-              address: job.location.address,
+              address: obscuredAddress,
               recipientName: job.recipientName,
-              distance: 'Nearby',
-              earnings: `R ${job.bookingFee}`
+              distance: distanceLabel
           },
           true // Send as Data-Only message for custom handling
       );

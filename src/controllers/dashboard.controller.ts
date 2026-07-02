@@ -3,12 +3,13 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User';
 import Wallet from '../models/Wallet';
 import Job, { JobStatus } from '../models/Job';
-import Ledger from '../models/Ledger';
+import Ledger, { TransactionType } from '../models/Ledger';
 import Promotion from '../models/Promotion';
 import ReferralCampaign from '../models/ReferralCampaign';
 import Provider from '../models/Provider';
 import Service from '../models/Service';
 import Country from '../models/Country';
+import mongoose from 'mongoose';
 import * as storageService from '../services/storage.service';
 import * as settingsService from '../services/settings.service';
 import { logger } from '../utils/logger';
@@ -268,6 +269,144 @@ export const getCustomerPromotions = async (req: AuthRequest, res: Response) => 
 
         res.status(200).json({ success: true, data: promotions });
     } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const countryCode = req.user?.countryCode;
+
+        if (!countryCode) {
+            return res.status(400).json({ success: false, message: 'Workspace/Country code not resolved.' });
+        }
+
+        const [user, provider, country] = await Promise.all([
+            User.findById(userId).select('firstName lastName email profilePhoto role countryCode'),
+            Provider.findOne({ userId }).populate('userId', 'firstName lastName profilePhoto'),
+            Country.findOne({ code: countryCode })
+        ]);
+
+        if (!user || !provider) {
+            return res.status(404).json({ success: false, message: 'Provider profile not found.' });
+        }
+
+        const currencySymbol = country?.currencySymbol || country?.currency || 'R';
+
+        // 1. Stats
+        const now = new Date();
+        const startOfToday = new Date(now.setHours(0, 0, 0, 0));
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const monthAgo = new Date();
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+        const [earningsToday, earningsWeekly, earningsMonthly, jobStatsAgg] = await Promise.all([
+            Ledger.aggregate([
+                { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: startOfToday }, status: 'COMPLETED' } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]),
+            Ledger.aggregate([
+                { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: weekAgo }, status: 'COMPLETED' } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]),
+            Ledger.aggregate([
+                { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: monthAgo }, status: 'COMPLETED' } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]),
+            Job.aggregate([
+                { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
+                { $group: { _id: "$status", count: { $sum: 1 } } }
+            ])
+        ]);
+
+        const jobsByStatus: any = {};
+        jobStatsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
+
+        const stats = {
+            earningsToday: earningsToday[0]?.total || 0,
+            earningsWeekly: earningsWeekly[0]?.total || 0,
+            earningsMonthly: earningsMonthly[0]?.total || 0,
+            jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
+            jobsActive: (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0),
+            acceptanceRate: provider.performance.acceptanceRate || 0,
+            completionRate: provider.performance.completionRate || 0,
+            arrivalRate: provider.performance.arrivalRate || 0,
+            tier: provider.tier,
+            tierProgress: 0.75, // Logic for progression can be added
+            rating: provider.ratingAvg,
+            verificationStatus: provider.verificationStatus,
+            isOnline: provider.isOnline
+        };
+
+        // 2. Active Job
+        const activeJobRaw = await Job.findOne({
+            providerId: userId,
+            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
+        }).sort({ updatedAt: -1 }).populate('customerId', 'firstName lastName profilePhoto');
+
+        let activeJob = null;
+        if (activeJobRaw) {
+            const aj = activeJobRaw.toObject() as any;
+            const c = aj.customerId as any;
+            if (c && typeof c === 'object') {
+                aj.customerId = c._id;
+                aj.customerInfo = {
+                    firstName: c.firstName,
+                    lastName: c.lastName,
+                    profilePicture: c.profilePhoto ? await storageService.getSignedUrl(c.profilePhoto) : null
+                };
+            }
+            activeJob = aj;
+        }
+
+        // 3. Recent Activity (Latest 5)
+        const [recentJobs, recentLedgers] = await Promise.all([
+            Job.find({ providerId: userId }).sort({ createdAt: -1 }).limit(5),
+            Ledger.find({ toUserId: userId }).sort({ createdAt: -1 }).limit(5)
+        ]);
+
+        const activities = [
+            ...recentJobs.map(j => ({
+                id: j._id,
+                type: 'JOB',
+                status: j.status,
+                title: `${j.status.replace('_', ' ')}: ${j.serviceName || j.serviceCode}`,
+                amount: j.serviceFee || 0,
+                createdAt: j.createdAt
+            })),
+            ...recentLedgers.map(l => ({
+                id: l._id,
+                type: 'TRANSACTION',
+                status: l.status,
+                title: l.type.replace('_', ' '),
+                amount: l.amount,
+                createdAt: l.createdAt
+            }))
+        ]
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, 5);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                profile: {
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    email: user.email,
+                    photo: user.profilePhoto ? await storageService.getSignedUrl(user.profilePhoto) : null,
+                    role: user.role
+                },
+                stats,
+                activeJob,
+                recentActivity: activities,
+                currency: currencySymbol
+            }
+        });
+
+    } catch (error: any) {
+        logger.error(`DASHBOARD | GET_PROVIDER_FAILED | Error: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 };

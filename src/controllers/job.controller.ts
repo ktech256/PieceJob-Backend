@@ -217,7 +217,25 @@ export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
         const jobs = await Job.find({ status: JobStatus.BROADCASTED }).limit(50);
         res.status(200).json({
             success: true,
-            data: jobs.map(j => sanitizeJobForMobile(j))
+            data: jobs.map(j => {
+                const sanitized = sanitizeJobForMobile(j);
+
+                // Privacy Hardening for unaccepted jobs
+                const rawAddress = sanitized.location?.address || sanitized.address || '';
+                const addressParts = rawAddress.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+
+                let obscured = 'Nearby Location';
+                if (addressParts.length >= 3) {
+                    obscured = `${addressParts[1]}, ${addressParts[2]}`;
+                } else if (addressParts.length >= 1) {
+                    obscured = addressParts[0];
+                }
+
+                sanitized.address = obscured;
+                if (sanitized.location) sanitized.location.address = obscured;
+
+                return sanitized;
+            })
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch available jobs', error });

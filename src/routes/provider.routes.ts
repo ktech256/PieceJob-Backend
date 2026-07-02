@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import * as providerController from '../controllers/provider.controller';
 import * as jobController from '../controllers/job.controller';
+import * as dashboardController from '../controllers/dashboard.controller';
 import * as verificationController from '../controllers/provider/verification.controller';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { UserRole } from '../models/User';
 
 const router = Router();
 
+router.get('/dashboard', authenticate, authorize([UserRole.PROVIDER]), dashboardController.getProviderDashboard);
 router.get('/profile', authenticate, authorize([UserRole.PROVIDER]), providerController.getProviderProfile);
 router.patch('/profile', authenticate, authorize([UserRole.PROVIDER]), providerController.updateProfile);
 router.get('/services', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyServices);
