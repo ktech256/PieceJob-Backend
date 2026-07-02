@@ -7,7 +7,7 @@ import Call from '../../models/Call';
 import Chat from '../../models/Chat';
 import Provider from '../../models/Provider';
 import Review from '../../models/Review';
-import { emitJobUpdate, emitToUser } from '../../socket/socket.service';
+import { emitJobUpdate, emitToUser, emitToWorkspace } from '../../socket/socket.service';
 import * as notificationService from '../../services/notification.service';
 import { logger } from '../../utils/logger';
 import mongoose from 'mongoose';
@@ -107,6 +107,7 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
         // Notifications & Sockets
         const statusPayload = { jobId: job.id, status, adminOverride: true, reason };
         emitJobUpdate(job.id, 'status_updated', statusPayload);
+        emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
         emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
         if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
 

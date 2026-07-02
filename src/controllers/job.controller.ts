@@ -9,7 +9,7 @@ import * as financialService from '../services/financial.service';
 import Provider from '../models/Provider';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
-import { emitAdminUpdate, emitJobUpdate, emitToUser } from '../socket/socket.service';
+import { emitAdminUpdate, emitJobUpdate, emitToUser, emitToWorkspace } from '../socket/socket.service';
 
 import * as performanceService from '../services/provider-performance.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
@@ -357,6 +357,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${JobStatus.ACCEPTED} | Target User: ${job.customerId}`);
     emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', statusPayload);
     emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+    emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
 
     // Notify Customer via Socket (Job Room)
     console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${JobStatus.ACCEPTED}`);
@@ -485,6 +486,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     // 1. Notify participants via their private user rooms (Global Observer)
     emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
     if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+    emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
 
     // 2. Notify the specific job room (Tracking Screen)
     console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${status}`);
@@ -593,6 +595,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
 
       // Notify both via Socket
       emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
+      emitToWorkspace(job.countryCode, 'status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
 
       logger.info(`JOB_CANCEL_COMPLETED | Job: ${jobId}`);
       res.status(200).json({ success: true, message: 'Job cancelled successfully' });
