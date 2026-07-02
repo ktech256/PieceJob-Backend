@@ -18,6 +18,7 @@ import * as notificationService from '../services/notification.service';
 import * as testUserService from '../services/test-user.service';
 import * as paymentGatewayService from '../services/payment-gateway.service';
 import * as userContextService from '../services/user-context.service';
+import * as auditService from '../services/audit.service';
 import { logger } from '../utils/logger';
 import { calculateDistance } from '../utils/location';
 
@@ -536,12 +537,16 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
           const diffSeconds = (now.getTime() - acceptedTime) / 1000;
 
           if (role === 'PROVIDER' && diffSeconds > 90) {
-              await AuditLog.create({
+              await auditService.logAdminAction({
+                  countryCode: job.countryCode,
+                  adminId: 'SYSTEM',
+                  adminRole: 'SYSTEM',
                   action: 'JOB_AUTO_CANCEL',
-                  targetId: jobId,
-                  targetCollection: 'Jobs',
-                  newValue: { status: JobStatus.CANCELLED },
-                  ipAddress: 'System'
+                  entityType: 'Jobs',
+                  entityId: jobId,
+                  afterState: { status: JobStatus.CANCELLED },
+                  ipAddress: 'System',
+                  systemSource: 'API'
               });
           }
       }

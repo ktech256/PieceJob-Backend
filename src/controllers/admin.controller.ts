@@ -7,6 +7,7 @@ import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
 
 import * as testUserService from '../services/test-user.service';
+import * as auditService from '../services/audit.service';
 
 export const cleanupTestUsers = async (req: AuthRequest, res: Response) => {
     try {
@@ -70,14 +71,17 @@ export const verifyProvider = async (req: AuthRequest, res: Response) => {
     await provider.save();
 
     // SECTION 13: System Ledger Record (Audit Log)
-    await AuditLog.create({
-      adminId: req.user?.userId,
-      action: 'PROVIDER_VERIFICATION',
-      targetId: providerId,
-      targetCollection: 'Providers',
-      previousValue: { status: previousStatus },
-      newValue: { status, reason },
-      ipAddress: req.ip
+    await auditService.logAdminAction({
+        countryCode: provider.countryCode,
+        adminId: req.user?.userId as string,
+        adminRole: req.user?.role as string,
+        action: 'PROVIDER_VERIFICATION',
+        entityType: 'Providers',
+        entityId: providerId,
+        beforeState: { status: previousStatus },
+        afterState: { status, reason },
+        ipAddress: req.ip,
+        systemSource: 'ADMIN_DASHBOARD'
     });
 
     res.status(200).json({ success: true, message: `Provider ${status}` });

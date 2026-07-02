@@ -14,14 +14,25 @@ export const logAdminAction = async (data: {
     ipAddress?: string;
     deviceInfo?: string;
     systemSource?: string;
-}) => {
+}, session?: mongoose.ClientSession) => {
+    const { countryCode, adminId, adminRole, action, entityType, entityId, beforeState, afterState, ipAddress, deviceInfo, systemSource } = data;
+
     return await new AuditLog({
         auditId: `AUD-${uuidv4().split('-')[0].toUpperCase()}`,
         auditType: AuditType.ADMIN_ACTION,
-        systemSource: data.systemSource || 'ADMIN_DASHBOARD',
-        timestampUTC: new Date(),
-        ...data
-    }).save();
+        systemSource: systemSource || 'ADMIN_DASHBOARD',
+        countryCode,
+        adminId: (adminId && adminId !== 'SYSTEM' && mongoose.Types.ObjectId.isValid(adminId)) ? adminId : undefined,
+        adminRole,
+        action,
+        entityType,
+        entityId,
+        beforeState,
+        afterState,
+        ipAddress,
+        deviceInfo,
+        timestampUTC: new Date()
+    }).save({ session });
 };
 
 export const logFinancialMutation = async (data: {
@@ -42,14 +53,19 @@ export const logFinancialMutation = async (data: {
     adminId?: string;
     systemSource?: string;
 }, session?: mongoose.ClientSession) => {
-    const log = new AuditLog({
+    const { countryCode, userId, action, financialInfo, adminId, systemSource } = data;
+
+    return await new AuditLog({
         auditId: `FIN-${uuidv4().split('-')[0].toUpperCase()}`,
         auditType: AuditType.FINANCIAL_MUTATION,
-        systemSource: data.systemSource || 'API',
-        timestampUTC: new Date(),
-        ...data
-    });
-    return await log.save({ session });
+        systemSource: systemSource || 'API',
+        countryCode,
+        userId,
+        action,
+        financialInfo,
+        adminId: (adminId && adminId !== 'SYSTEM' && mongoose.Types.ObjectId.isValid(adminId as string)) ? adminId : undefined,
+        timestampUTC: new Date()
+    }).save({ session });
 };
 
 export const logUserModification = async (data: {
@@ -65,12 +81,21 @@ export const logUserModification = async (data: {
     deviceInfo?: string;
     systemSource?: string;
 }) => {
+    const { countryCode, userId, action, modificationType, beforeState, afterState, adminId, ipAddress, deviceInfo, systemSource } = data;
+
     return await new AuditLog({
         auditId: `USR-${uuidv4().split('-')[0].toUpperCase()}`,
         auditType: AuditType.USER_MODIFICATION,
-        systemSource: data.systemSource || 'API',
-        timestampUTC: new Date(),
-        ...data
+        systemSource: systemSource || 'API',
+        countryCode,
+        userId,
+        action,
+        beforeState,
+        afterState,
+        adminId: (adminId && adminId !== 'SYSTEM' && mongoose.Types.ObjectId.isValid(adminId as string)) ? adminId : undefined,
+        ipAddress,
+        deviceInfo,
+        timestampUTC: new Date()
     }).save();
 };
 
@@ -87,12 +112,18 @@ export const logChatAccess = async (data: {
     ipAddress?: string;
     systemSource?: string;
 }) => {
+    const { countryCode, adminId, adminRole, chatInfo, ipAddress, systemSource } = data;
+
     return await new AuditLog({
         auditId: `CHT-${uuidv4().split('-')[0].toUpperCase()}`,
         auditType: AuditType.CHAT_ACCESS,
         action: 'CHAT_VIEW',
-        systemSource: data.systemSource || 'ADMIN_DASHBOARD',
-        timestampUTC: new Date(),
-        ...data
+        systemSource: systemSource || 'ADMIN_DASHBOARD',
+        countryCode,
+        adminId: (adminId && adminId !== 'SYSTEM' && mongoose.Types.ObjectId.isValid(adminId)) ? adminId : undefined,
+        adminRole,
+        chatInfo,
+        ipAddress,
+        timestampUTC: new Date()
     }).save();
 };

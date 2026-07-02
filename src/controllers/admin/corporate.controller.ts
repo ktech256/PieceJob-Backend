@@ -5,7 +5,7 @@ import User, { UserRole } from '../../models/User';
 import CorporateSchedule from '../../models/CorporateSchedule';
 import Job, { JobStatus } from '../../models/Job';
 import Ledger from '../../models/Ledger';
-import AuditLog from '../../models/AuditLog';
+import * as auditService from '../../services/audit.service';
 
 export const listCompanies = async (req: AuthRequest, res: Response) => {
     try {
@@ -48,15 +48,20 @@ export const updateCompanyStatus = async (req: AuthRequest, res: Response) => {
         const oldCompany = await Company.findById(id);
         const company = await Company.findByIdAndUpdate(id, { status }, { new: true });
 
-        await AuditLog.create({
-            adminId: req.user?.userId,
-            action: 'COMPANY_STATUS_UPDATE',
-            targetId: id,
-            targetCollection: 'Companies',
-            previousValue: { status: oldCompany?.status },
-            newValue: { status },
-            ipAddress: req.ip
-        });
+        if (company) {
+            await auditService.logAdminAction({
+                countryCode: company.countryCode,
+                adminId: req.user?.userId as string,
+                adminRole: req.user?.role as string,
+                action: 'COMPANY_STATUS_UPDATE',
+                entityType: 'Companies',
+                entityId: id,
+                beforeState: { status: oldCompany?.status },
+                afterState: { status },
+                ipAddress: req.ip,
+                systemSource: 'ADMIN_DASHBOARD'
+            });
+        }
 
         res.status(200).json({ success: true, company });
     } catch (error) {
@@ -85,14 +90,19 @@ export const updateDocumentStatus = async (req: AuthRequest, res: Response) => {
             { new: true }
         );
 
-        await AuditLog.create({
-            adminId: req.user?.userId,
-            action: 'COMPANY_DOC_STATUS_UPDATE',
-            targetId: `${id}/${docId}`,
-            targetCollection: 'Companies',
-            newValue: { status },
-            ipAddress: req.ip
-        });
+        if (company) {
+            await auditService.logAdminAction({
+                countryCode: company.countryCode,
+                adminId: req.user?.userId as string,
+                adminRole: req.user?.role as string,
+                action: 'COMPANY_DOC_STATUS_UPDATE',
+                entityType: 'Companies',
+                entityId: `${id}/${docId}`,
+                afterState: { status },
+                ipAddress: req.ip,
+                systemSource: 'ADMIN_DASHBOARD'
+            });
+        }
 
         res.status(200).json({ success: true, company });
     } catch (error) {

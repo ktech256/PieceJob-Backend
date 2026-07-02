@@ -8,7 +8,7 @@ import Provider from '../models/Provider';
 import Chat from '../models/Chat';
 import { emitToUser, emitAdminUpdate } from '../socket/socket.service';
 import * as notificationQueue from './notification.queue';
-import AuditLog from '../models/AuditLog';
+import * as auditService from './audit.service';
 
 const getNextIncidentSequence = async (countryCode: string) => {
     const counter = await Counter.findOneAndUpdate(
@@ -168,14 +168,17 @@ export const updateIncidentStatus = async (id: string, status: SosStatus, adminI
     );
 
     // Audit Log
-    await AuditLog.create({
-        adminId: adminId as any,
+    await auditService.logAdminAction({
+        countryCode: incident.countryCode,
+        adminId,
+        adminRole: 'ADMIN', // Fallback
         action: `SOS_STATUS_${status}`,
-        targetId: id,
-        targetCollection: 'SosIncidents',
-        previousValue: { status: oldStatus },
-        newValue: { status, reason },
-        ipAddress: 'System'
+        entityType: 'SosIncidents',
+        entityId: id,
+        beforeState: { status: oldStatus },
+        afterState: { status, reason },
+        ipAddress: 'System',
+        systemSource: 'ADMIN_DASHBOARD'
     });
 
     if (status === SosStatus.RESOLVED) {

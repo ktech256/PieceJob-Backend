@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import Zone from '../../models/Zone';
-import AuditLog from '../../models/AuditLog';
+import * as auditService from '../../services/audit.service';
 import PricingRule from '../../models/PricingRule';
 
 const validatePolygon = (boundary: any) => {
@@ -53,13 +53,16 @@ export const createZone = async (req: AuthRequest, res: Response) => {
 
     await zone.save();
 
-    await AuditLog.create({
-        adminId: req.user?.userId,
+    await auditService.logAdminAction({
+        countryCode: zone.countryCode,
+        adminId: req.user?.userId as string,
+        adminRole: req.user?.role as string,
         action: 'ZONE_CREATED',
-        targetId: zone.id,
-        targetCollection: 'Zones',
-        newValue: zone.toObject(),
-        ipAddress: req.ip
+        entityType: 'Zones',
+        entityId: zone.id,
+        afterState: zone.toObject(),
+        ipAddress: req.ip,
+        systemSource: 'ADMIN_DASHBOARD'
     });
 
     res.status(201).json({ success: true, zone });
@@ -85,15 +88,20 @@ export const updateZone = async (req: AuthRequest, res: Response) => {
             updatedBy: req.user?.userId
         }, { new: true });
 
-        await AuditLog.create({
-            adminId: req.user?.userId,
-            action: 'ZONE_UPDATED',
-            targetId: id,
-            targetCollection: 'Zones',
-            previousValue: oldZone.toObject(),
-            newValue: zone?.toObject(),
-            ipAddress: req.ip
-        });
+        if (zone) {
+            await auditService.logAdminAction({
+                countryCode: zone.countryCode,
+                adminId: req.user?.userId as string,
+                adminRole: req.user?.role as string,
+                action: 'ZONE_UPDATED',
+                entityType: 'Zones',
+                entityId: id,
+                beforeState: oldZone.toObject(),
+                afterState: zone.toObject(),
+                ipAddress: req.ip,
+                systemSource: 'ADMIN_DASHBOARD'
+            });
+        }
 
         res.status(200).json({ success: true, zone });
     } catch (error: any) {
@@ -116,14 +124,19 @@ export const deleteZone = async (req: AuthRequest, res: Response) => {
 
         const zone = await Zone.findByIdAndDelete(id);
 
-        await AuditLog.create({
-            adminId: req.user?.userId,
-            action: 'ZONE_DELETED',
-            targetId: id,
-            targetCollection: 'Zones',
-            previousValue: zone?.toObject(),
-            ipAddress: req.ip
-        });
+        if (zone) {
+            await auditService.logAdminAction({
+                countryCode: zone.countryCode,
+                adminId: req.user?.userId as string,
+                adminRole: req.user?.role as string,
+                action: 'ZONE_DELETED',
+                entityType: 'Zones',
+                entityId: id,
+                beforeState: zone.toObject(),
+                ipAddress: req.ip,
+                systemSource: 'ADMIN_DASHBOARD'
+            });
+        }
 
         res.status(200).json({ success: true, message: 'Zone deleted' });
     } catch (error: any) {
@@ -138,14 +151,19 @@ export const toggleZoneStatus = async (req: AuthRequest, res: Response) => {
 
         const zone = await Zone.findByIdAndUpdate(id, { isActive }, { new: true });
 
-        await AuditLog.create({
-            adminId: req.user?.userId,
-            action: isActive ? 'ZONE_ENABLED' : 'ZONE_DISABLED',
-            targetId: id,
-            targetCollection: 'Zones',
-            newValue: { isActive },
-            ipAddress: req.ip
-        });
+        if (zone) {
+            await auditService.logAdminAction({
+                countryCode: zone.countryCode,
+                adminId: req.user?.userId as string,
+                adminRole: req.user?.role as string,
+                action: isActive ? 'ZONE_ENABLED' : 'ZONE_DISABLED',
+                entityType: 'Zones',
+                entityId: id,
+                afterState: { isActive },
+                ipAddress: req.ip,
+                systemSource: 'ADMIN_DASHBOARD'
+            });
+        }
 
         res.status(200).json({ success: true, zone });
     } catch (error: any) {

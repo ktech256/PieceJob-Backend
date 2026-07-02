@@ -56,9 +56,9 @@ export interface IAuditLog extends Document {
 }
 
 const AuditLogSchema: Schema = new Schema({
-  auditId: { type: String, required: true, unique: true },
-  countryCode: { type: String, required: true },
-  auditType: { type: String, enum: Object.values(AuditType), required: true },
+  auditId: { type: String, unique: true, default: () => `AUD-${Math.random().toString(36).substr(2, 9).toUpperCase()}` },
+  countryCode: { type: String, default: 'ZA' },
+  auditType: { type: String, enum: Object.values(AuditType), default: AuditType.ADMIN_ACTION },
 
   adminId: { type: Schema.Types.ObjectId, ref: 'User' },
   adminRole: { type: String },
@@ -92,7 +92,7 @@ const AuditLogSchema: Schema = new Schema({
 
   ipAddress: { type: String },
   deviceInfo: { type: String },
-  systemSource: { type: String, required: true },
+  systemSource: { type: String, default: 'API' },
   timestampUTC: { type: Date, default: Date.now }
 }, { timestamps: true });
 

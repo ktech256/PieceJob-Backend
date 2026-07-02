@@ -4,7 +4,7 @@ import Job, { JobStatus } from '../models/Job';
 import Wallet from '../models/Wallet';
 import Ledger, { TransactionType } from '../models/Ledger';
 import { v4 as uuidv4 } from 'uuid';
-import AuditLog from '../models/AuditLog';
+import * as auditService from './audit.service';
 
 export const settleEscrow = async (
     ticketId: string,
@@ -97,14 +97,17 @@ export const settleEscrow = async (
         await job.save({ session });
 
         // 4. Audit Log
-        await AuditLog.create([{
+        await auditService.logAdminAction({
+            countryCode: job.countryCode,
             adminId,
+            adminRole: 'ADMIN', // Fallback, could be refined
             action: 'DISPUTE_SETTLEMENT',
-            targetId: ticketId,
-            targetCollection: 'SupportTickets',
-            newValue: { decision, customerAmount, providerAmount, reason },
-            ipAddress: 'System'
-        }], { session });
+            entityType: 'SupportTickets',
+            entityId: ticketId,
+            afterState: { decision, customerAmount, providerAmount, reason },
+            ipAddress: 'System',
+            systemSource: 'ADMIN_DASHBOARD'
+        }, session);
 
         await session.commitTransaction();
         return { success: true };

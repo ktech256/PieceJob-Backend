@@ -9,6 +9,7 @@ import Provider from '../../models/Provider';
 import Review from '../../models/Review';
 import { emitJobUpdate, emitToUser, emitToWorkspace } from '../../socket/socket.service';
 import * as notificationService from '../../services/notification.service';
+import * as auditService from '../../services/audit.service';
 import { logger } from '../../utils/logger';
 import mongoose from 'mongoose';
 
@@ -94,14 +95,17 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
         await job.save();
 
         // Audit Log
-        await AuditLog.create({
-            adminId: req.user?.userId,
+        await auditService.logAdminAction({
+            countryCode: job.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
             action: 'ADMIN_JOB_OVERRIDE',
-            targetId: jobId,
-            targetCollection: 'Jobs',
-            previousValue: { status: previousStatus },
-            newValue: { status, reason },
-            ipAddress: req.ip
+            entityType: 'Jobs',
+            entityId: jobId,
+            beforeState: { status: previousStatus },
+            afterState: { status, reason },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
         });
 
         // Notifications & Sockets

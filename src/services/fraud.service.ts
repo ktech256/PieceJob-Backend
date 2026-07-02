@@ -6,8 +6,7 @@ import User from '../models/User';
 import ServiceExpectedDuration from '../models/ServiceExpectedDuration';
 import { v4 as uuidv4 } from 'uuid';
 import { emitAdminUpdate } from '../socket/socket.service';
-
-import AuditLog from '../models/AuditLog';
+import * as auditService from './audit.service';
 
 export const analyzeJobCompletion = async (jobId: string) => {
     const job = await Job.findById(jobId);
@@ -192,13 +191,16 @@ export const applyShadowBan = async (providerId: string, reason: string) => {
     provider.shadowBannedUntil = new Date(Date.now() + 3600 * 1000); // 1 hour shadow ban
     await provider.save();
 
-    await AuditLog.create({
-        adminId: new mongoose.Types.ObjectId(), // System
+    await auditService.logAdminAction({
+        countryCode: provider.countryCode,
+        adminId: 'SYSTEM',
+        adminRole: 'SYSTEM',
         action: 'PROVIDER_SHADOW_BAN',
-        targetId: providerId,
-        targetCollection: 'Providers',
-        newValue: { isShadowBanned: true, reason },
-        ipAddress: 'System'
+        entityType: 'Providers',
+        entityId: providerId,
+        afterState: { isShadowBanned: true, reason },
+        ipAddress: 'System',
+        systemSource: 'API'
     });
 
     const alert = new FraudAlert({

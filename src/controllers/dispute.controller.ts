@@ -3,7 +3,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Dispute, { DisputeStatus } from '../models/Dispute';
 import Job, { JobStatus } from '../models/Job';
 import Provider from '../models/Provider';
-import AuditLog from '../models/AuditLog';
+import * as auditService from '../services/audit.service';
 
 export const raiseDispute = async (req: AuthRequest, res: Response) => {
   try {
@@ -102,14 +102,17 @@ export const updateDisputeStatus = async (req: AuthRequest, res: Response) => {
     await dispute.save();
 
     // Audit Log
-    await AuditLog.create({
-      adminId: req.user?.userId,
-      action: 'DISPUTE_UPDATE',
-      targetId: disputeId,
-      targetCollection: 'Disputes',
-      previousValue: { status: previousStatus },
-      newValue: { status, resolution },
-      ipAddress: req.ip
+    await auditService.logAdminAction({
+        countryCode: dispute.countryCode,
+        adminId: req.user?.userId as string,
+        adminRole: req.user?.role as string,
+        action: 'DISPUTE_UPDATE',
+        entityType: 'Disputes',
+        entityId: disputeId,
+        beforeState: { status: previousStatus },
+        afterState: { status, resolution },
+        ipAddress: req.ip,
+        systemSource: 'ADMIN_DASHBOARD'
     });
 
     res.status(200).json({ success: true, data: dispute });
