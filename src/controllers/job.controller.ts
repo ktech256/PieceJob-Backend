@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
+import Service from '../models/Service';
 import * as jobService from '../services/job.service';
 import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
@@ -46,6 +47,7 @@ const sanitizeJobForMobile = (job: any) => {
         providerId: providerId ? providerId.toString() : null,
         providerInfo: providerInfo,
         customerInfo: customerInfo,
+        serviceName: jobObj.serviceName || jobObj.serviceCode, // Fallback for older jobs
         currency: jobObj.pricingSnapshot?.currencyCode || 'USD'
     };
 };
@@ -91,9 +93,15 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
         isEmergency
     );
 
+    const service = await Service.findOne({ code: serviceCode });
+    if (!service) {
+        return res.status(404).json({ success: false, message: 'Service not found.' });
+    }
+
     const job = new Job({
       customerId: req.user?.userId,
       serviceCode,
+      serviceName: service.name,
       countryCode: req.user?.countryCode,
       cityOrZoneId: zoneId,
       location: {

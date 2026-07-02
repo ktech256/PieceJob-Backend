@@ -161,6 +161,7 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
       emitToUser(targetUserId.toString(), 'NEW_JOB_BROADCAST', {
         jobId: job.id,
         serviceCode: job.serviceCode,
+        serviceName: job.serviceName,
         location: job.location,
         isForSomeoneElse: job.isForSomeoneElse,
         recipientName: job.recipientName
@@ -170,11 +171,12 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
       notificationService.notifyUser(
           targetUserId,
           'New Job Available',
-          `A new ${job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`,
+          `A new ${job.serviceName || job.serviceCode} request is nearby.${job.isForSomeoneElse ? ' (For: ' + job.recipientName + ')' : ''}`,
           {
               type: 'NEW_JOB_BROADCAST',
               jobId: job.id,
               serviceCode: job.serviceCode,
+              serviceName: job.serviceName,
               address: job.location.address,
               recipientName: job.recipientName,
               distance: 'Nearby',

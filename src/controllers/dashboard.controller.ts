@@ -105,6 +105,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             type: 'JOB',
             status: j.status,
             serviceCode: j.serviceCode,
+            serviceName: j.serviceName,
             amount: j.bookingFee + (j.serviceFee || 0),
             createdAt: j.createdAt,
             currency: walletData.currency // Attach currency for proper UI display
