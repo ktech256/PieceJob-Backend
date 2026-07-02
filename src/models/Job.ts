@@ -24,7 +24,7 @@ export interface IJob extends Document {
   customerId: mongoose.Types.ObjectId;
   providerId?: mongoose.Types.ObjectId;
   serviceCode: string;
-  serviceName: string;
+  serviceName?: string;
   status: JobStatus;
   countryCode: string;
   cityOrZoneId?: string;
@@ -88,7 +88,7 @@ const JobSchema: Schema = new Schema({
   customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   providerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   serviceCode: { type: String, required: true },
-  serviceName: { type: String, required: true },
+  serviceName: { type: String },
   status: { type: String, enum: Object.values(JobStatus), default: JobStatus.DRAFT },
   countryCode: { type: String, required: true },
   cityOrZoneId: { type: String },
