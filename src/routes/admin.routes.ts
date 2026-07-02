@@ -16,6 +16,7 @@ import * as auditController from '../controllers/admin/audit.controller';
 import * as zoneController from '../controllers/admin/zone-management.controller';
 import * as fraudAdminController from '../controllers/admin/fraud.controller';
 import * as exchangeController from '../controllers/admin/exchange.controller';
+import * as jobAdminController from '../controllers/admin/job.controller';
 import * as financeController from '../controllers/admin/finance.controller';
 import * as invoiceController from '../controllers/admin/invoice.controller';
 import * as pricingAdminController from '../controllers/admin/pricing.controller';
@@ -104,6 +105,10 @@ router.get('/providers/performance', providerAdminController.getProvidersPerform
 
 // Users
 router.get('/users', userAdminController.listUsers);
+
+// Job Overrides & Details
+router.get('/jobs/:jobId', hasPermission('VIEW_AUDIT'), jobAdminController.adminGetJobDetails);
+router.patch('/jobs/:jobId/status', hasPermission('MANAGE_SUPPORT'), jobAdminController.adminUpdateJobStatus);
 
 // Zones
 router.get('/zones', zoneController.listZones);
