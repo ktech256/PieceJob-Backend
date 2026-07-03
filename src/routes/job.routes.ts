@@ -13,6 +13,7 @@ router.patch('/:jobId/status', authenticate, jobController.updateJobStatus);
 // Static Routes
 router.post('/request', authenticate, authorize([UserRole.CUSTOMER]), jobController.requestJob);
 router.get('/active', authenticate, jobController.getActiveJob);
+router.get('/my-jobs', authenticate, jobController.getMyJobs);
 
 // Param Routes
 router.get('/:jobId', authenticate, jobController.getJobById);

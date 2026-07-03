@@ -6,6 +6,7 @@ import Service from '../models/Service';
 import * as jobService from '../services/job.service';
 import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
+import * as storageService from '../services/storage.service';
 import Provider from '../models/Provider';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
@@ -298,6 +299,76 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch active job', error });
+    }
+};
+
+export const getMyJobs = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const role = req.user?.role;
+        const { status } = req.query;
+
+        const query: any = role === 'PROVIDER' ? { providerId: userId } : { customerId: userId };
+
+        if (status) {
+            if (status === 'ACTIVE') {
+                query.status = { $in: [
+                    JobStatus.REQUEST_CREATED,
+                    JobStatus.PAYMENT_PENDING,
+                    JobStatus.BOOKING_FEE_PAID,
+                    JobStatus.BROADCASTING,
+                    JobStatus.BROADCASTED,
+                    JobStatus.ACCEPTED,
+                    JobStatus.ARRIVED,
+                    JobStatus.STARTED,
+                    JobStatus.EN_ROUTE,
+                    JobStatus.IN_PROGRESS
+                ] };
+            } else {
+                query.status = status;
+            }
+        }
+
+        const jobs = await Job.find(query)
+            .sort({ createdAt: -1 })
+            .populate('customerId', 'firstName lastName profilePhoto phoneNumber')
+            .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
+            .limit(100);
+
+        const formatted = await Promise.all(jobs.map(async (j) => {
+            const obj: any = j.toObject();
+
+            if (obj.customerId && typeof obj.customerId === 'object' && 'firstName' in obj.customerId) {
+                obj.customerInfo = {
+                    firstName: obj.customerId.firstName,
+                    lastName: obj.customerId.lastName,
+                    profilePicture: obj.customerId.profilePhoto ? await storageService.getSignedUrl(obj.customerId.profilePhoto) : null,
+                    phoneNumber: obj.customerId.phoneNumber
+                };
+            }
+
+            if (obj.providerId && typeof obj.providerId === 'object' && 'firstName' in obj.providerId) {
+                const provider = await Provider.findOne({ userId: obj.providerId._id || obj.providerId.id });
+                obj.providerInfo = {
+                    firstName: obj.providerId.firstName,
+                    lastName: obj.providerId.lastName,
+                    profilePicture: obj.providerId.profilePhoto ? await storageService.getSignedUrl(obj.providerId.profilePhoto) : null,
+                    phoneNumber: obj.providerId.phoneNumber,
+                    ratingAvg: provider?.ratingAvg || 0,
+                    jobsCompleted: provider?.jobsCompleted || 0
+                };
+            }
+
+            return {
+                ...obj,
+                id: obj._id.toString(),
+                serviceName: obj.serviceName || obj.serviceCode
+            };
+        }));
+
+        res.status(200).json({ success: true, data: formatted });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch jobs', error });
     }
 };
 

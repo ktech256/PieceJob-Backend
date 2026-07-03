@@ -4,6 +4,7 @@ import Message from '../models/Chat';
 import Job from '../models/Job';
 import User, { UserRole } from '../models/User';
 import * as notificationService from '../services/notification.service';
+import * as storageService from '../services/storage.service';
 import { emitToUser, emitJobUpdate } from '../socket/socket.service';
 
 export const getJobMessages = async (req: AuthRequest, res: Response) => {
@@ -28,13 +29,15 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
             .populate('senderId', 'firstName lastName role profilePhoto');
 
         // Map profilePhoto to profilePicture for Android
-        const data = messages.map(m => {
-            const obj = m.toObject();
+        const data = await Promise.all(messages.map(async (m) => {
+            const obj: any = m.toObject();
             if (obj.senderId && typeof obj.senderId === 'object') {
-                (obj.senderId as any).profilePicture = (obj.senderId as any).profilePhoto;
+                if (obj.senderId.profilePhoto) {
+                    obj.senderId.profilePicture = await storageService.getSignedUrl(obj.senderId.profilePhoto);
+                }
             }
             return obj;
-        });
+        }));
 
         res.status(200).json({ success: true, data });
     } catch (error) {
@@ -57,7 +60,14 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
             const lastMessage = await Message.findOne({ jobId: job._id })
                 .sort({ createdAt: -1 });
 
-            const otherUser = job.customerId.toString() === userId ? job.providerId : job.customerId;
+            const otherUserRaw: any = job.customerId.toString() === userId ? job.providerId : job.customerId;
+            const otherUser: any = (otherUserRaw && typeof otherUserRaw === 'object' && 'toObject' in otherUserRaw)
+                ? otherUserRaw.toObject()
+                : (otherUserRaw || {});
+
+            if (otherUser && otherUser.profilePhoto) {
+                otherUser.profilePicture = await storageService.getSignedUrl(otherUser.profilePhoto);
+            }
 
             return {
                 jobId: job._id,
