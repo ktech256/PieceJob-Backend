@@ -15,7 +15,11 @@ import { calculateDistance } from '../utils/location';
 
 export const findEligibleProviders = async (job: IJob, wave: number) => {
   const settings = await settingsService.getSettings(job.countryCode);
-  const service = await Service.findOne({ code: job.serviceCode, isActive: true });
+  const service = await Service.findOne({
+      code: job.serviceCode,
+      countryCode: { $in: [job.countryCode, 'GLOBAL'] },
+      isActive: true
+  }).sort({ countryCode: -1 });
 
   if (!service) {
       logger.error(`MATCHING | FAILED: Service ${job.serviceCode} inactive/not found.`);
@@ -230,7 +234,10 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     const job = await Job.findOne({ _id: jobId, providerId: null, status: JobStatus.BROADCASTED }).session(session);
     if (!job) throw new Error('Job already accepted or unavailable');
 
-    const service = await Service.findOne({ code: job.serviceCode });
+    const service = await Service.findOne({
+        code: job.serviceCode,
+        countryCode: { $in: [job.countryCode, 'GLOBAL'] }
+    }).sort({ countryCode: -1 });
     if (service) {
         if (service.genderRule === GenderRule.MEN_ONLY && provider.gender !== 'M') {
             throw new Error('Gender rule violation: Service restricted to Men.');

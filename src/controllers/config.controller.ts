@@ -92,12 +92,12 @@ export const getPublicServices = async (req: Request, res: Response) => {
             query.genderRule = { $in: allowedRules };
         }
 
-        const allServices = await Service.find(query).sort({ code: 1, countryCode: 1 });
+        const allServices = await Service.find(query).sort({ code: 1, countryCode: -1 });
 
         // Deduplicate services by code, preferring country-specific over GLOBAL
         const serviceMap = new Map();
         allServices.forEach(s => {
-            if (!serviceMap.has(s.code) || s.countryCode !== 'GLOBAL') {
+            if (!serviceMap.has(s.code)) {
                 serviceMap.set(s.code, s);
             }
         });
@@ -237,7 +237,7 @@ export const globalSearch = async (req: Request, res: Response) => {
             return res.status(200).json({ success: true, data: [] });
         }
 
-        // 1. Search Services
+        // 1. Search Services (Isolated by Workspace)
         const services = await Service.find({
             $or: [
                 { name: { $regex: query, $options: 'i' } },
@@ -245,7 +245,16 @@ export const globalSearch = async (req: Request, res: Response) => {
             ],
             countryCode: { $in: ['GLOBAL', countryCode] },
             isActive: true
-        }).limit(10);
+        }).sort({ countryCode: -1 }).limit(10);
+
+        // Deduplicate services by code
+        const serviceMap = new Map();
+        services.forEach(s => {
+            if (!serviceMap.has(s.code)) {
+                serviceMap.set(s.code, s);
+            }
+        });
+        const dedupedServices = Array.from(serviceMap.values());
 
         // 2. Search Categories
         const categories = await ServiceCategoryModel.find({
@@ -274,7 +283,7 @@ export const globalSearch = async (req: Request, res: Response) => {
         res.status(200).json({
             success: true,
             data: {
-                services,
+                services: dedupedServices,
                 categories,
                 providers: foundProviders.map(p => {
                     const u = p.userId as any;

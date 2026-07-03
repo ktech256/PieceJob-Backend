@@ -12,7 +12,7 @@ export const listServices = async (req: AuthRequest, res: Response) => {
         { countryCode: 'GLOBAL' },
         { countryCode }
       ]
-    }).sort({ category: 1, code: 1 });
+    }).sort({ category: 1, code: 1, countryCode: -1 }); // Prefer specific countryCode first for same code
 
     res.status(200).json({ success: true, services });
   } catch (error) {

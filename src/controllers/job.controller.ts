@@ -95,7 +95,10 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
         isEmergency
     );
 
-    const service = await Service.findOne({ code: serviceCode });
+    const service = await Service.findOne({
+        code: serviceCode,
+        countryCode: { $in: [req.user!.countryCode, 'GLOBAL'] }
+    }).sort({ countryCode: -1 });
     if (!service) {
         return res.status(404).json({ success: false, message: 'Service not found.' });
     }

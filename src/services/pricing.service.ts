@@ -114,8 +114,14 @@ export const calculateJobPrice = async (
     let subtotal = basePrice * surgeMultiplier;
     surcharges.forEach(s => subtotal += s.amount);
 
-    const service = await Service.findOne({ code: serviceCode, countryCode: { $in: [countryCode, 'GLOBAL'] } }).sort({ countryCode: 1 });
-    const bookingFee = service?.bookingFee || 0;
+    const service = await Service.findOne({
+        code: serviceCode,
+        countryCode: { $in: [countryCode, 'GLOBAL'] }
+    }).sort({ countryCode: -1 }); // Prefer specific countryCode over 'GLOBAL'
+
+    // 100% Workspace Isolation: Only use bookingFee if it belongs to the requested countryCode.
+    // Prohibit inheritance from 'GLOBAL' or other workspaces.
+    const bookingFee = (service && service.countryCode === countryCode) ? (service.bookingFee || 0) : 0;
 
     const platformFee = settings.platformFee || 0;
     const calloutFee = settings.calloutFee || 0;
