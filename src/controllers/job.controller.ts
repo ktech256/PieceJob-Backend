@@ -172,6 +172,27 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
         return res.status(200).json({ success: true, message: 'Job already paid', data: sanitizeJobForMobile(job) });
     }
 
+    // 2. Handle Free Bookings (Zero Booking Fee)
+    if (job.bookingFee === 0) {
+        job.paymentStatus = 'PAID';
+        job.status = JobStatus.BROADCASTED;
+        job.paymentReference = 'FREE_BOOKING_' + Date.now();
+        await job.save();
+
+        await jobService.broadcastJob(job.id);
+        emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Free booking confirmed',
+            data: {
+                paymentUrl: null,
+                reference: job.paymentReference,
+                job: sanitizeJobForMobile(job)
+            }
+        });
+    }
+
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 

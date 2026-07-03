@@ -59,7 +59,7 @@ export interface ISystemSettings extends Document {
 const SystemSettingsSchema: Schema = new Schema({
   countryCode: { type: String, required: true, unique: true },
   matchingRadiusKm: { type: Number, default: 5 },
-  baseBookingFee: { type: Number, default: 50 },
+  baseBookingFee: { type: Number, default: 0 },
   platformCommissionPercent: { type: Number, default: 15 },
   surgeMultiplierMax: { type: Number, default: 2.5 },
   escrowCoolingPeriodHours: { type: Number, default: 12 },

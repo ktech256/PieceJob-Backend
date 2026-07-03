@@ -1,6 +1,7 @@
 import PricingRule, { IPricingRule, PricingLevel } from '../models/PricingRule';
 import CommissionRule from '../models/CommissionRule';
 import Job from '../models/Job';
+import Service from '../models/Service';
 import { JobStatus } from '../models/Job';
 import * as settingsService from './settings.service';
 import Country from '../models/Country';
@@ -113,7 +114,9 @@ export const calculateJobPrice = async (
     let subtotal = basePrice * surgeMultiplier;
     surcharges.forEach(s => subtotal += s.amount);
 
-    const bookingFee = settings.bookingFee || settings.baseBookingFee || 0;
+    const service = await Service.findOne({ code: serviceCode, countryCode: { $in: [countryCode, 'GLOBAL'] } }).sort({ countryCode: 1 });
+    const bookingFee = service?.bookingFee || 0;
+
     const platformFee = settings.platformFee || 0;
     const calloutFee = settings.calloutFee || 0;
 

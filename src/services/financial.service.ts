@@ -44,50 +44,27 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
   session.startTransaction();
   try {
     const isTest = await testUserService.isTestUser(providerId);
-    const commissionAmount = totalAmount * (commissionRate / 100);
-    const providerNet = totalAmount - commissionAmount;
 
-    // 1. Service Fee Ledger (Gross Earning)
+    // FORENSIC: In the current model, PieceJob does NOT collect the service fee.
+    // The customer pays the provider directly (Agreed Price - Booking Fee).
+    // Therefore, we DO NOT mutate the provider's PieceJob wallet here.
+    // We only record the completion event in the Ledger for audit/analytics.
+
     await new Ledger({
       transactionId: `SF-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
       jobId,
       toUserId: providerId,
-      amount: totalAmount,
+      amount: totalAmount, // This is the total value of the job as calculated by platform (informational)
       currency,
       countryCode,
       type: TransactionType.SERVICE_FEE,
       status: 'COMPLETED',
       isTestTransaction: isTest,
-      description: 'Gross Service Fee Earning'
+      description: 'Job marked COMPLETED (Direct Payment Model)'
     }).save({ session });
 
-    // 2. Commission Ledger (Platform Fee)
-    await new Ledger({
-      transactionId: `CM-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-      jobId,
-      fromUserId: providerId,
-      amount: commissionAmount,
-      currency,
-      countryCode,
-      type: TransactionType.COMMISSION,
-      status: 'COMPLETED',
-      isTestTransaction: isTest,
-      description: 'Platform Commission'
-    }).save({ session });
-
-    // 3. Move Net Amount to Escrow
-    await walletService.mutateWallet({
-        userId: providerId,
-        amount: providerNet,
-        type: TransactionType.SERVICE_FEE,
-        balanceType: 'balanceEscrow',
-        description: `Net Earning from Job #${jobId.slice(-6)}`,
-        jobId,
-        countryCode,
-        currency,
-        session,
-        metadata: { gross: totalAmount, commission: commissionAmount }
-    });
+    // We DO NOT mutate balanceEscrow or balanceMain here anymore.
+    // The Booking Fee was already recorded during the payment phase.
 
     await session.commitTransaction();
   } catch (error) {
@@ -187,8 +164,10 @@ export const releaseEscrowFunds = async () => {
     for (const job of jobsToSettle) {
         const countrySettings = await settingsService.getSettings(job.countryCode);
         const ledgerEntry = await Ledger.findOne({ jobId: job._id, type: TransactionType.SERVICE_FEE });
-        if (ledgerEntry && job.providerId) {
-            const commissionEntry = await Ledger.findOne({ jobId: job._id, type: TransactionType.COMMISSION });
+        const commissionEntry = await Ledger.findOne({ jobId: job._id, type: TransactionType.COMMISSION });
+
+        // Only attempt wallet movement if a commission entry exists (indicating non-direct payment model)
+        if (ledgerEntry && job.providerId && commissionEntry) {
             const netAmount = ledgerEntry.amount - (commissionEntry?.amount || 0);
 
             // Move from Escrow to Main Balance
@@ -217,13 +196,13 @@ export const releaseEscrowFunds = async () => {
                 session,
                 metadata: { settlement: 'ESCROW_RELEASE' }
             });
-
-            // REFERRAL REWARD
-            await referralService.processReferralReward(job.customerId.toString(), session);
-
-            job.status = JobStatus.CLOSED;
-            await job.save({ session });
         }
+
+        // REFERRAL REWARD - Still process this as it encourages growth
+        await referralService.processReferralReward(job.customerId.toString(), session);
+
+        job.status = JobStatus.CLOSED;
+        await job.save({ session });
     }
 
     await session.commitTransaction();

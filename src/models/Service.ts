@@ -33,6 +33,7 @@ export interface IService extends Document {
   countryCode: string; // "GLOBAL" or ISO code
   description?: string;
   icon?: string;
+  bookingFee?: number;
 }
 
 const ServiceSchema: Schema = new Schema({
@@ -46,6 +47,7 @@ const ServiceSchema: Schema = new Schema({
   countryCode: { type: String, required: true, default: 'GLOBAL' },
   description: { type: String },
   icon: { type: String },
+  bookingFee: { type: Number, default: 0 },
 }, { timestamps: true });
 
 ServiceSchema.index({ code: 1, countryCode: 1 }, { unique: true });

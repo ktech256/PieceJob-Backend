@@ -41,7 +41,7 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
         settings: {
             matchingRadiusKm: settings?.matchingRadiusKm || 5,
             sosAlertRadiusKm: settings?.sosAlertRadiusKm || 5,
-            baseBookingFee: settings?.baseBookingFee || 50,
+            baseBookingFee: settings?.baseBookingFee || 0,
             referralRewardAmount: settings?.referralRewardAmount || 10,
             bookingFee: settings?.bookingFee || 0,
             platformFee: settings?.platformFee || 0,
@@ -92,7 +92,17 @@ export const getPublicServices = async (req: Request, res: Response) => {
             query.genderRule = { $in: allowedRules };
         }
 
-        const services = await Service.find(query).sort({ code: 1 });
+        const allServices = await Service.find(query).sort({ code: 1, countryCode: 1 });
+
+        // Deduplicate services by code, preferring country-specific over GLOBAL
+        const serviceMap = new Map();
+        allServices.forEach(s => {
+            if (!serviceMap.has(s.code) || s.countryCode !== 'GLOBAL') {
+                serviceMap.set(s.code, s);
+            }
+        });
+        const services = Array.from(serviceMap.values());
+
         const categories = await ServiceCategoryModel.find({ isDeleted: false, isActive: true }).sort({ sortOrder: 1 });
 
         const providerQuery: any = {
