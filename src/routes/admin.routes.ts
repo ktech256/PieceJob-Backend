@@ -172,6 +172,9 @@ router.post('/finance/invoices/:id/debit-note', hasPermission('MANAGE_FINANCE'),
 // Reconciliation & Statements
 router.get('/finance/overview', hasPermission('MANAGE_FINANCE'), financeController.getOverview);
 router.get('/finance/ledger', hasPermission('MANAGE_FINANCE'), financeController.getLedger);
+router.get('/finance/wallets', hasPermission('MANAGE_FINANCE'), financeController.listWallets);
+router.get('/finance/refunds', hasPermission('MANAGE_FINANCE'), financeController.listRefunds);
+router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeController.listReferrals);
 router.post('/finance/reconciliation/run', hasPermission('MANAGE_FINANCE'), financeController.runReconciliation);
 router.post('/finance/statements/provider/generate', hasPermission('MANAGE_FINANCE'), financeController.generateProviderStatement);
 
