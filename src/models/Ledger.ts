@@ -10,7 +10,11 @@ export enum TransactionType {
   TIP = 'TIP',
   BONUS = 'BONUS',
   REFERRAL_REWARD = 'REFERRAL_REWARD',
-  CREDIT_TOPUP = 'CREDIT_TOPUP'
+  CREDIT_TOPUP = 'CREDIT_TOPUP',
+  PROMO_CREDIT = 'PROMO_CREDIT',
+  MANUAL_CREDIT = 'MANUAL_CREDIT',
+  MANUAL_DEBIT = 'MANUAL_DEBIT',
+  WITHDRAWAL = 'WITHDRAWAL'
 }
 
 export interface ILedger extends Document {
@@ -24,6 +28,7 @@ export interface ILedger extends Document {
   type: TransactionType;
   status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
   isTestTransaction: boolean;
+  description?: string;
   metadata?: any;
   createdAt: Date;
   updatedAt: Date;
@@ -40,6 +45,7 @@ const LedgerSchema: Schema = new Schema({
   type: { type: String, enum: Object.values(TransactionType), required: true },
   status: { type: String, enum: ['PENDING', 'COMPLETED', 'CANCELLED', 'REFUNDED'], default: 'PENDING' },
   isTestTransaction: { type: Boolean, default: false },
+  description: { type: String },
   metadata: { type: Schema.Types.Mixed }
 }, { timestamps: true });
 

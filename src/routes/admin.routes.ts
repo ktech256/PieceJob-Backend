@@ -98,6 +98,7 @@ router.get('/payment-providers/methods', paymentRoutingController.getAvailableMe
 // Payments (Admin)
 router.get('/payments', paymentAdminController.listPayments);
 router.patch('/payments/:id/refund', paymentAdminController.refundPayment);
+router.post('/jobs/:jobId/refund', hasPermission('MANAGE_FINANCE'), financeController.processRefund);
 
 // Providers
 router.get('/providers/monitor', providerAdminController.getProvidersMonitor);

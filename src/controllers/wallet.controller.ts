@@ -4,17 +4,18 @@ import Wallet from '../models/Wallet';
 import Ledger from '../models/Ledger';
 import Provider from '../models/Provider';
 import * as pricingService from '../services/pricing.service';
+import * as walletService from '../services/wallet.service';
 
 export const getWalletBalance = async (req: AuthRequest, res: Response) => {
   try {
-    const wallet = await Wallet.findOne({ userId: req.user?.userId });
+    const wallet = await walletService.getWalletBalance(req.user?.userId as string);
     if (!wallet) {
       return res.status(200).json({
         success: true,
-        wallet: { balanceMain: 0, balanceEscrow: 0, balanceCredit: 0, balanceReferral: 0 }
+        data: { balanceMain: 0, balanceEscrow: 0, balanceCredit: 0, balanceReferral: 0, balanceBonus: 0, currency: 'USD' }
       });
     }
-    res.status(200).json({ success: true, wallet });
+    res.status(200).json({ success: true, data: wallet });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch wallet', error });
   }
@@ -22,10 +23,8 @@ export const getWalletBalance = async (req: AuthRequest, res: Response) => {
 
 export const getTransactionHistory = async (req: AuthRequest, res: Response) => {
   try {
-    const transactions = await Ledger.find({
-      $or: [{ fromUserId: req.user?.userId }, { toUserId: req.user?.userId }]
-    }).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, transactions });
+    const transactions = await walletService.getTransactionHistory(req.user?.userId as string);
+    res.status(200).json({ success: true, data: transactions });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch history', error });
   }

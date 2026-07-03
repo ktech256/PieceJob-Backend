@@ -107,6 +107,8 @@ export const verifyOtp = async (req: Request, res: Response) => {
   }
 };
 
+import * as promotionService from '../services/promotion.service';
+
 export const registerCustomer = async (req: Request, res: Response) => {
   logger.debug(`registerCustomer Body: ${JSON.stringify(req.body)}`);
   const session = await mongoose.startSession();
@@ -167,6 +169,9 @@ export const registerCustomer = async (req: Request, res: Response) => {
 
     await user.save({ session });
     logger.auth('REGISTER_CUSTOMER', true, cleanEmail);
+
+    // Fulfill Welcome Bonus
+    await promotionService.fulfillSignupBonus(user._id.toString(), countryCode);
 
     await session.commitTransaction();
     session.endSession();
@@ -276,6 +281,9 @@ export const registerProvider = async (req: Request, res: Response) => {
     });
 
     await provider.save({ session });
+
+    // Fulfill Welcome Bonus
+    await promotionService.fulfillSignupBonus(savedUser._id.toString(), countryCode);
 
     await session.commitTransaction();
     session.endSession();

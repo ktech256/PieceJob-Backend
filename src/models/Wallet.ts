@@ -18,7 +18,8 @@ const WalletSchema: Schema = new Schema({
   balanceMain: { type: Number, default: 0 },
   balanceEscrow: { type: Number, default: 0 },
   balanceCredit: { type: Number, default: 0 },
-  balanceReferral: { type: Number, default: 0 }
+  balanceReferral: { type: Number, default: 0 },
+  balanceBonus: { type: Number, default: 0 }
 }, { timestamps: true });
 
 WalletSchema.index({ userId: 1 });

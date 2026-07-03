@@ -78,6 +78,19 @@ export const runReconciliation = async (req: AuthRequest, res: Response) => {
     }
 };
 
+import * as financialService from '../../services/financial.service';
+
+export const processRefund = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const { reason } = req.body;
+        await financialService.refundJob(jobId, reason);
+        res.status(200).json({ success: true, message: 'Refund processed successfully' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 export const generateProviderStatement = async (req: AuthRequest, res: Response) => {
     try {
         const { providerId, type, start, end } = req.body;
