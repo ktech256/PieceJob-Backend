@@ -9,6 +9,13 @@ export interface IWallet extends Document {
   balanceCredit: number;
   balanceReferral: number;
   balanceBonus: number;
+  status: 'ACTIVE' | 'FROZEN' | 'LOCKED' | 'SUSPENDED';
+  isFrozen: boolean;
+  isLocked: boolean;
+  isSuspended: boolean;
+  freezeReason?: string;
+  lockReason?: string;
+  suspendReason?: string;
 }
 
 const WalletSchema: Schema = new Schema({
@@ -19,7 +26,14 @@ const WalletSchema: Schema = new Schema({
   balanceEscrow: { type: Number, default: 0 },
   balanceCredit: { type: Number, default: 0 },
   balanceReferral: { type: Number, default: 0 },
-  balanceBonus: { type: Number, default: 0 }
+  balanceBonus: { type: Number, default: 0 },
+  status: { type: String, enum: ['ACTIVE', 'FROZEN', 'LOCKED', 'SUSPENDED'], default: 'ACTIVE' },
+  isFrozen: { type: Boolean, default: false },
+  isLocked: { type: Boolean, default: false },
+  isSuspended: { type: Boolean, default: false },
+  freezeReason: { type: String },
+  lockReason: { type: String },
+  suspendReason: { type: String }
 }, { timestamps: true });
 
 WalletSchema.index({ userId: 1 });

@@ -106,6 +106,7 @@ router.get('/providers/performance', providerAdminController.getProvidersPerform
 
 // Users
 router.get('/users', userAdminController.listUsers);
+router.get('/users/:id', userAdminController.getUserById);
 
 // Job Overrides & Details
 router.get('/jobs/:jobId', hasPermission('VIEW_AUDIT'), jobAdminController.adminGetJobDetails);
@@ -215,6 +216,7 @@ router.post('/performance/recalculate', hasPermission('MANAGE_PROVIDERS'), perfo
 router.get('/users/customers', hasPermission('MANAGE_CUSTOMERS'), customerAdminController.listCustomers);
 // ...
 router.post('/users/wallet/mutate', hasPermission('MANAGE_WALLETS'), walletAdminController.manualWalletMutation);
+router.patch('/users/:userId/wallet/status', hasPermission('MANAGE_WALLETS'), walletAdminController.updateWalletStatus);
 
 // Marketing (NEW)
 router.get('/marketing/promotions', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.listPromotions);

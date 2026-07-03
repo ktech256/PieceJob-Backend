@@ -22,3 +22,14 @@ export const listUsers = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, message: 'Failed to fetch users', error });
   }
 };
+
+export const getUserById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id).select('-passwordHash');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.status(200).json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch user', error });
+  }
+};
