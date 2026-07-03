@@ -215,7 +215,18 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
 
 export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
     try {
-        const jobs = await Job.find({ status: JobStatus.BROADCASTED }).limit(50);
+        const countryCode = req.user?.countryCode;
+        const query: any = { status: JobStatus.BROADCASTED };
+
+        if (countryCode) {
+            query.countryCode = countryCode;
+        }
+
+        const jobs = await Job.find(query)
+            .sort({ createdAt: -1 })
+            .populate('customerId', 'firstName lastName profilePhoto phoneNumber')
+            .limit(50);
+
         res.status(200).json({
             success: true,
             data: jobs.map(j => {
@@ -239,6 +250,7 @@ export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
             })
         });
     } catch (error) {
+        logger.error(`JOB | GET_AVAILABLE_JOBS_FAILED | Error: ${error}`);
         res.status(500).json({ success: false, message: 'Failed to fetch available jobs', error });
     }
 };
@@ -251,7 +263,15 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
                 { customerId: userId },
                 { providerId: userId }
             ],
-            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
+            status: { $in: [
+                JobStatus.ACCEPTED,
+                JobStatus.PROVIDER_ACCEPTED,
+                JobStatus.ARRIVED,
+                JobStatus.STARTED,
+                JobStatus.EN_ROUTE,
+                JobStatus.IN_PROGRESS,
+                JobStatus.COMPLETED
+            ] }
         }).sort({ updatedAt: -1 })
           .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
           .populate('customerId', 'firstName lastName profilePhoto phoneNumber');
@@ -308,67 +328,92 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
         const role = req.user?.role;
         const { status } = req.query;
 
-        const query: any = role === 'PROVIDER' ? { providerId: userId } : { customerId: userId };
+        if (!userId) return res.status(401).json({ success: false, message: 'User ID missing in token' });
 
+        // 1. BASE QUERY CONSTRUCTION (Forensic: Ensure ObjectId for robust matching)
+        const userObjectId = new mongoose.Types.ObjectId(userId);
+        const query: any = role === 'PROVIDER' ? { providerId: userObjectId } : { customerId: userObjectId };
+
+        // 1.1 WORKSPACE ISOLATION (Forensic: Ensure users only see jobs in their registered workspace)
+        if (req.user?.countryCode && role !== 'SUPER_ADMIN') {
+            query.countryCode = req.user.countryCode;
+        }
+
+        // 2. STATUS MAPPING (Forensic Audit & Alignment with Step 3)
         if (status) {
             if (status === 'ACTIVE') {
-                query.status = { $in: [
-                    JobStatus.REQUEST_CREATED,
-                    JobStatus.PAYMENT_PENDING,
-                    JobStatus.BOOKING_FEE_PAID,
-                    JobStatus.BROADCASTING,
-                    JobStatus.BROADCASTED,
-                    JobStatus.ACCEPTED,
-                    JobStatus.ARRIVED,
-                    JobStatus.STARTED,
-                    JobStatus.EN_ROUTE,
-                    JobStatus.IN_PROGRESS
-                ] };
+                if (role === 'PROVIDER') {
+                    // Providers see jobs they are currently assigned to and active
+                    query.status = { $in: [
+                        JobStatus.ACCEPTED,
+                        JobStatus.PROVIDER_ACCEPTED,
+                        JobStatus.EN_ROUTE,
+                        JobStatus.ARRIVED,
+                        JobStatus.STARTED,
+                        JobStatus.IN_PROGRESS,
+                        JobStatus.COMPLETED // COMPLETED but not yet rated can be considered active for provider UI
+                    ] };
+                } else {
+                    // Customers see their request lifecycle until it's archived/closed
+                    query.status = { $in: [
+                        JobStatus.DRAFT,
+                        JobStatus.REQUEST_CREATED,
+                        JobStatus.PAYMENT_PENDING,
+                        JobStatus.BOOKING_FEE_PAID,
+                        JobStatus.BROADCASTING,
+                        JobStatus.BROADCASTED,
+                        JobStatus.ACCEPTED,
+                        JobStatus.PROVIDER_ACCEPTED,
+                        JobStatus.EN_ROUTE,
+                        JobStatus.ARRIVED,
+                        JobStatus.STARTED,
+                        JobStatus.IN_PROGRESS,
+                        JobStatus.COMPLETED
+                    ] };
+                }
+            } else if (status === 'COMPLETED') {
+                query.status = { $in: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED] };
             } else {
                 query.status = status;
             }
         }
 
+        logger.debug(`[FORENSIC] getMyJobs | User: ${userId} | Role: ${role} | Status: ${status} | Query: ${JSON.stringify(query)}`);
+
+        // 3. EXECUTION & POPULATION
         const jobs = await Job.find(query)
             .sort({ createdAt: -1 })
             .populate('customerId', 'firstName lastName profilePhoto phoneNumber')
             .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
             .limit(100);
 
-        const formatted = await Promise.all(jobs.map(async (j) => {
-            const obj: any = j.toObject();
+        logger.debug(`[FORENSIC] getMyJobs | Found: ${jobs.length} jobs`);
 
-            if (obj.customerId && typeof obj.customerId === 'object' && 'firstName' in obj.customerId) {
-                obj.customerInfo = {
-                    firstName: obj.customerId.firstName,
-                    lastName: obj.customerId.lastName,
-                    profilePicture: obj.customerId.profilePhoto ? await storageService.getSignedUrl(obj.customerId.profilePhoto) : null,
-                    phoneNumber: obj.customerId.phoneNumber
-                };
+        // 4. BATCH ENRICHMENT (Performance Optimization)
+        const providerIds = jobs.map(j => j.providerId).filter(id => id != null);
+        const providers = await Provider.find({ userId: { $in: providerIds } });
+        const providerMap = new Map(providers.map(p => [p.userId.toString(), p]));
+
+        // 5. SERIALIZATION
+        const formatted = jobs.map((j) => {
+            const sanitized = sanitizeJobForMobile(j);
+
+            // Enrich provider info with metrics
+            if (sanitized.providerId) {
+                const provider = providerMap.get(sanitized.providerId.toString());
+                if (sanitized.providerInfo) {
+                    sanitized.providerInfo.ratingAvg = provider?.ratingAvg || 0;
+                    sanitized.providerInfo.jobsCompleted = provider?.jobsCompleted || 0;
+                }
             }
 
-            if (obj.providerId && typeof obj.providerId === 'object' && 'firstName' in obj.providerId) {
-                const provider = await Provider.findOne({ userId: obj.providerId._id || obj.providerId.id });
-                obj.providerInfo = {
-                    firstName: obj.providerId.firstName,
-                    lastName: obj.providerId.lastName,
-                    profilePicture: obj.providerId.profilePhoto ? await storageService.getSignedUrl(obj.providerId.profilePhoto) : null,
-                    phoneNumber: obj.providerId.phoneNumber,
-                    ratingAvg: provider?.ratingAvg || 0,
-                    jobsCompleted: provider?.jobsCompleted || 0
-                };
-            }
-
-            return {
-                ...obj,
-                id: obj._id.toString(),
-                serviceName: obj.serviceName || obj.serviceCode
-            };
-        }));
+            return sanitized;
+        });
 
         res.status(200).json({ success: true, data: formatted });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch jobs', error });
+    } catch (error: any) {
+        logger.error(`JOB | GET_MY_JOBS_FAILED | User: ${req.user?.userId} | Error: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Failed to fetch jobs history', error: error.message });
     }
 };
 
@@ -572,6 +617,15 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
     const sanitized = sanitizeJobForMobile(job);
     const statusPayload = { jobId: job.id, status, providerInfo: sanitized.providerInfo };
+
+    // Enhance response data if provider assigned
+    if (sanitized.providerId && sanitized.providerInfo) {
+        const provider = await Provider.findOne({ userId: sanitized.providerId });
+        if (provider) {
+            sanitized.providerInfo.ratingAvg = provider.ratingAvg;
+            sanitized.providerInfo.jobsCompleted = provider.jobsCompleted;
+        }
+    }
 
     // 1. Notify participants via their private user rooms (Global Observer)
     emitToUser(job.customerId.toString(), 'status_updated', statusPayload);

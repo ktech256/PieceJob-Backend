@@ -17,7 +17,9 @@ export enum JobStatus {
   RATED = 'RATED',
   CLOSED = 'CLOSED',
   CANCELLED = 'CANCELLED',
-  DISPUTED = 'DISPUTED'
+  DISPUTED = 'DISPUTED',
+  SCHEDULED = 'SCHEDULED',
+  RESCHEDULED = 'RESCHEDULED'
 }
 
 export interface IJob extends Document {
@@ -57,6 +59,7 @@ export interface IJob extends Document {
   arrivedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
+  scheduledAt?: Date;
 
   // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
   commissionRateSnapshot?: number;
@@ -118,6 +121,7 @@ const JobSchema: Schema = new Schema({
   arrivedAt: { type: Date },
   startedAt: { type: Date },
   completedAt: { type: Date },
+  scheduledAt: { type: Date },
 
   // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
   commissionRateSnapshot: { type: Number },
