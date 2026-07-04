@@ -7,6 +7,7 @@ export interface IMessage extends Document {
   text?: string;
   mediaUrl?: string;
   mediaType?: 'IMAGE' | 'VOICE';
+  metadata?: any;
   isRead: boolean;
   createdAt: Date;
 }
@@ -18,6 +19,7 @@ const MessageSchema: Schema = new Schema({
   text: { type: String },
   mediaUrl: { type: String },
   mediaType: { type: String, enum: ['IMAGE', 'VOICE'] },
+  metadata: { type: Schema.Types.Mixed },
   isRead: { type: Boolean, default: false },
   isArchived: { type: Boolean, default: false }
 }, { timestamps: true });

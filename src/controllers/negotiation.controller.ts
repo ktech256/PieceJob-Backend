@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import PriceProposal from '../models/PriceProposal';
-import Message from '../models/Chat';
+import ChatMessage from '../models/Chat';
 import SystemSettings from '../models/SystemSettings';
 import { emitJobUpdate } from '../socket/socket.service';
 import * as notificationService from '../services/notification.service';
@@ -26,7 +26,7 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
         const settings = await SystemSettings.findOne({ countryCode: job.countryCode }) || await SystemSettings.findOne({ countryCode: 'GLOBAL' });
         const maxRounds = settings?.maxNegotiationRounds || 4;
 
-        if (job.negotiationRounds >= maxRounds) {
+        if ((job.negotiationRounds || 0) >= maxRounds) {
             return res.status(400).json({ success: false, message: 'Maximum negotiation rounds reached' });
         }
 
@@ -42,18 +42,18 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
             receiverId,
             amount,
             note,
-            round: job.negotiationRounds + 1,
+            round: (job.negotiationRounds || 0) + 1,
             countryCode: job.countryCode
         });
 
         await proposal.save();
 
-        job.negotiationRounds += 1;
+        job.negotiationRounds = (job.negotiationRounds || 0) + 1;
         job.priceStatus = 'PENDING';
         await job.save();
 
         // Send a structured message in chat
-        const message = new Message({
+        const chatMsg = new ChatMessage({
             jobId,
             senderId,
             receiverId,
@@ -66,9 +66,9 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
                 round: proposal.round
             }
         });
-        await message.save();
+        await chatMsg.save();
 
-        const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
         emitJobUpdate(jobId, 'new_message', data);
 
         await notificationService.notifyUser(
@@ -119,16 +119,16 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
             await proposal.save();
 
             // Notify via chat
-            const message = new Message({
+            const chatMsg = new ChatMessage({
                 jobId: job._id,
                 senderId: userId,
                 receiverId: proposal.senderId,
                 text: 'Price Accepted',
                 metadata: { type: 'PRICE_ACCEPTED', amount: proposal.amount }
             });
-            await message.save();
+            await chatMsg.save();
 
-            const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+            const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
             emitJobUpdate(job._id.toString(), 'new_message', data);
             emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, priceStatus: 'ACCEPTED', agreedPrice: job.agreedPrice });
 
@@ -145,16 +145,16 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
             await job.save();
             await proposal.save();
 
-            const message = new Message({
+            const chatMsg = new ChatMessage({
                 jobId: job._id,
                 senderId: userId,
                 receiverId: proposal.senderId,
                 text: 'Price Proposal Rejected',
                 metadata: { type: 'PRICE_REJECTED' }
             });
-            await message.save();
+            await chatMsg.save();
 
-            const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+            const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
             emitJobUpdate(job._id.toString(), 'new_message', data);
 
             await notificationService.notifyUser(

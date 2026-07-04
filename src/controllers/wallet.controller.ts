@@ -189,7 +189,7 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
             adminRole: 'SYSTEM',
             action: 'COMMISSION_PAYMENT',
             entityType: 'Wallet',
-            entityId: wallet._id,
+            entityId: wallet._id.toString(),
             afterState: { outstandingCommission: wallet.outstandingCommission, balanceMain: wallet.balanceMain },
             ipAddress: req.ip,
             systemSource: 'MOBILE_APP'

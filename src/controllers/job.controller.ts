@@ -8,6 +8,7 @@ import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
 import * as storageService from '../services/storage.service';
 import Provider from '../models/Provider';
+import ChatMessage from '../models/Chat';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
 import { emitAdminUpdate, emitJobUpdate, emitToUser, emitToWorkspace } from '../socket/socket.service';
@@ -869,7 +870,7 @@ export const uploadTaskPhotos = async (req: AuthRequest, res: Response) => {
         await job.save();
 
         // Send a structured message in chat
-        const message = new Message({
+        const chatMsg = new ChatMessage({
             jobId,
             senderId: customerId,
             receiverId: job.providerId,
@@ -878,9 +879,9 @@ export const uploadTaskPhotos = async (req: AuthRequest, res: Response) => {
             mediaType: 'IMAGE',
             metadata: { type: 'PHOTO_UPLOAD', allPhotos: photos }
         });
-        await message.save();
+        await chatMsg.save();
 
-        const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
         emitJobUpdate(jobId, 'new_message', data);
 
         if (job.providerId) {
@@ -915,16 +916,16 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
         await job.save();
 
         // Send a structured message in chat
-        const message = new Message({
+        const chatMsg = new ChatMessage({
             jobId,
             senderId: providerId,
             receiverId: job.customerId,
             text: 'Provider requested photos for this task.',
             metadata: { type: 'PHOTO_REQUEST' }
         });
-        await message.save();
+        await chatMsg.save();
 
-        const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
         emitJobUpdate(jobId, 'new_message', data);
 
         await notificationService.notifyUser(
