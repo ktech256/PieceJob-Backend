@@ -967,6 +967,40 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const providerId = req.user?.userId;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        if (job.providerId?.toString() !== providerId) {
+            return res.status(403).json({ success: false, message: 'Only the assigned provider can mark photos as seen' });
+        }
+
+        job.taskPhotosSeen = true;
+        await job.save();
+
+        // Send a structured message in chat
+        const chatMsg = new ChatMessage({
+            jobId,
+            senderId: providerId,
+            receiverId: job.customerId,
+            text: 'Provider has viewed the task photos.',
+            metadata: { type: 'PHOTOS_SEEN' }
+        });
+        await chatMsg.save();
+
+        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        emitJobUpdate(jobId, 'new_message', data);
+
+        res.status(200).json({ success: true, message: 'Photos marked as seen' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to mark photos seen', error });
+    }
+};
+
 export const confirmDispatch = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;

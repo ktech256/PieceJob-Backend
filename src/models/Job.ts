@@ -85,6 +85,7 @@ export interface IJob extends Document {
   // Task Photos
   taskPhotosRequested?: boolean;
   taskPhotosRequestedAt?: Date;
+  taskPhotosSeen?: boolean;
   taskPhotos?: string[];
 
   notificationsSent?: string[];
@@ -159,6 +160,7 @@ const JobSchema: Schema = new Schema({
   // Task Photos
   taskPhotosRequested: { type: Boolean, default: false },
   taskPhotosRequestedAt: { type: Date },
+  taskPhotosSeen: { type: Boolean, default: false },
   taskPhotos: [{ type: String }],
 
   notificationsSent: { type: [String], default: [] },
