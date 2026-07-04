@@ -90,7 +90,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
 
 export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
-        const { jobId, receiverId, text, mediaUrl, mediaType } = req.body;
+        const { jobId, receiverId, text, mediaUrl, mediaType, metadata } = req.body;
         const senderId = req.user?.userId;
 
         // Validate participants
@@ -100,6 +100,18 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         const terminalStatuses = ['COMPLETED', 'CANCELLED', 'RATED', 'CLOSED'];
         if (terminalStatuses.includes(job.status)) {
             return res.status(403).json({ success: false, message: `Chat is disabled for a ${job.status} job` });
+        }
+
+        // PHASE 3 & 11: Negotiation Messaging Lockdown
+        // Only structured messages (with metadata.type) are allowed during PROVIDER_ACCEPTED state
+        const isNegotiationPhase = job.status === 'PROVIDER_ACCEPTED';
+        const isStructured = metadata && metadata.type;
+
+        if (isNegotiationPhase && !isStructured) {
+            return res.status(403).json({
+                success: false,
+                message: 'Free-text messaging is disabled during negotiation. Please use structured actions.'
+            });
         }
 
         const isParticipant = job.customerId.toString() === senderId || job.providerId?.toString() === senderId;
@@ -113,7 +125,8 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             receiverId,
             text,
             mediaUrl,
-            mediaType
+            mediaType,
+            metadata
         });
 
         console.log(`[FORENSIC] BACKEND_CHAT_RECEIVED | Job: ${jobId} | From: ${senderId} | To: ${receiverId}`);
