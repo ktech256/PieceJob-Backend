@@ -31,6 +31,19 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, message: 'Maximum negotiation rounds reached' });
         }
 
+        // VALIDATION: Photo Sharing Requirement
+        const service = await mongoose.model('Service').findOne({
+            code: job.serviceCode,
+            countryCode: { $in: [job.countryCode, 'GLOBAL'] }
+        }).sort({ countryCode: -1 });
+
+        if (service?.photoSharingRequired && !job.taskPhotosSeen) {
+            return res.status(403).json({
+                success: false,
+                message: 'You must review the task photos before proposing a price.'
+            });
+        }
+
         const receiverId = job.customerId.toString() === senderId ? job.providerId : job.customerId;
         if (!receiverId) return res.status(400).json({ success: false, message: 'No counterparty assigned' });
 
@@ -192,5 +205,49 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, proposal });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to respond to proposal', error });
+    }
+};
+
+export const rebroadcastJob = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const providerId = req.user?.userId;
+        const { reason } = req.body;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        if (job.providerId?.toString() !== providerId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized' });
+        }
+
+        const settings = await SystemSettings.findOne({ countryCode: job.countryCode }) || await SystemSettings.findOne({ countryCode: 'GLOBAL' });
+        const maxRounds = settings?.maxNegotiationRounds || 4;
+
+        if (job.negotiationRounds < maxRounds && job.priceStatus !== 'REJECTED') {
+            return res.status(400).json({ success: false, message: 'Negotiation still valid' });
+        }
+
+        // Reset Job for broadcast
+        job.providerId = undefined;
+        job.status = JobStatus.BROADCASTED;
+        job.priceStatus = undefined;
+        job.negotiationRounds = 0;
+        job.negotiationTimeline.push({
+            event: 'JOB_REBROADCASTED_FROM_NEGOTIATION',
+            timestamp: new Date(),
+            metadata: { previousProvider: providerId, reason }
+        });
+
+        await job.save();
+
+        const { broadcastJob } = require('../services/job.service');
+        await broadcastJob(jobId);
+
+        emitJobUpdate(jobId, 'status_updated', { jobId, status: JobStatus.BROADCASTED, providerId: null });
+
+        res.status(200).json({ success: true, message: 'Job rebroadcasted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Rebroadcast failed', error });
     }
 };

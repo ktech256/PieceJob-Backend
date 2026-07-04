@@ -6,5 +6,6 @@ const router = Router();
 
 router.post('/propose', authenticate, negotiationController.proposePrice);
 router.post('/respond/:proposalId', authenticate, negotiationController.respondToProposal);
+router.post('/rebroadcast/:jobId', authenticate, negotiationController.rebroadcastJob);
 
 export default router;

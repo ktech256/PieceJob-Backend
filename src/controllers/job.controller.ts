@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
 import Service from '../models/Service';
+import PriceProposal from '../models/PriceProposal';
 import * as jobService from '../services/job.service';
 import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
@@ -52,10 +53,10 @@ const sanitizeJobForMobile = (job: any) => {
     // PHASE 3 & 5: Privacy Hardening & Dispatch Control
     // Hide exact address until price is agreed (status moves to ACCEPTED or beyond)
     // IMPORTANT: Terminal statuses should NOT be obscured (already completed)
-    const activeStatuses = [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
-    const isPriceAgreed = jobObj.priceStatus === 'ACCEPTED' || activeStatuses.includes(jobObj.status);
+    const unlockedStatuses = [JobStatus.ACCEPTED, JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
+    const isUnlocked = unlockedStatuses.includes(jobObj.status);
 
-    if (!isPriceAgreed) {
+    if (!isUnlocked) {
         const rawAddress = sanitized.location?.address || sanitized.address || '';
         const addressParts = rawAddress.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
 
@@ -75,6 +76,23 @@ const sanitizeJobForMobile = (job: any) => {
     }
 
     return sanitized;
+};
+
+/**
+ * Enriches a sanitized job with active negotiation data if present.
+ */
+const enrichWithNegotiation = async (sanitizedJob: any) => {
+    if (sanitizedJob.status === JobStatus.PROVIDER_ACCEPTED || sanitizedJob.priceStatus === 'PENDING') {
+        const activeProposal = await PriceProposal.findOne({
+            jobId: sanitizedJob.id,
+            status: 'PENDING'
+        }).sort({ createdAt: -1 });
+
+        if (activeProposal) {
+            sanitizedJob.activeProposal = activeProposal;
+        }
+    }
+    return sanitizedJob;
 };
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
@@ -362,7 +380,7 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({
             success: true,
-            data: sanitized
+            data: await enrichWithNegotiation(sanitized)
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch active job', error });
@@ -442,7 +460,7 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
         const providerMap = new Map(providers.map(p => [p.userId.toString(), p]));
 
         // 5. SERIALIZATION
-        const formatted = jobs.map((j) => {
+        const formatted = await Promise.all(jobs.map(async (j) => {
             const sanitized = sanitizeJobForMobile(j);
 
             // Enrich provider info with metrics
@@ -454,8 +472,8 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
                 }
             }
 
-            return sanitized;
-        });
+            return await enrichWithNegotiation(sanitized);
+        }));
 
         res.status(200).json({ success: true, data: formatted });
     } catch (error: any) {
@@ -502,7 +520,7 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({
             success: true,
-            data: sanitized
+            data: await enrichWithNegotiation(sanitized)
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch job', error });
@@ -573,6 +591,14 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED];
     if (terminalStatuses.includes(job.status)) {
         return res.status(400).json({ success: false, message: `Cannot update status of a ${job.status} job` });
+    }
+
+    // PHASE 3 Hardening: Block progression from PROVIDER_ACCEPTED via status update
+    if (job.status === JobStatus.PROVIDER_ACCEPTED && status !== JobStatus.CANCELLED) {
+        return res.status(403).json({
+            success: false,
+            message: 'Job is locked in negotiation phase. Complete negotiations to proceed.'
+        });
     }
 
     if (distanceTravelled) job.distanceTravelled = distanceTravelled;
@@ -1030,8 +1056,21 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, message: 'Job is not in a state awaiting dispatch confirmation' });
         }
 
+        // VALIDATION: Ensure pre-requisites are met
+        const service = await Service.findOne({
+            code: job.serviceCode,
+            countryCode: { $in: [job.countryCode, 'GLOBAL'] }
+        }).sort({ countryCode: -1 });
+
+        if (service?.photoSharingRequired && !job.taskPhotosSeen) {
+            return res.status(403).json({ success: false, message: 'You must review the task photos before dispatching.' });
+        }
+
+        if (service?.priceNegotiationRequired && job.priceStatus !== 'ACCEPTED') {
+            return res.status(403).json({ success: false, message: 'You must agree on a price before dispatching.' });
+        }
+
         job.status = JobStatus.ACCEPTED;
-        job.priceStatus = 'ACCEPTED'; // Mark as accepted if it wasn't already (for non-negotiated services)
         if (!job.agreedPrice) job.agreedPrice = (job.serviceFee || 0) + job.bookingFee; // Use estimate if no negotiation
 
         job.negotiationTimeline.push({
