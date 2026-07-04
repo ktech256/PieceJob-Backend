@@ -224,7 +224,7 @@ export const rebroadcastJob = async (req: AuthRequest, res: Response) => {
         const settings = await SystemSettings.findOne({ countryCode: job.countryCode }) || await SystemSettings.findOne({ countryCode: 'GLOBAL' });
         const maxRounds = settings?.maxNegotiationRounds || 4;
 
-        if (job.negotiationRounds < maxRounds && job.priceStatus !== 'REJECTED') {
+        if ((job.negotiationRounds || 0) < maxRounds && job.priceStatus !== 'REJECTED') {
             return res.status(400).json({ success: false, message: 'Negotiation still valid' });
         }
 
