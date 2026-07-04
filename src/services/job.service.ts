@@ -258,7 +258,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     if (negotiationRequired || photoSharingRequired) {
         job.status = JobStatus.PROVIDER_ACCEPTED; // Hold dispatch for negotiation or photos
     } else {
-        job.status = JobStatus.ACCEPTED; // Dispatch immediately
+        job.status = JobStatus.EN_ROUTE; // Dispatch immediately (Type 3)
     }
 
     job.negotiationTimeline = [{

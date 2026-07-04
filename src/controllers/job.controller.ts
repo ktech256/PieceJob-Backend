@@ -51,9 +51,9 @@ const sanitizeJobForMobile = (job: any) => {
     };
 
     // PHASE 3 & 5: Privacy Hardening & Dispatch Control
-    // Hide exact address until price is agreed (status moves to ACCEPTED or beyond)
+    // Hide exact address until provider is dispatched (status moves to EN_ROUTE or beyond)
     // IMPORTANT: Terminal statuses should NOT be obscured (already completed)
-    const unlockedStatuses = [JobStatus.ACCEPTED, JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
+    const unlockedStatuses = [JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
     const isUnlocked = unlockedStatuses.includes(jobObj.status);
 
     if (!isUnlocked) {
@@ -593,11 +593,12 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         return res.status(400).json({ success: false, message: `Cannot update status of a ${job.status} job` });
     }
 
-    // PHASE 3 Hardening: Block progression from PROVIDER_ACCEPTED via status update
-    if (job.status === JobStatus.PROVIDER_ACCEPTED && status !== JobStatus.CANCELLED) {
+    // PHASE 3 Hardening: Block progression from PROVIDER_ACCEPTED/ACCEPTED via status update
+    const lockedStatuses = [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED];
+    if (lockedStatuses.includes(job.status) && status !== JobStatus.CANCELLED) {
         return res.status(403).json({
             success: false,
-            message: 'Job is locked in negotiation phase. Complete negotiations to proceed.'
+            message: 'Job is locked in negotiation phase. Complete negotiations and confirm dispatch to proceed.'
         });
     }
 
@@ -1070,7 +1071,7 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ success: false, message: 'You must agree on a price before dispatching.' });
         }
 
-        job.status = JobStatus.ACCEPTED;
+        job.status = JobStatus.EN_ROUTE;
         if (!job.agreedPrice) job.agreedPrice = (job.serviceFee || 0) + job.bookingFee; // Use estimate if no negotiation
 
         job.negotiationTimeline.push({
