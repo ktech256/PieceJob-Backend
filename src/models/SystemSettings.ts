@@ -13,6 +13,17 @@ export interface ISystemSettings extends Document {
   sosAlertRadiusKm: number;
   referralRewardAmount: number;
 
+  // Structured Negotiation & Commission
+  maxNegotiationRounds: number;
+  commissionSuspensionThreshold: number;
+  autoSuspendEnabled: boolean;
+  autoUnsuspendEnabled: boolean;
+  voucherVendors: {
+      name: string;
+      code: string;
+      isEnabled: boolean;
+  }[];
+
   // PAGE 4.1 – COUNTRY PRICING
   bookingFee: number;
   platformFee: number;
@@ -68,6 +79,17 @@ const SystemSettingsSchema: Schema = new Schema({
   maintenanceMode: { type: Boolean, default: false },
   sosAlertRadiusKm: { type: Number, default: 5 },
   referralRewardAmount: { type: Number, default: 10 },
+
+  // Structured Negotiation & Commission
+  maxNegotiationRounds: { type: Number, default: 4 },
+  commissionSuspensionThreshold: { type: Number, default: 100 },
+  autoSuspendEnabled: { type: Boolean, default: true },
+  autoUnsuspendEnabled: { type: Boolean, default: true },
+  voucherVendors: [{
+      name: { type: String },
+      code: { type: String },
+      isEnabled: { type: Boolean, default: true }
+  }],
 
   // PAGE 4.1 – COUNTRY PRICING
   bookingFee: { type: Number, default: 0 },

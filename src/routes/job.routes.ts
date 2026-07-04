@@ -20,5 +20,7 @@ router.get('/:jobId', authenticate, jobController.getJobById);
 router.post('/:jobId/pay-booking-fee', authenticate, authorize([UserRole.CUSTOMER]), jobController.payBookingFee);
 router.put('/:jobId/accept', authenticate, authorize([UserRole.PROVIDER]), jobController.acceptJob);
 router.post('/:jobId/rate', authenticate, authorize([UserRole.CUSTOMER, UserRole.PROVIDER]), jobController.rateJob);
+router.post('/:jobId/request-photos', authenticate, authorize([UserRole.PROVIDER]), jobController.requestTaskPhotos);
+router.post('/:jobId/upload-photos', authenticate, authorize([UserRole.CUSTOMER]), jobController.uploadTaskPhotos);
 
 export default router;

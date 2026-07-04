@@ -75,6 +75,18 @@ export interface IJob extends Document {
       }[];
   };
 
+  // Structured Negotiation
+  agreedPrice?: number;
+  priceAcceptedAt?: Date;
+  priceAcceptedBy?: mongoose.Types.ObjectId;
+  priceStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+  negotiationRounds?: number;
+
+  // Task Photos
+  taskPhotosRequested?: boolean;
+  taskPhotosRequestedAt?: Date;
+  taskPhotos?: string[];
+
   notificationsSent?: string[];
   notifiedProviderIds: mongoose.Types.ObjectId[];
 
@@ -136,6 +148,18 @@ const JobSchema: Schema = new Schema({
           amount: { type: Number }
       }]
   },
+
+  // Structured Negotiation
+  agreedPrice: { type: Number },
+  priceAcceptedAt: { type: Date },
+  priceAcceptedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  priceStatus: { type: String, enum: ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED'] },
+  negotiationRounds: { type: Number, default: 0 },
+
+  // Task Photos
+  taskPhotosRequested: { type: Boolean, default: false },
+  taskPhotosRequestedAt: { type: Date },
+  taskPhotos: [{ type: String }],
 
   notificationsSent: { type: [String], default: [] },
   notifiedProviderIds: { type: [Schema.Types.ObjectId], ref: 'User', default: [] },

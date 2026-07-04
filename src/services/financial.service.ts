@@ -2,6 +2,8 @@ import Wallet from '../models/Wallet';
 import Ledger, { TransactionType } from '../models/Ledger';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
+import CommissionRecord from '../models/CommissionRecord';
+import SystemSettings from '../models/SystemSettings';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import * as auditService from './audit.service';
@@ -45,16 +47,24 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
   try {
     const isTest = await testUserService.isTestUser(providerId);
 
-    // FORENSIC: In the current model, PieceJob does NOT collect the service fee.
-    // The customer pays the provider directly (Agreed Price - Booking Fee).
-    // Therefore, we DO NOT mutate the provider's PieceJob wallet here.
-    // We only record the completion event in the Ledger for audit/analytics.
+    const job = await Job.findById(jobId).session(session);
+    if (!job) throw new Error('Job not found');
 
+    const agreedPrice = job.agreedPrice || totalAmount;
+    const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
+
+    // Use stored commission rate if available, otherwise fallback to settings
+    const finalCommissionRate = job.commissionRateSnapshot || settings?.platformCommissionPercent || 15;
+    const commissionAmount = agreedPrice * (finalCommissionRate / 100);
+    const bookingFeeCredit = job.bookingFee || 0;
+    const outstandingCommission = Math.max(0, commissionAmount - bookingFeeCredit);
+
+    // 1. Service Fee Ledger (Gross Earning - Informational in direct model)
     await new Ledger({
       transactionId: `SF-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
       jobId,
       toUserId: providerId,
-      amount: totalAmount, // This is the total value of the job as calculated by platform (informational)
+      amount: agreedPrice,
       currency,
       countryCode,
       type: TransactionType.SERVICE_FEE,
@@ -63,8 +73,65 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
       description: 'Job marked COMPLETED (Direct Payment Model)'
     }).save({ session });
 
-    // We DO NOT mutate balanceEscrow or balanceMain here anymore.
-    // The Booking Fee was already recorded during the payment phase.
+    // 2. Commission Ledger (Platform Revenue)
+    await new Ledger({
+        transactionId: `CM-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+        jobId,
+        fromUserId: providerId,
+        amount: commissionAmount,
+        currency,
+        countryCode,
+        type: TransactionType.COMMISSION,
+        status: 'COMPLETED',
+        isTestTransaction: isTest,
+        description: `Platform Commission (${finalCommissionRate}%)`
+    }).save({ session });
+
+    // 3. Create Commission Record
+    const commissionRecord = new CommissionRecord({
+        jobId,
+        providerId,
+        customerId: job.customerId,
+        acceptedPrice: agreedPrice,
+        commissionPercentage: finalCommissionRate,
+        commissionAmount,
+        bookingFeeCredit,
+        outstandingBalance: outstandingCommission,
+        status: outstandingCommission === 0 ? 'PAID' : 'OUTSTANDING',
+        countryCode,
+        currency
+    });
+    await commissionRecord.save({ session });
+
+    // 4. Update Provider Wallet Outstanding Commission
+    if (outstandingCommission > 0) {
+        const wallet = await Wallet.findOneAndUpdate(
+            { userId: providerId },
+            { $inc: { outstandingCommission: outstandingCommission } },
+            { session, new: true, upsert: true }
+        );
+
+        // 5. Suspension Logic
+        const suspensionThreshold = settings?.commissionSuspensionThreshold || 100;
+        if (settings?.autoSuspendEnabled && wallet.outstandingCommission > suspensionThreshold) {
+            wallet.status = 'SUSPENDED';
+            wallet.isSuspended = true;
+            wallet.suspendReason = `Outstanding commission (${wallet.outstandingCommission}) exceeds threshold (${suspensionThreshold})`;
+            await wallet.save({ session });
+
+            await auditService.logAdminAction({
+                countryCode,
+                adminId: 'SYSTEM',
+                adminRole: 'SYSTEM',
+                action: 'PROVIDER_AUTO_SUSPEND',
+                entityType: 'Provider',
+                entityId: providerId,
+                afterState: { status: 'SUSPENDED', outstandingCommission: wallet.outstandingCommission },
+                ipAddress: 'System',
+                systemSource: 'CORE_ENGINE'
+            });
+        }
+    }
 
     await session.commitTransaction();
   } catch (error) {

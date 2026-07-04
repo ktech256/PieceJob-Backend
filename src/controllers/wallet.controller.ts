@@ -121,3 +121,95 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response) => {
         session.endSession();
     }
 };
+
+import * as voucherService from '../services/voucher.service';
+import SystemSettings from '../models/SystemSettings';
+import * as auditService from '../services/audit.service';
+
+export const payCommission = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { vendor, voucherNumber } = req.body;
+        const providerId = req.user?.userId;
+        const countryCode = req.user?.countryCode;
+
+        if (!vendor || !voucherNumber) {
+            return res.status(400).json({ success: false, message: 'Vendor and voucher number required' });
+        }
+
+        const verification = await voucherService.validateVoucher(vendor, voucherNumber, countryCode as string);
+        if (!verification.isValid) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired voucher' });
+        }
+
+        const paymentAmount = verification.amount;
+
+        const wallet = await Wallet.findOne({ userId: providerId }).session(session);
+        if (!wallet) throw new Error('Wallet not found');
+
+        const previousOutstanding = wallet.outstandingCommission;
+        wallet.outstandingCommission = Math.max(0, wallet.outstandingCommission - paymentAmount);
+
+        // If payment exceeds outstanding, add to main balance
+        const overpayment = Math.max(0, paymentAmount - previousOutstanding);
+        if (overpayment > 0) {
+            wallet.balanceMain += overpayment;
+        }
+
+        // Automatic Unsuspension
+        const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
+        if (settings?.autoUnsuspendEnabled && wallet.isSuspended) {
+            const threshold = settings?.commissionSuspensionThreshold || 100;
+            if (wallet.outstandingCommission <= threshold) {
+                wallet.status = 'ACTIVE';
+                wallet.isSuspended = false;
+                wallet.suspendReason = undefined;
+            }
+        }
+
+        await wallet.save({ session });
+
+        // Record in Ledger
+        await new Ledger({
+            transactionId: `VCH-${vendor}-${Date.now()}`,
+            toUserId: providerId,
+            amount: paymentAmount,
+            currency: wallet.currency,
+            countryCode: wallet.countryCode,
+            type: TransactionType.CREDIT_TOPUP,
+            status: 'COMPLETED',
+            description: `Commission payment via ${vendor} Voucher`,
+            metadata: { vendor, voucherNumber, overpayment }
+        }).save({ session });
+
+        await auditService.logAdminAction({
+            countryCode: wallet.countryCode,
+            adminId: 'SYSTEM',
+            adminRole: 'SYSTEM',
+            action: 'COMMISSION_PAYMENT',
+            entityType: 'Wallet',
+            entityId: wallet._id,
+            afterState: { outstandingCommission: wallet.outstandingCommission, balanceMain: wallet.balanceMain },
+            ipAddress: req.ip,
+            systemSource: 'MOBILE_APP'
+        });
+
+        await session.commitTransaction();
+        res.status(200).json({
+            success: true,
+            message: 'Commission paid successfully',
+            data: {
+                paymentAmount,
+                outstandingCommission: wallet.outstandingCommission,
+                balanceMain: wallet.balanceMain,
+                isSuspended: wallet.isSuspended
+            }
+        });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
+    }
+};

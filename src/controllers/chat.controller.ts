@@ -154,3 +154,45 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ success: false, message: 'Failed to send message', error });
     }
 };
+
+export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const providerId = req.user?.userId;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        if (job.providerId?.toString() !== providerId) {
+            return res.status(403).json({ success: false, message: 'Only the assigned provider can request photos' });
+        }
+
+        job.taskPhotosRequested = true;
+        job.taskPhotosRequestedAt = new Date();
+        await job.save();
+
+        // Send a structured message in chat
+        const message = new Message({
+            jobId,
+            senderId: providerId,
+            receiverId: job.customerId,
+            text: 'Provider requested photos for this task.',
+            metadata: { type: 'PHOTO_REQUEST' }
+        });
+        await message.save();
+
+        const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+        emitJobUpdate(jobId, 'new_message', data);
+
+        await notificationService.notifyUser(
+            job.customerId.toString(),
+            'Task Photos Requested',
+            'Your provider has requested photos of the task for a better estimation.',
+            { type: 'PHOTO_REQUEST', jobId: jobId.toString() }
+        );
+
+        res.status(200).json({ success: true, message: 'Photos requested successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to request photos', error });
+    }
+};

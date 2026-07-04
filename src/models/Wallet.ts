@@ -9,6 +9,7 @@ export interface IWallet extends Document {
   balanceCredit: number;
   balanceReferral: number;
   balanceBonus: number;
+  outstandingCommission: number;
   status: 'ACTIVE' | 'FROZEN' | 'LOCKED' | 'SUSPENDED';
   isFrozen: boolean;
   isLocked: boolean;
@@ -27,6 +28,7 @@ const WalletSchema: Schema = new Schema({
   balanceCredit: { type: Number, default: 0 },
   balanceReferral: { type: Number, default: 0 },
   balanceBonus: { type: Number, default: 0 },
+  outstandingCommission: { type: Number, default: 0 },
   status: { type: String, enum: ['ACTIVE', 'FROZEN', 'LOCKED', 'SUSPENDED'], default: 'ACTIVE' },
   isFrozen: { type: Boolean, default: false },
   isLocked: { type: Boolean, default: false },

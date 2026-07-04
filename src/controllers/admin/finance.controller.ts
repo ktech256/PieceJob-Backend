@@ -8,9 +8,169 @@ import * as statementService from '../../services/statement.service';
 import { StatementType } from '../../models/Statement';
 import mongoose from 'mongoose';
 
-import Country from '../../models/Country';
+import CommissionRecord from '../../models/CommissionRecord';
 import SystemSettings from '../../models/SystemSettings';
 import * as financialService from '../../services/financial.service';
+
+export const getCommissionOverview = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const query: any = { countryCode };
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const startOfWeek = new Date();
+        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const [outstandingAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeeCreditsAgg] = await Promise.all([
+            CommissionRecord.aggregate([
+                { $match: { ...query, status: { $in: ['OUTSTANDING', 'PARTIAL'] } } },
+                { $group: { _id: null, total: { $sum: "$outstandingBalance" } } }
+            ]),
+            Ledger.aggregate([
+                { $match: { ...query, type: TransactionType.COMMISSION, createdAt: { $gte: startOfDay } } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]),
+            Ledger.aggregate([
+                { $match: { ...query, type: TransactionType.COMMISSION, createdAt: { $gte: startOfWeek } } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]),
+            Ledger.aggregate([
+                { $match: { ...query, type: TransactionType.COMMISSION, createdAt: { $gte: startOfMonth } } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]),
+            CommissionRecord.aggregate([
+                { $match: { ...query, status: 'WAIVED' } },
+                { $group: { _id: null, total: { $sum: "$waivedAmount" } } }
+            ]),
+            CommissionRecord.aggregate([
+                { $match: query },
+                { $group: { _id: null, total: { $sum: "$bookingFeeCredit" } } }
+            ])
+        ]);
+
+        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER' })
+            .sort({ outstandingCommission: -1 })
+            .limit(10)
+            .populate('userId', 'firstName lastName email');
+
+        res.status(200).json({
+            success: true,
+            stats: {
+                outstandingCommission: outstandingAgg[0]?.total || 0,
+                collectedToday: collectedTodayAgg[0]?.total || 0,
+                collectedThisWeek: collectedThisWeekAgg[0]?.total || 0,
+                collectedThisMonth: collectedThisMonthAgg[0]?.total || 0,
+                waivedCommission: waivedAgg[0]?.total || 0,
+                bookingFeeCredits: bookingFeeCreditsAgg[0]?.total || 0,
+                topOwingProviders
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Commission overview failed', error });
+    }
+};
+
+export const listCommissionRecords = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const { status, providerId } = req.query;
+        const query: any = { countryCode };
+        if (status) query.status = status;
+        if (providerId) query.providerId = providerId;
+
+        const records = await CommissionRecord.find(query)
+            .sort({ createdAt: -1 })
+            .populate('providerId', 'firstName lastName email')
+            .populate('customerId', 'firstName lastName')
+            .populate('jobId', 'serviceName status');
+
+        res.status(200).json({ success: true, data: records });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to list commission records', error });
+    }
+};
+
+export const waiveCommission = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { recordId, amount, reason } = req.body;
+        const record = await CommissionRecord.findById(recordId).session(session);
+        if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
+
+        const waiveAmount = amount || record.outstandingBalance;
+        record.waivedAmount = (record.waivedAmount || 0) + waiveAmount;
+        record.outstandingBalance -= waiveAmount;
+        record.status = record.outstandingBalance <= 0 ? 'WAIVED' : 'PARTIAL';
+        record.waivedReason = reason;
+        record.waivedBy = new mongoose.Types.ObjectId(req.user?.userId);
+        await record.save({ session });
+
+        // Update Wallet
+        await Wallet.findOneAndUpdate(
+            { userId: record.providerId },
+            { $inc: { outstandingCommission: -waiveAmount } },
+            { session }
+        );
+
+        await auditService.logAdminAction({
+            countryCode: record.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'COMMISSION_WAIVE',
+            entityType: 'CommissionRecord',
+            entityId: record.id,
+            afterState: { waivedAmount: record.waivedAmount, outstandingBalance: record.outstandingBalance },
+            ipAddress: req.ip,
+            reason,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        await session.commitTransaction();
+        res.status(200).json({ success: true, message: 'Commission waived successfully' });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
+    }
+};
+
+export const bulkSuspendProviders = async (req: AuthRequest, res: Response) => {
+    try {
+        const { threshold, countryCode } = req.body;
+        const providersToSuspend = await Wallet.find({
+            countryCode,
+            role: 'PROVIDER',
+            outstandingCommission: { $gt: threshold },
+            isSuspended: { $ne: true }
+        });
+
+        const providerIds = providersToSuspend.map(p => p.userId);
+
+        await Wallet.updateMany(
+            { userId: { $in: providerIds } },
+            {
+                $set: {
+                    status: 'SUSPENDED',
+                    isSuspended: true,
+                    suspendReason: `Bulk suspension: Outstanding commission exceeds ${threshold}`
+                }
+            }
+        );
+
+        res.status(200).json({ success: true, count: providerIds.length });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Bulk suspension failed', error });
+    }
+};
 
 export const getOverview = async (req: AuthRequest, res: Response) => {
     try {

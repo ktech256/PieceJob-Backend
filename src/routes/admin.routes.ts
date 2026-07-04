@@ -176,6 +176,13 @@ router.get('/finance/ledger', hasPermission('MANAGE_FINANCE'), financeController
 router.get('/finance/wallets', hasPermission('MANAGE_FINANCE'), financeController.listWallets);
 router.get('/finance/refunds', hasPermission('MANAGE_FINANCE'), financeController.listRefunds);
 router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeController.listReferrals);
+
+// NEW COMMISSION ROUTES
+router.get('/finance/commissions/overview', hasPermission('MANAGE_FINANCE'), financeController.getCommissionOverview);
+router.get('/finance/commissions/records', hasPermission('MANAGE_FINANCE'), financeController.listCommissionRecords);
+router.post('/finance/commissions/waive', hasPermission('MANAGE_FINANCE'), financeController.waiveCommission);
+router.post('/finance/commissions/bulk-suspend', hasPermission('MANAGE_FINANCE'), financeController.bulkSuspendProviders);
+
 router.post('/finance/reconciliation/run', hasPermission('MANAGE_FINANCE'), financeController.runReconciliation);
 router.post('/finance/statements/provider/generate', hasPermission('MANAGE_FINANCE'), financeController.generateProviderStatement);
 
