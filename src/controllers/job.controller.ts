@@ -893,6 +893,11 @@ export const uploadTaskPhotos = async (req: AuthRequest, res: Response) => {
         }
 
         job.taskPhotos = photos;
+        job.negotiationTimeline.push({
+            event: 'PHOTOS_UPLOADED',
+            timestamp: new Date(),
+            metadata: { count: photos.length }
+        });
         await job.save();
 
         // Send a structured message in chat
@@ -939,6 +944,10 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
 
         job.taskPhotosRequested = true;
         job.taskPhotosRequestedAt = new Date();
+        job.negotiationTimeline.push({
+            event: 'PHOTOS_REQUESTED',
+            timestamp: new Date()
+        });
         await job.save();
 
         // Send a structured message in chat
@@ -980,6 +989,10 @@ export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
         }
 
         job.taskPhotosSeen = true;
+        job.negotiationTimeline.push({
+            event: 'PHOTOS_REVIEWED',
+            timestamp: new Date()
+        });
         await job.save();
 
         // Send a structured message in chat
@@ -1020,6 +1033,11 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
         job.status = JobStatus.ACCEPTED;
         job.priceStatus = 'ACCEPTED'; // Mark as accepted if it wasn't already (for non-negotiated services)
         if (!job.agreedPrice) job.agreedPrice = (job.serviceFee || 0) + job.bookingFee; // Use estimate if no negotiation
+
+        job.negotiationTimeline.push({
+            event: 'DISPATCH_CONFIRMED',
+            timestamp: new Date()
+        });
 
         await job.save();
 

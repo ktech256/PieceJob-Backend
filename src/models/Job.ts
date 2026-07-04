@@ -81,6 +81,11 @@ export interface IJob extends Document {
   priceAcceptedBy?: mongoose.Types.ObjectId;
   priceStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
   negotiationRounds?: number;
+  negotiationTimeline: {
+      event: string;
+      timestamp: Date;
+      metadata?: any;
+  }[];
 
   // Task Photos
   taskPhotosRequested?: boolean;
@@ -156,6 +161,11 @@ const JobSchema: Schema = new Schema({
   priceAcceptedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   priceStatus: { type: String, enum: ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED'] },
   negotiationRounds: { type: Number, default: 0 },
+  negotiationTimeline: [{
+      event: { type: String, required: true },
+      timestamp: { type: Date, default: Date.now },
+      metadata: { type: Schema.Types.Mixed }
+  }],
 
   // Task Photos
   taskPhotosRequested: { type: Boolean, default: false },

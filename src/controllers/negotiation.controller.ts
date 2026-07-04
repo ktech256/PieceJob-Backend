@@ -51,6 +51,11 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
 
         job.negotiationRounds = (job.negotiationRounds || 0) + 1;
         job.priceStatus = 'PENDING';
+        job.negotiationTimeline.push({
+            event: 'PRICE_PROPOSED',
+            timestamp: new Date(),
+            metadata: { amount, round: job.negotiationRounds, senderId }
+        });
         await job.save();
 
         // Send a structured message in chat
@@ -111,6 +116,12 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
             job.priceAcceptedAt = new Date();
             job.priceAcceptedBy = new mongoose.Types.ObjectId(userId);
             job.priceStatus = 'ACCEPTED';
+
+            job.negotiationTimeline.push({
+                event: 'PRICE_ACCEPTED',
+                timestamp: new Date(),
+                metadata: { amount: proposal.amount, acceptedBy: userId }
+            });
 
             // PHASE 3: Now dispatch provider
             if (job.status === JobStatus.PROVIDER_ACCEPTED) {

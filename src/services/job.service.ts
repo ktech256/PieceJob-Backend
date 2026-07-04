@@ -261,6 +261,12 @@ export const acceptJob = async (jobId: string, providerId: string) => {
         job.status = JobStatus.ACCEPTED; // Dispatch immediately
     }
 
+    job.negotiationTimeline = [{
+        event: 'PROVIDER_ACCEPTED',
+        timestamp: new Date(),
+        metadata: { providerId }
+    }];
+
     job.acceptedAt = new Date();
     job.commissionRateSnapshot = commissionRate;
     job.version += 1;
