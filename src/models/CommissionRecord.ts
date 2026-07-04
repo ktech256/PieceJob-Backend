@@ -15,6 +15,11 @@ export interface ICommissionRecord extends Document {
   waivedAmount?: number;
   waivedReason?: string;
   waivedBy?: mongoose.Types.ObjectId;
+  timeline: {
+      event: string;
+      timestamp: Date;
+      metadata?: any;
+  }[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,7 +38,12 @@ const CommissionRecordSchema: Schema = new Schema({
   currency: { type: String, required: true },
   waivedAmount: { type: Number, default: 0 },
   waivedReason: { type: String },
-  waivedBy: { type: Schema.Types.ObjectId, ref: 'User' }
+  waivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  timeline: [{
+      event: { type: String, required: true },
+      timestamp: { type: Date, default: Date.now },
+      metadata: { type: Schema.Types.Mixed }
+  }]
 }, { timestamps: true });
 
 CommissionRecordSchema.index({ jobId: 1 }, { unique: true });

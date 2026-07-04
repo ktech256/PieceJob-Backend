@@ -180,8 +180,11 @@ router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeControl
 // NEW COMMISSION ROUTES
 router.get('/finance/commissions/overview', hasPermission('MANAGE_FINANCE'), financeController.getCommissionOverview);
 router.get('/finance/commissions/records', hasPermission('MANAGE_FINANCE'), financeController.listCommissionRecords);
+router.get('/finance/commissions/vouchers', hasPermission('MANAGE_FINANCE'), financeController.listUsedVouchers);
 router.post('/finance/commissions/waive', hasPermission('MANAGE_FINANCE'), financeController.waiveCommission);
 router.post('/finance/commissions/bulk-suspend', hasPermission('MANAGE_FINANCE'), financeController.bulkSuspendProviders);
+router.post('/finance/commissions/bulk-unsuspend', hasPermission('MANAGE_FINANCE'), financeController.bulkUnsuspendProviders);
+router.get('/finance/commissions/timeline/:jobId', hasPermission('MANAGE_FINANCE'), financeController.getCommissionTimeline);
 
 router.post('/finance/reconciliation/run', hasPermission('MANAGE_FINANCE'), financeController.runReconciliation);
 router.post('/finance/statements/provider/generate', hasPermission('MANAGE_FINANCE'), financeController.generateProviderStatement);

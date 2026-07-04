@@ -99,7 +99,11 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
         outstandingBalance: outstandingCommission,
         status: outstandingCommission === 0 ? 'PAID' : 'OUTSTANDING',
         countryCode,
-        currency
+        currency,
+        timeline: [
+            { event: 'JOB_COMPLETED', timestamp: new Date() },
+            { event: 'COMMISSION_CALCULATED', timestamp: new Date(), metadata: { commissionAmount, bookingFeeCredit } }
+        ]
     });
     await commissionRecord.save({ session });
 

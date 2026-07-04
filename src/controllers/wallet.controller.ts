@@ -124,6 +124,8 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response) => {
 
 import * as voucherService from '../services/voucher.service';
 import SystemSettings from '../models/SystemSettings';
+import UsedVoucher from '../models/UsedVoucher';
+import CommissionRecord from '../models/CommissionRecord';
 import * as auditService from '../services/audit.service';
 
 export const payCommission = async (req: AuthRequest, res: Response) => {
@@ -138,6 +140,11 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, message: 'Vendor and voucher number required' });
         }
 
+        const alreadyUsed = await UsedVoucher.findOne({ voucherNumber, vendor }).session(session);
+        if (alreadyUsed) {
+            return res.status(400).json({ success: false, message: 'This voucher has already been redeemed' });
+        }
+
         const verification = await voucherService.validateVoucher(vendor, voucherNumber, countryCode as string);
         if (!verification.isValid) {
             return res.status(400).json({ success: false, message: 'Invalid or expired voucher' });
@@ -150,6 +157,21 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
 
         const previousOutstanding = wallet.outstandingCommission;
         wallet.outstandingCommission = Math.max(0, wallet.outstandingCommission - paymentAmount);
+
+        // Record Timeline in all associated outstanding CommissionRecords
+        const commissionRecords = await CommissionRecord.find({
+            providerId,
+            status: { $in: ['OUTSTANDING', 'PARTIAL'] }
+        }).session(session);
+
+        for (const record of commissionRecords) {
+            record.timeline.push({
+                event: 'VOUCHER_PAYMENT_REDEEMED',
+                timestamp: new Date(),
+                metadata: { vendor, amount: paymentAmount, voucherNumber }
+            });
+            await record.save({ session });
+        }
 
         // If payment exceeds outstanding, add to main balance
         const overpayment = Math.max(0, paymentAmount - previousOutstanding);
@@ -171,7 +193,7 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
         await wallet.save({ session });
 
         // Record in Ledger
-        await new Ledger({
+        const ledger = await new Ledger({
             transactionId: `VCH-${vendor}-${Date.now()}`,
             toUserId: providerId,
             amount: paymentAmount,
@@ -181,6 +203,16 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
             status: 'COMPLETED',
             description: `Commission payment via ${vendor} Voucher`,
             metadata: { vendor, voucherNumber, overpayment }
+        }).save({ session });
+
+        // Mark Voucher as Used
+        await new UsedVoucher({
+            voucherNumber,
+            vendor,
+            amount: paymentAmount,
+            countryCode: wallet.countryCode,
+            redeemedBy: providerId,
+            ledgerReference: ledger.transactionId
         }).save({ session });
 
         await auditService.logAdminAction({

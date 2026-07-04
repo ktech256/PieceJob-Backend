@@ -34,6 +34,8 @@ export interface IService extends Document {
   description?: string;
   icon?: string;
   bookingFee?: number;
+  photoSharingRequired: boolean;
+  priceNegotiationRequired: boolean;
 }
 
 const ServiceSchema: Schema = new Schema({
@@ -48,6 +50,8 @@ const ServiceSchema: Schema = new Schema({
   description: { type: String },
   icon: { type: String },
   bookingFee: { type: Number, default: 0 },
+  photoSharingRequired: { type: Boolean, default: false },
+  priceNegotiationRequired: { type: Boolean, default: false },
 }, { timestamps: true });
 
 ServiceSchema.index({ code: 1, countryCode: 1 }, { unique: true });

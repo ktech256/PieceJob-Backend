@@ -26,6 +26,8 @@ import testRoutes from './routes/test.routes';
 import admin from 'firebase-admin';
 import { logger } from './utils/logger';
 
+import * as jobService from './services/job.service';
+
 // PieceJob Backend - V3.1
 const app = express();
 
@@ -80,6 +82,15 @@ app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/marketing', marketingRoutes);
 app.use('/api/test', testRoutes);
+
+// Cron simulation for Negotiation Expiry (Phase 4)
+setInterval(async () => {
+    try {
+        await jobService.expireInactiveNegotiations();
+    } catch (e) {
+        logger.error('CRON | NEGOTIATION_EXPIRY_FAILED', e);
+    }
+}, 15 * 60 * 1000); // Every 15 mins
 
 // Dashboard Aliases (Mounting under /api for dashboard lib/api/axios.ts)
 app.use('/api/auth', authRoutes);

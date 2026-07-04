@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import PriceProposal from '../models/PriceProposal';
 import ChatMessage from '../models/Chat';
+import CommissionRecord from '../models/CommissionRecord';
 import SystemSettings from '../models/SystemSettings';
 import { emitJobUpdate } from '../socket/socket.service';
 import * as notificationService from '../services/notification.service';
@@ -111,9 +112,21 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
             job.priceAcceptedBy = new mongoose.Types.ObjectId(userId);
             job.priceStatus = 'ACCEPTED';
 
-            // Requirements: Provider can now start the job.
-            // If the job was just ACCEPTED, it might move to EN_ROUTE automatically or something.
-            // For now just keep status.
+            // PHASE 3: Now dispatch provider
+            if (job.status === JobStatus.PROVIDER_ACCEPTED) {
+                job.status = JobStatus.ACCEPTED;
+
+                // Record Timeline Event
+                const commissionRecord = await CommissionRecord.findOne({ jobId: job._id });
+                if (commissionRecord) {
+                    commissionRecord.timeline.push({
+                        event: 'PRICE_ACCEPTED_DISPATCH_ENABLED',
+                        timestamp: new Date(),
+                        metadata: { agreedPrice: proposal.amount }
+                    });
+                    await commissionRecord.save();
+                }
+            }
 
             await job.save();
             await proposal.save();

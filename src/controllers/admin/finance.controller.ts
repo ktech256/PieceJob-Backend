@@ -7,6 +7,7 @@ import * as reconciliationService from '../../services/reconciliation.service';
 import * as statementService from '../../services/statement.service';
 import * as auditService from '../../services/audit.service';
 import { StatementType } from '../../models/Statement';
+import Job from '../../models/Job';
 import mongoose from 'mongoose';
 
 import CommissionRecord from '../../models/CommissionRecord';
@@ -30,7 +31,7 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
 
-        const [outstandingAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeeCreditsAgg] = await Promise.all([
+        const [outstandingAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeeCreditsAgg, collectedAllTimeAgg] = await Promise.all([
             CommissionRecord.aggregate([
                 { $match: { ...query, status: { $in: ['OUTSTANDING', 'PARTIAL'] } } },
                 { $group: { _id: null, total: { $sum: "$outstandingBalance" } } }
@@ -54,13 +55,17 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
             CommissionRecord.aggregate([
                 { $match: query },
                 { $group: { _id: null, total: { $sum: "$bookingFeeCredit" } } }
+            ]),
+            Ledger.aggregate([
+                { $match: { ...query, type: TransactionType.COMMISSION, status: 'COMPLETED' } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
             ])
         ]);
 
-        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER' })
+        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER', outstandingCommission: { $gt: 0 } })
             .sort({ outstandingCommission: -1 })
             .limit(10)
-            .populate('userId', 'firstName lastName email');
+            .populate('userId', 'firstName lastName email profilePhoto');
 
         res.status(200).json({
             success: true,
@@ -69,6 +74,7 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
                 collectedToday: collectedTodayAgg[0]?.total || 0,
                 collectedThisWeek: collectedThisWeekAgg[0]?.total || 0,
                 collectedThisMonth: collectedThisMonthAgg[0]?.total || 0,
+                collectedAllTime: collectedAllTimeAgg[0]?.total || 0,
                 waivedCommission: waivedAgg[0]?.total || 0,
                 bookingFeeCredits: bookingFeeCreditsAgg[0]?.total || 0,
                 topOwingProviders
@@ -89,9 +95,9 @@ export const listCommissionRecords = async (req: AuthRequest, res: Response) => 
 
         const records = await CommissionRecord.find(query)
             .sort({ createdAt: -1 })
-            .populate('providerId', 'firstName lastName email')
-            .populate('customerId', 'firstName lastName')
-            .populate('jobId', 'serviceName status');
+            .populate('providerId', 'firstName lastName email profilePhoto')
+            .populate('customerId', 'firstName lastName profilePhoto')
+            .populate('jobId', 'serviceName status taskPhotos agreedPrice bookingFee');
 
         res.status(200).json({ success: true, data: records });
     } catch (error) {
@@ -113,6 +119,13 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
         record.status = record.outstandingBalance <= 0 ? 'WAIVED' : 'PARTIAL';
         record.waivedReason = reason;
         record.waivedBy = new mongoose.Types.ObjectId(req.user?.userId);
+
+        record.timeline.push({
+            event: 'COMMISSION_WAIVED',
+            timestamp: new Date(),
+            metadata: { waiveAmount, reason, adminId: req.user?.userId }
+        });
+
         await record.save({ session });
 
         // Update Wallet
@@ -132,7 +145,8 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
             afterState: {
                 waivedAmount: record.waivedAmount,
                 outstandingBalance: record.outstandingBalance,
-                reason
+                reason,
+                jobId: record.jobId
             },
             ipAddress: req.ip,
             systemSource: 'ADMIN_DASHBOARD'
@@ -171,9 +185,101 @@ export const bulkSuspendProviders = async (req: AuthRequest, res: Response) => {
             }
         );
 
+        await auditService.logAdminAction({
+            countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'BULK_PROVIDER_SUSPEND',
+            entityType: 'Provider',
+            entityId: 'BATCH',
+            afterState: { threshold, count: providerIds.length, providerIds },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
         res.status(200).json({ success: true, count: providerIds.length });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Bulk suspension failed', error });
+    }
+};
+
+export const bulkUnsuspendProviders = async (req: AuthRequest, res: Response) => {
+    try {
+        const { countryCode } = req.body;
+        const providersToUnsuspend = await Wallet.find({
+            countryCode,
+            role: 'PROVIDER',
+            isSuspended: true
+        });
+
+        const providerIds = providersToUnsuspend.map(p => p.userId);
+
+        await Wallet.updateMany(
+            { userId: { $in: providerIds } },
+            {
+                $set: {
+                    status: 'ACTIVE',
+                    isSuspended: false,
+                    suspendReason: undefined
+                }
+            }
+        );
+
+        await auditService.logAdminAction({
+            countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'BULK_PROVIDER_UNSUSPEND',
+            entityType: 'Provider',
+            entityId: 'BATCH',
+            afterState: { count: providerIds.length, providerIds },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, count: providerIds.length });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Bulk unsuspension failed', error });
+    }
+};
+
+export const getCommissionTimeline = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const record = await CommissionRecord.findOne({ jobId })
+            .populate('jobId')
+            .populate('providerId', 'firstName lastName profilePhoto')
+            .populate('customerId', 'firstName lastName profilePhoto');
+
+        if (!record) {
+            // If no commission record yet, get job timeline
+            const job = await Job.findById(jobId);
+            if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+            // Construct a basic timeline from job state
+            const timeline = [
+                { event: 'JOB_CREATED', timestamp: job.createdAt },
+                { event: 'BOOKING_FEE_PAID', timestamp: job.updatedAt } // Simplification
+            ];
+
+            return res.status(200).json({ success: true, timeline });
+        }
+
+        res.status(200).json({ success: true, data: record });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch timeline', error });
+    }
+};
+
+export const listUsedVouchers = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const vouchers = await mongoose.model('UsedVoucher').find({ countryCode })
+            .sort({ redeemedAt: -1 })
+            .populate('redeemedBy', 'firstName lastName email');
+        res.status(200).json({ success: true, data: vouchers });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to list vouchers', error });
     }
 };
 

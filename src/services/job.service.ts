@@ -250,7 +250,17 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     const commissionRate = await pricingService.getCommissionRate(job.countryCode, provider.tier);
 
     job.providerId = providerId as any;
-    job.status = JobStatus.ACCEPTED;
+
+    // PHASE 3: Dispatch Control
+    const negotiationRequired = service?.priceNegotiationRequired || false;
+    const photoSharingRequired = service?.photoSharingRequired || false;
+
+    if (negotiationRequired) {
+        job.status = JobStatus.PROVIDER_ACCEPTED; // Provider accepted, but negotiation pending
+    } else {
+        job.status = JobStatus.ACCEPTED; // Dispatch immediately if no negotiation
+    }
+
     job.acceptedAt = new Date();
     job.commissionRateSnapshot = commissionRate;
     job.version += 1;
@@ -302,4 +312,30 @@ export const acceptJob = async (jobId: string, providerId: string) => {
   } finally {
     session.endSession();
   }
+};
+
+export const expireInactiveNegotiations = async () => {
+    const settings = await settingsService.getSettings('GLOBAL');
+    const expiryHours = settings?.maxNegotiationRounds || 24; // Use maxNegotiationRounds field if available, or 24h
+    const expiryDate = new Date(Date.now() - expiryHours * 60 * 60 * 1000);
+
+    const jobsToExpire = await Job.find({
+        status: JobStatus.PROVIDER_ACCEPTED,
+        priceStatus: 'PENDING',
+        updatedAt: { $lt: expiryDate }
+    });
+
+    for (const job of jobsToExpire) {
+        job.priceStatus = 'EXPIRED';
+        // We don't automatically cancel the job, but we mark the negotiation as expired.
+        // The spec says "Status EXPIRED. Notify both users."
+        await job.save();
+
+        await notificationService.notifyUser(job.customerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
+        if (job.providerId) {
+            await notificationService.notifyUser(job.providerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
+        }
+
+        emitJobUpdate(job.id, 'status_updated', { jobId: job.id, priceStatus: 'EXPIRED' });
+    }
 };
