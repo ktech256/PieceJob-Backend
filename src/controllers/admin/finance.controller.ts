@@ -129,9 +129,12 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
             action: 'COMMISSION_WAIVE',
             entityType: 'CommissionRecord',
             entityId: record.id,
-            afterState: { waivedAmount: record.waivedAmount, outstandingBalance: record.outstandingBalance },
+            afterState: {
+                waivedAmount: record.waivedAmount,
+                outstandingBalance: record.outstandingBalance,
+                reason
+            },
             ipAddress: req.ip,
-            reason,
             systemSource: 'ADMIN_DASHBOARD'
         });
 
