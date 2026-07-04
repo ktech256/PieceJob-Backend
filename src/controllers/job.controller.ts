@@ -38,12 +38,7 @@ const sanitizeJobForMobile = (job: any) => {
     if (providerInfo && providerInfo.profilePhoto) providerInfo.profilePicture = providerInfo.profilePhoto;
     if (customerInfo && customerInfo.profilePhoto) customerInfo.profilePicture = customerInfo.profilePhoto;
 
-    // Forensic: Ensure status is mapped correctly for mobile
-    if (jobObj.status === 'PROVIDER_ACCEPTED') {
-        jobObj.status = 'ACCEPTED';
-    }
-
-    return {
+    const sanitized = {
         ...jobObj,
         id: (jobObj._id || jobObj.id).toString(),
         customerId: customerId ? customerId.toString() : null,
@@ -53,6 +48,33 @@ const sanitizeJobForMobile = (job: any) => {
         serviceName: jobObj.serviceName || jobObj.serviceCode, // Fallback for older jobs
         currency: jobObj.pricingSnapshot?.currencyCode || 'USD'
     };
+
+    // PHASE 3 & 5: Privacy Hardening & Dispatch Control
+    // Hide exact address until price is agreed (status moves to ACCEPTED or beyond)
+    // IMPORTANT: Terminal statuses should NOT be obscured (already completed)
+    const activeStatuses = [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
+    const isPriceAgreed = jobObj.priceStatus === 'ACCEPTED' || activeStatuses.includes(jobObj.status);
+
+    if (!isPriceAgreed) {
+        const rawAddress = sanitized.location?.address || sanitized.address || '';
+        const addressParts = rawAddress.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+
+        let obscured = 'Nearby Location';
+        if (addressParts.length >= 3) {
+            obscured = `${addressParts[1]}, ${addressParts[2]}`;
+        } else if (addressParts.length >= 1) {
+            obscured = addressParts[0];
+        }
+
+        sanitized.address = obscured;
+        if (sanitized.location) {
+            sanitized.location.address = obscured;
+            // Also zero out coordinates to prevent map hacking in Provider app
+            sanitized.location.coordinates = [0, 0];
+        }
+    }
+
+    return sanitized;
 };
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
@@ -511,23 +533,27 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const sanitized = sanitizeJobForMobile(finalJob || job);
     if (providerData) sanitized.providerInfo = providerData;
 
-    const statusPayload = { jobId: job.id, status: JobStatus.ACCEPTED, providerInfo: providerData };
+    const statusPayload = { jobId: job.id, status: job.status, providerInfo: providerData };
 
     // Notify Customer via Socket (User Room - specific for acceptance transition)
-    console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${JobStatus.ACCEPTED} | Target User: ${job.customerId}`);
+    console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${job.status} | Target User: ${job.customerId}`);
     emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', statusPayload);
     emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
     emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
 
     // Notify Customer via Socket (Job Room)
-    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${JobStatus.ACCEPTED}`);
+    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${job.status}`);
     emitJobUpdate(job.id, 'status_updated', statusPayload);
 
     // Notify Customer via FCM
+    const notificationMsg = job.status === JobStatus.PROVIDER_ACCEPTED
+        ? 'A provider has accepted your request. Negotiation is required.'
+        : 'A provider has accepted your request and is on the way.';
+
     await notificationService.notifyUser(
         job.customerId.toString(),
         'Job Accepted',
-        'A provider has accepted your request and is on the way.'
+        notificationMsg
     );
 
     res.status(200).json({ success: true, message: 'Job accepted', data: sanitized });
@@ -938,5 +964,43 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: 'Photos requested successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to request photos', error });
+    }
+};
+
+export const confirmDispatch = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const providerId = req.user?.userId;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        if (job.providerId?.toString() !== providerId) {
+            return res.status(403).json({ success: false, message: 'Only the assigned provider can confirm dispatch' });
+        }
+
+        if (job.status !== JobStatus.PROVIDER_ACCEPTED) {
+            return res.status(400).json({ success: false, message: 'Job is not in a state awaiting dispatch confirmation' });
+        }
+
+        job.status = JobStatus.ACCEPTED;
+        job.priceStatus = 'ACCEPTED'; // Mark as accepted if it wasn't already (for non-negotiated services)
+        if (!job.agreedPrice) job.agreedPrice = (job.serviceFee || 0) + job.bookingFee; // Use estimate if no negotiation
+
+        await job.save();
+
+        const statusPayload = { jobId: job.id, status: job.status };
+        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+        emitJobUpdate(job.id, 'status_updated', statusPayload);
+
+        await notificationService.notifyUser(
+            job.customerId.toString(),
+            'Provider Dispatched',
+            'Your provider has reviewed the details and is now on the way.'
+        );
+
+        res.status(200).json({ success: true, message: 'Dispatch confirmed', job: sanitizeJobForMobile(job) });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to confirm dispatch', error });
     }
 };

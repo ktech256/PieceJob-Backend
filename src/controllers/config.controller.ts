@@ -134,8 +134,9 @@ export const getPublicServices = async (req: Request, res: Response) => {
 
         const servicesWithCounts = services.map((s: any) => {
             const count = onlineProviders.filter((p: any) => p.servicesOffered.includes(s.code)).length;
+            const sObj = s.toObject ? s.toObject() : s;
             return {
-                ...s.toObject(),
+                ...sObj,
                 onlineCountLabel: formatCountLabel(count),
                 onlineCount: count
             };

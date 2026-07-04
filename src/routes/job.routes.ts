@@ -22,5 +22,6 @@ router.put('/:jobId/accept', authenticate, authorize([UserRole.PROVIDER]), jobCo
 router.post('/:jobId/rate', authenticate, authorize([UserRole.CUSTOMER, UserRole.PROVIDER]), jobController.rateJob);
 router.post('/:jobId/request-photos', authenticate, authorize([UserRole.PROVIDER]), jobController.requestTaskPhotos);
 router.post('/:jobId/upload-photos', authenticate, authorize([UserRole.CUSTOMER]), jobController.uploadTaskPhotos);
+router.post('/:jobId/confirm-dispatch', authenticate, authorize([UserRole.PROVIDER]), jobController.confirmDispatch);
 
 export default router;

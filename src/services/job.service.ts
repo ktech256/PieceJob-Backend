@@ -255,10 +255,10 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     const negotiationRequired = service?.priceNegotiationRequired || false;
     const photoSharingRequired = service?.photoSharingRequired || false;
 
-    if (negotiationRequired) {
-        job.status = JobStatus.PROVIDER_ACCEPTED; // Provider accepted, but negotiation pending
+    if (negotiationRequired || photoSharingRequired) {
+        job.status = JobStatus.PROVIDER_ACCEPTED; // Hold dispatch for negotiation or photos
     } else {
-        job.status = JobStatus.ACCEPTED; // Dispatch immediately if no negotiation
+        job.status = JobStatus.ACCEPTED; // Dispatch immediately
     }
 
     job.acceptedAt = new Date();
