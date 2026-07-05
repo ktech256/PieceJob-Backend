@@ -165,7 +165,7 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
 
             const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
             emitJobUpdate(job._id.toString(), 'new_message', data);
-            emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, priceStatus: 'ACCEPTED', agreedPrice: job.agreedPrice });
+            emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, status: job.status, priceStatus: 'ACCEPTED', agreedPrice: job.agreedPrice });
 
             await notificationService.notifyUser(
                 proposal.senderId.toString(),

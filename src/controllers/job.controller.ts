@@ -25,7 +25,7 @@ import * as auditService from '../services/audit.service';
 import { logger } from '../utils/logger';
 import { calculateDistance } from '../utils/location';
 
-const sanitizeJobForMobile = (job: any) => {
+const sanitizeJobForMobile = async (job: any) => {
     const jobObj = job.toObject ? job.toObject() : job;
 
     // Populated objects have a firstName field. ObjectIds do not.
@@ -50,6 +50,13 @@ const sanitizeJobForMobile = (job: any) => {
         currency: jobObj.pricingSnapshot?.currencyCode || 'USD'
     };
 
+    // Enrich taskPhotos with signed URLs
+    if (sanitized.taskPhotos && Array.isArray(sanitized.taskPhotos)) {
+        sanitized.taskPhotos = await Promise.all(sanitized.taskPhotos.map(async (path: string) => {
+            return await storageService.getSignedUrl(path);
+        }));
+    }
+
     // PHASE 3 & 5: Privacy Hardening & Dispatch Control
     // Hide exact address until price is accepted or provider is dispatched
     // IMPORTANT: Terminal statuses should NOT be obscured (already completed)
@@ -64,14 +71,22 @@ const sanitizeJobForMobile = (job: any) => {
         if (addressParts.length >= 3) {
             obscured = `${addressParts[1]}, ${addressParts[2]}`;
         } else if (addressParts.length >= 1) {
-            obscured = addressParts[0];
+            // If it's a short address, it might just be the street name. Hide it completely if it contains numbers.
+            if (/\d/.test(addressParts[0])) {
+                obscured = 'Nearby Street';
+            } else {
+                obscured = addressParts[0];
+            }
         }
 
         sanitized.address = obscured;
         if (sanitized.location) {
             sanitized.location.address = obscured;
-            // Also zero out coordinates to prevent map hacking in Provider app
             sanitized.location.coordinates = [0, 0];
+        }
+        if (sanitized.pickupLocation) {
+            sanitized.pickupLocation.address = obscured;
+            sanitized.pickupLocation.coordinates = [0, 0];
         }
     }
 
@@ -263,7 +278,7 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({
         success: true,
-        data: sanitizeJobForMobile(job),
+        data: await sanitizeJobForMobile(job),
         pricing: pricingBreakdown
     });
   } catch (error: any) {
@@ -281,7 +296,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
     }
 
     if (job.paymentStatus === 'PAID') {
-        return res.status(200).json({ success: true, message: 'Job already paid', data: sanitizeJobForMobile(job) });
+        return res.status(200).json({ success: true, message: 'Job already paid', data: await sanitizeJobForMobile(job) });
     }
 
     // 2. Handle Free Bookings (Zero Booking Fee)
@@ -300,7 +315,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
             data: {
                 paymentUrl: null,
                 reference: job.paymentReference,
-                job: sanitizeJobForMobile(job)
+                job: await sanitizeJobForMobile(job)
             }
         });
     }
@@ -334,7 +349,7 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
             data: {
                 paymentUrl: paymentRes.paymentUrl,
                 reference: paymentRes.reference,
-                job: sanitizeJobForMobile(job)
+                job: await sanitizeJobForMobile(job)
             }
         });
     } else {
@@ -362,8 +377,8 @@ export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
 
         res.status(200).json({
             success: true,
-            data: jobs.map(j => {
-                const sanitized = sanitizeJobForMobile(j);
+            data: await Promise.all(jobs.map(async j => {
+                const sanitized = await sanitizeJobForMobile(j);
 
                 // Privacy Hardening for unaccepted jobs
                 const rawAddress = sanitized.location?.address || sanitized.address || '';
@@ -380,7 +395,7 @@ export const getAvailableJobs = async (req: AuthRequest, res: Response) => {
                 if (sanitized.location) sanitized.location.address = obscured;
 
                 return sanitized;
-            })
+            }))
         });
     } catch (error) {
         logger.error(`JOB | GET_AVAILABLE_JOBS_FAILED | Error: ${error}`);
@@ -434,7 +449,7 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const sanitized = sanitizeJobForMobile(job);
+        const sanitized = await sanitizeJobForMobile(job);
         if (providerData) sanitized.providerInfo = providerData;
 
         // Include customer info for provider to see who they are rating
@@ -529,7 +544,7 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
 
         // 5. SERIALIZATION
         const formatted = await Promise.all(jobs.map(async (j) => {
-            const sanitized = sanitizeJobForMobile(j);
+            const sanitized = await sanitizeJobForMobile(j);
 
             // Enrich provider info with metrics
             if (sanitized.providerId) {
@@ -573,7 +588,7 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const sanitized = sanitizeJobForMobile(job);
+        const sanitized = await sanitizeJobForMobile(job);
         if (providerData) sanitized.providerInfo = providerData;
 
         // Include customer info for provider to see who they are rating/calling
@@ -616,7 +631,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
         }
     }
 
-    const sanitized = sanitizeJobForMobile(finalJob || job);
+    const sanitized = await sanitizeJobForMobile(finalJob || job);
     if (providerData) sanitized.providerInfo = providerData;
 
     const statusPayload = { jobId: job.id, status: job.status, providerInfo: providerData };
@@ -765,7 +780,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
     emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
-    const sanitized = sanitizeJobForMobile(job);
+    const sanitized = await sanitizeJobForMobile(job);
     const statusPayload = { jobId: job.id, status, providerInfo: sanitized.providerInfo };
 
     // Enhance response data if provider assigned
@@ -1011,7 +1026,22 @@ export const uploadTaskPhotos = async (req: AuthRequest, res: Response) => {
         });
         await chatMsg.save();
 
-        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data: any = populated?.toObject();
+        if (data && data.senderId && typeof data.senderId === 'object') {
+            data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+        }
+
+        // Enrich metadata photos with signed URLs for socket emit
+        if (data && data.metadata && data.metadata.type === 'PHOTO_UPLOAD' && Array.isArray(data.metadata.allPhotos)) {
+            data.metadata.allPhotos = await Promise.all(data.metadata.allPhotos.map(async (path: string) => {
+                return await storageService.getSignedUrl(path);
+            }));
+            if (data.mediaUrl) {
+                data.mediaUrl = await storageService.getSignedUrl(data.mediaUrl);
+            }
+        }
+
         emitJobUpdate(jobId, 'new_message', data);
 
         if (job.providerId) {
@@ -1059,7 +1089,22 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
         });
         await chatMsg.save();
 
-        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data: any = populated?.toObject();
+        if (data && data.senderId && typeof data.senderId === 'object') {
+            data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+        }
+
+        // Enrich metadata photos with signed URLs for socket emit
+        if (data && data.metadata && data.metadata.type === 'PHOTO_UPLOAD' && Array.isArray(data.metadata.allPhotos)) {
+            data.metadata.allPhotos = await Promise.all(data.metadata.allPhotos.map(async (path: string) => {
+                return await storageService.getSignedUrl(path);
+            }));
+            if (data.mediaUrl) {
+                data.mediaUrl = await storageService.getSignedUrl(data.mediaUrl);
+            }
+        }
+
         emitJobUpdate(jobId, 'new_message', data);
 
         await notificationService.notifyUser(
@@ -1104,7 +1149,22 @@ export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
         });
         await chatMsg.save();
 
-        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data: any = populated?.toObject();
+        if (data && data.senderId && typeof data.senderId === 'object') {
+            data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+        }
+
+        // Enrich metadata photos with signed URLs for socket emit
+        if (data && data.metadata && data.metadata.type === 'PHOTO_UPLOAD' && Array.isArray(data.metadata.allPhotos)) {
+            data.metadata.allPhotos = await Promise.all(data.metadata.allPhotos.map(async (path: string) => {
+                return await storageService.getSignedUrl(path);
+            }));
+            if (data.mediaUrl) {
+                data.mediaUrl = await storageService.getSignedUrl(data.mediaUrl);
+            }
+        }
+
         emitJobUpdate(jobId, 'new_message', data);
 
         res.status(200).json({ success: true, message: 'Photos marked as seen' });
@@ -1125,7 +1185,7 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ success: false, message: 'Only the assigned provider can confirm dispatch' });
         }
 
-        if (job.status !== JobStatus.PROVIDER_ACCEPTED) {
+        if (job.status !== JobStatus.PROVIDER_ACCEPTED && job.status !== JobStatus.ACCEPTED) {
             return res.status(400).json({ success: false, message: 'Job is not in a state awaiting dispatch confirmation' });
         }
 
@@ -1163,7 +1223,7 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
             'Your provider has reviewed the details and is now on the way.'
         );
 
-        res.status(200).json({ success: true, message: 'Dispatch confirmed', job: sanitizeJobForMobile(job) });
+        res.status(200).json({ success: true, message: 'Dispatch confirmed', job: await sanitizeJobForMobile(job) });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to confirm dispatch', error });
     }

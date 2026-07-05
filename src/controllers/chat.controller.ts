@@ -36,6 +36,18 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
                     obj.senderId.profilePicture = await storageService.getSignedUrl(obj.senderId.profilePhoto);
                 }
             }
+
+            // Enrich metadata photos with signed URLs
+            if (obj.metadata && obj.metadata.type === 'PHOTO_UPLOAD' && Array.isArray(obj.metadata.allPhotos)) {
+                obj.metadata.allPhotos = await Promise.all(obj.metadata.allPhotos.map(async (path: string) => {
+                    return await storageService.getSignedUrl(path);
+                }));
+                // Also sign preview mediaUrl
+                if (obj.mediaUrl) {
+                    obj.mediaUrl = await storageService.getSignedUrl(obj.mediaUrl);
+                }
+            }
+
             return obj;
         }));
 
