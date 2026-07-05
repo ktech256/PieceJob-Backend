@@ -79,19 +79,73 @@ const sanitizeJobForMobile = (job: any) => {
 };
 
 /**
+ * Calculates the current phase of the negotiation/dispatch workflow.
+ * This is the SOURCE OF TRUTH for the mobile apps.
+ */
+const calculateNegotiationPhase = (job: any) => {
+    const status = job.status;
+    const photoRequired = job.photoSharingRequired === true;
+    const negRequired = job.priceNegotiationRequired === true;
+
+    // Terminal or Dispatch phases
+    if (['EN_ROUTE', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'COMPLETED', 'RATED', 'CLOSED'].includes(status)) {
+        return 'DISPATCHED';
+    }
+
+    if (['CANCELLED', 'DRAFT', 'REQUEST_CREATED', 'BROADCASTED', 'BROADCASTING', 'PAYMENT_PENDING', 'BOOKING_FEE_PAID'].includes(status)) {
+        return 'NEUTRAL';
+    }
+
+    // Now we are in PROVIDER_ACCEPTED or ACCEPTED (Negotiation/Pre-Dispatch)
+
+    // 1. Photo Phase
+    if (photoRequired && !job.taskPhotosSeen) {
+        if (!job.taskPhotosRequested) return 'PHOTO_REQUEST';
+        if (!job.taskPhotos || job.taskPhotos.length === 0) return 'WAITING_FOR_PHOTOS';
+        return 'PHOTOS_UPLOADED';
+    }
+
+    // 2. Price Phase
+    if (negRequired && job.priceStatus !== 'ACCEPTED') {
+        if (job.activeProposal) {
+            // We'll use specific statuses for waiting
+            // senderId is populated or string
+            const senderId = job.activeProposal.senderId?._id || job.activeProposal.senderId;
+            if (senderId.toString() === job.customerId.toString()) {
+                return 'WAITING_FOR_PROVIDER';
+            } else {
+                return 'WAITING_FOR_CUSTOMER';
+            }
+        }
+        return 'PRICE_PROPOSAL';
+    }
+
+    // 3. Ready for Dispatch
+    // If we are here, photos are done (or not req) and price is done (or not req)
+    if (status === 'ACCEPTED' || job.priceStatus === 'ACCEPTED' || (!negRequired && !photoRequired)) {
+        return 'PRICE_ACCEPTED';
+    }
+
+    return 'PHOTO_REQUEST'; // Fallback
+};
+
+/**
  * Enriches a sanitized job with active negotiation data if present.
  */
 const enrichWithNegotiation = async (sanitizedJob: any) => {
-    if (sanitizedJob.status === JobStatus.PROVIDER_ACCEPTED || sanitizedJob.priceStatus === 'PENDING') {
-        const activeProposal = await PriceProposal.findOne({
-            jobId: sanitizedJob.id,
-            status: 'PENDING'
-        }).sort({ createdAt: -1 });
+    // 1. Fetch active proposal
+    const activeProposal = await PriceProposal.findOne({
+        jobId: sanitizedJob.id,
+        status: 'PENDING'
+    }).sort({ createdAt: -1 });
 
-        if (activeProposal) {
-            sanitizedJob.activeProposal = activeProposal;
-        }
+    if (activeProposal) {
+        sanitizedJob.activeProposal = activeProposal;
     }
+
+    // 2. Calculate the source-of-truth phase
+    sanitizedJob.currentNegotiationPhase = calculateNegotiationPhase(sanitizedJob);
+
     return sanitizedJob;
 };
 

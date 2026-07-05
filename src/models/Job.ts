@@ -63,6 +63,8 @@ export interface IJob extends Document {
 
   // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
   commissionRateSnapshot?: number;
+  photoSharingRequired?: boolean;
+  priceNegotiationRequired?: boolean;
   pricingSnapshot?: {
       basePrice: number;
       hourlyPrice: number;
@@ -143,6 +145,8 @@ const JobSchema: Schema = new Schema({
 
   // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
   commissionRateSnapshot: { type: Number },
+  photoSharingRequired: { type: Boolean, default: false },
+  priceNegotiationRequired: { type: Boolean, default: false },
   pricingSnapshot: {
       basePrice: { type: Number },
       hourlyPrice: { type: Number },

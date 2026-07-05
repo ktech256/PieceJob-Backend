@@ -255,6 +255,9 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     const negotiationRequired = service?.priceNegotiationRequired || false;
     const photoSharingRequired = service?.photoSharingRequired || false;
 
+    job.photoSharingRequired = photoSharingRequired;
+    job.priceNegotiationRequired = negotiationRequired;
+
     if (negotiationRequired || photoSharingRequired) {
         job.status = JobStatus.PROVIDER_ACCEPTED; // Hold dispatch for negotiation or photos
     } else {

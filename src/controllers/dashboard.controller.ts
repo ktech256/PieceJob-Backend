@@ -68,7 +68,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                     jobsCompleted: 0
                 };
             }
-            activeJob = aj;
+            activeJob = await enrichWithNegotiation(aj);
         }
 
         // 4. Promotions
@@ -358,7 +358,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                     profilePicture: c.profilePhoto ? await storageService.getSignedUrl(c.profilePhoto) : null
                 };
             }
-            activeJob = aj;
+            activeJob = await enrichWithNegotiation(aj);
         }
 
         // 3. Recent Activity (Latest 5)
