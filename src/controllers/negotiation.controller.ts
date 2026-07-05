@@ -11,7 +11,7 @@ import mongoose from 'mongoose';
 
 export const proposePrice = async (req: AuthRequest, res: Response) => {
     try {
-        const { jobId, amount, note } = req.body;
+        const { jobId, amount } = req.body;
         const senderId = req.user?.userId;
 
         const job = await Job.findById(jobId);
@@ -55,7 +55,6 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
             senderId,
             receiverId,
             amount,
-            note,
             round: (job.negotiationRounds || 0) + 1,
             countryCode: job.countryCode
         });
@@ -81,7 +80,6 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
                 type: 'PRICE_PROPOSAL',
                 proposalId: proposal._id,
                 amount,
-                note,
                 round: proposal.round
             }
         });

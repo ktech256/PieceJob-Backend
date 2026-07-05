@@ -51,9 +51,9 @@ const sanitizeJobForMobile = (job: any) => {
     };
 
     // PHASE 3 & 5: Privacy Hardening & Dispatch Control
-    // Hide exact address until provider is dispatched (status moves to EN_ROUTE or beyond)
+    // Hide exact address until price is accepted or provider is dispatched
     // IMPORTANT: Terminal statuses should NOT be obscured (already completed)
-    const unlockedStatuses = [JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
+    const unlockedStatuses = [JobStatus.ACCEPTED, JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
     const isUnlocked = unlockedStatuses.includes(jobObj.status);
 
     if (!isUnlocked) {
