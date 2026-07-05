@@ -51,7 +51,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         // 3. Active Job
         const activeJobRaw = await Job.findOne({
             customerId: userId,
-            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
+            status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName profilePhoto');
 
         let activeJob = null;
@@ -343,7 +343,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         // 2. Active Job
         const activeJobRaw = await Job.findOne({
             providerId: userId,
-            status: { $in: [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
+            status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
         }).sort({ updatedAt: -1 }).populate('customerId', 'firstName lastName profilePhoto');
 
         let activeJob = null;
