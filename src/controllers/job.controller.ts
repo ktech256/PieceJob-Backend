@@ -82,34 +82,53 @@ const sanitizeJobForMobile = (job: any) => {
  * Calculates the current phase of the negotiation/dispatch workflow.
  * This is the SOURCE OF TRUTH for the mobile apps.
  */
-export const calculateNegotiationPhase = (job: any) => {
+export const calculateNegotiationPhase = async (job: any) => {
     const status = job.status;
-    const photoRequired = job.photoSharingRequired === true;
-    const negRequired = job.priceNegotiationRequired === true;
 
-    // Terminal or Dispatch phases
-    if (['EN_ROUTE', 'ARRIVED', 'STARTED', 'IN_PROGRESS', 'COMPLETED', 'RATED', 'CLOSED'].includes(status)) {
-        return 'DISPATCHED';
+    // 1. Fetch Service config if flags are missing from the job (legacy or fresh accepted)
+    let photoRequired = job.photoSharingRequired;
+    let negRequired = job.priceNegotiationRequired;
+
+    if (photoRequired === undefined || negRequired === undefined) {
+        const service = await mongoose.model('Service').findOne({
+            code: job.serviceCode,
+            countryCode: { $in: [job.countryCode, 'GLOBAL'] }
+        }).sort({ countryCode: -1 });
+        photoRequired = service?.photoSharingRequired || false;
+        negRequired = service?.priceNegotiationRequired || false;
+
+        // Update the object in memory for this calculation
+        job.photoSharingRequired = photoRequired;
+        job.priceNegotiationRequired = negRequired;
     }
 
-    if (['CANCELLED', 'DRAFT', 'REQUEST_CREATED', 'BROADCASTED', 'BROADCASTING', 'PAYMENT_PENDING', 'BOOKING_FEE_PAID'].includes(status)) {
+    // TERMINAL & DISPATCH PHASES (HIGHEST PRIORITY)
+    if (['EN_ROUTE', 'ARRIVED', 'STARTED', 'IN_PROGRESS'].includes(status)) {
+        return 'DISPATCHED';
+    }
+    if (['COMPLETED', 'RATED', 'CLOSED'].includes(status)) {
+        return 'COMPLETED';
+    }
+    if (status === 'CANCELLED') {
+        return 'CANCELLED';
+    }
+
+    if (['DRAFT', 'REQUEST_CREATED', 'BROADCASTED', 'BROADCASTING', 'PAYMENT_PENDING', 'BOOKING_FEE_PAID'].includes(status)) {
         return 'NEUTRAL';
     }
 
-    // Now we are in PROVIDER_ACCEPTED or ACCEPTED (Negotiation/Pre-Dispatch)
+    // NEGOTIATION WORKFLOW (Status is PROVIDER_ACCEPTED or ACCEPTED)
 
-    // 1. Photo Phase
+    // A. Photo Phase
     if (photoRequired && !job.taskPhotosSeen) {
         if (!job.taskPhotosRequested) return 'PHOTO_REQUEST';
         if (!job.taskPhotos || job.taskPhotos.length === 0) return 'WAITING_FOR_PHOTOS';
         return 'PHOTOS_UPLOADED';
     }
 
-    // 2. Price Phase
+    // B. Price Phase
     if (negRequired && job.priceStatus !== 'ACCEPTED') {
-        if (job.activeProposal) {
-            // We'll use specific statuses for waiting
-            // senderId is populated or string
+        if (job.activeProposal && job.activeProposal.status === 'PENDING') {
             const senderId = job.activeProposal.senderId?._id || job.activeProposal.senderId;
             if (senderId.toString() === job.customerId.toString()) {
                 return 'WAITING_FOR_PROVIDER';
@@ -120,16 +139,8 @@ export const calculateNegotiationPhase = (job: any) => {
         return 'PRICE_PROPOSAL';
     }
 
-    // 3. Ready for Dispatch
-    // If we are here, photos are done (or not req) and price is done (or not req)
-    const photosDone = !photoRequired || job.taskPhotosSeen;
-    const priceDone = !negRequired || job.priceStatus === 'ACCEPTED';
-
-    if (photosDone && priceDone) {
-        return 'PRICE_ACCEPTED';
-    }
-
-    return 'PHOTO_REQUEST'; // Fallback
+    // C. Ready for Dispatch
+    return 'PRICE_ACCEPTED';
 };
 
 /**
@@ -147,7 +158,7 @@ export const enrichWithNegotiation = async (sanitizedJob: any) => {
     }
 
     // 2. Calculate the source-of-truth phase
-    sanitizedJob.currentNegotiationPhase = calculateNegotiationPhase(sanitizedJob);
+    sanitizedJob.currentNegotiationPhase = await calculateNegotiationPhase(sanitizedJob);
 
     return sanitizedJob;
 };
