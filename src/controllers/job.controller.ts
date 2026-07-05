@@ -82,7 +82,7 @@ const sanitizeJobForMobile = (job: any) => {
  * Calculates the current phase of the negotiation/dispatch workflow.
  * This is the SOURCE OF TRUTH for the mobile apps.
  */
-const calculateNegotiationPhase = (job: any) => {
+export const calculateNegotiationPhase = (job: any) => {
     const status = job.status;
     const photoRequired = job.photoSharingRequired === true;
     const negRequired = job.priceNegotiationRequired === true;
@@ -122,7 +122,10 @@ const calculateNegotiationPhase = (job: any) => {
 
     // 3. Ready for Dispatch
     // If we are here, photos are done (or not req) and price is done (or not req)
-    if (status === 'ACCEPTED' || job.priceStatus === 'ACCEPTED' || (!negRequired && !photoRequired)) {
+    const photosDone = !photoRequired || job.taskPhotosSeen;
+    const priceDone = !negRequired || job.priceStatus === 'ACCEPTED';
+
+    if (photosDone && priceDone) {
         return 'PRICE_ACCEPTED';
     }
 
@@ -132,7 +135,7 @@ const calculateNegotiationPhase = (job: any) => {
 /**
  * Enriches a sanitized job with active negotiation data if present.
  */
-const enrichWithNegotiation = async (sanitizedJob: any) => {
+export const enrichWithNegotiation = async (sanitizedJob: any) => {
     // 1. Fetch active proposal
     const activeProposal = await PriceProposal.findOne({
         jobId: sanitizedJob.id,
@@ -628,7 +631,11 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
         notificationMsg
     );
 
-    res.status(200).json({ success: true, message: 'Job accepted', data: sanitized });
+    res.status(200).json({
+        success: true,
+        message: 'Job accepted',
+        data: await enrichWithNegotiation(sanitized)
+    });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
   }

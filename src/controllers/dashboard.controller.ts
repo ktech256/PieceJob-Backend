@@ -12,6 +12,7 @@ import Country from '../models/Country';
 import mongoose from 'mongoose';
 import * as storageService from '../services/storage.service';
 import * as settingsService from '../services/settings.service';
+import { enrichWithNegotiation } from './job.controller';
 import { logger } from '../utils/logger';
 
 export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
