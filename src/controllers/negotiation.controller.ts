@@ -177,27 +177,54 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
         } else {
             proposal.status = 'REJECTED';
             job.priceStatus = 'REJECTED';
+
+            // spec: Automatically re-broadcast job. Exclude rejected provider permanently.
+            const rejectedProviderId = job.providerId;
+            if (rejectedProviderId) {
+                job.notifiedProviderIds = job.notifiedProviderIds || [];
+                // Add to notified list to prevent re-matching in Waves
+                job.notifiedProviderIds.push(new mongoose.Types.ObjectId(rejectedProviderId.toString()));
+            }
+            job.providerId = undefined;
+            job.status = JobStatus.BROADCASTED;
+            job.negotiationRounds = 0;
+            job.priceStatus = undefined;
+
+            job.negotiationTimeline.push({
+                event: 'PROVIDER_REJECTED_FINAL_ROUND',
+                timestamp: new Date(),
+                metadata: { providerId: rejectedProviderId }
+            });
+
             await job.save();
             await proposal.save();
 
+            // Re-broadcast logic
+            const { broadcastJob } = require('../services/job.service');
+            await broadcastJob(job._id.toString());
+
+            // Notify participants
             const chatMsg = new ChatMessage({
                 jobId: job._id,
                 senderId: userId,
                 receiverId: proposal.senderId,
-                text: 'Price Proposal Rejected',
+                text: 'Negotiation failed. Re-broadcasting job to other providers.',
                 metadata: { type: 'PRICE_REJECTED' }
             });
             await chatMsg.save();
 
             const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
             emitJobUpdate(job._id.toString(), 'new_message', data);
+            emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, status: JobStatus.BROADCASTED, providerId: null });
 
-            await notificationService.notifyUser(
-                proposal.senderId.toString(),
-                'Price Rejected',
-                'Your price proposal was rejected.',
-                { type: 'PRICE_REJECTED', jobId: job._id.toString() }
-            );
+            if (rejectedProviderId) {
+                await notificationService.notifyUser(
+                    rejectedProviderId.toString(),
+                    'Negotiation Terminated',
+                    'The customer has rejected the final proposal. This job is no longer available to you.',
+                    { type: 'PRICE_REJECTED', jobId: job._id.toString() }
+                );
+            }
         }
 
         res.status(200).json({ success: true, proposal });
