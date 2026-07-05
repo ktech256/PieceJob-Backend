@@ -251,21 +251,34 @@ export const getCommissionTimeline = async (req: AuthRequest, res: Response) => 
             .populate('providerId', 'firstName lastName profilePhoto')
             .populate('customerId', 'firstName lastName profilePhoto');
 
+        const proposals = await mongoose.model('PriceProposal').find({ jobId }).sort({ createdAt: 1 });
+        const chats = await mongoose.model('ChatMessage').countDocuments({ jobId });
+
         if (!record) {
-            // If no commission record yet, get job timeline
-            const job = await Job.findById(jobId);
+            const job = await Job.findById(jobId)
+                .populate('customerId', 'firstName lastName profilePhoto')
+                .populate('providerId', 'firstName lastName profilePhoto');
             if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
-            // Construct a basic timeline from job state
-            const timeline = [
-                { event: 'JOB_CREATED', timestamp: job.createdAt },
-                { event: 'BOOKING_FEE_PAID', timestamp: job.updatedAt } // Simplification
-            ];
-
-            return res.status(200).json({ success: true, timeline });
+            return res.status(200).json({
+                success: true,
+                data: {
+                    jobId: job,
+                    proposals,
+                    chatCount: chats,
+                    isDraft: true
+                }
+            });
         }
 
-        res.status(200).json({ success: true, data: record });
+        res.status(200).json({
+            success: true,
+            data: {
+                ...record.toObject(),
+                proposals,
+                chatCount: chats
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch timeline', error });
     }

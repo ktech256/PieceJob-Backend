@@ -118,13 +118,19 @@ export const getLiveOpsData = async (req: AuthRequest, res: Response) => {
         const query: any = {};
         if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
 
-        const [providers, activeJobs] = await Promise.all([
+        const [providers, activeJobsRaw] = await Promise.all([
             // Fetch ALL providers for the country to show both online (green) and offline (red)
             Provider.find(query).populate('userId', 'firstName lastName role'),
-            Job.find({ ...query, status: { $in: [JobStatus.BROADCASTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE] } })
+            Job.find({ ...query, status: { $in: [JobStatus.BROADCASTED, JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE] } })
                 .populate('customerId', 'firstName lastName')
                 .populate('providerId', 'firstName lastName')
         ]);
+
+        const { enrichWithNegotiation } = require('../job.controller');
+
+        const activeJobs = await Promise.all(activeJobsRaw.map(async (j) => {
+            return await enrichWithNegotiation(j.toObject());
+        }));
 
         res.status(200).json({
             success: true,
