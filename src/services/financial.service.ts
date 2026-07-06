@@ -41,104 +41,143 @@ export const handleBookingFee = async (jobId: string, customerId: string, amount
   }
 };
 
-export const completeJobFinancials = async (jobId: string, providerId: string, totalAmount: number, serviceFeeRate: number, currency: string, countryCode: string) => {
+export const completeJobFinancials = async (jobOrId: string | IJob, providerId: string, totalAmount: number, serviceFeeRate: number, currency: string, countryCode: string) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
     const isTest = await testUserService.isTestUser(providerId);
 
-    const job = await Job.findById(jobId).session(session);
+    // 1. Get Job Document
+    let job: IJob | null;
+    if (typeof jobOrId === 'string') {
+        job = await Job.findById(jobOrId).session(session);
+    } else {
+        job = jobOrId;
+    }
+
     if (!job) throw new Error('Job not found');
 
-    const agreedPrice = job.agreedPrice || totalAmount;
+    // 1.1 IDEMPOTENCY CHECK: Check if financial records already exist for this job
+    const existingRecord = await CommissionRecord.findOne({ jobId: job._id }).session(session);
+    if (existingRecord) {
+        logger.warn(`FINANCIALS | SKIP | Records already exist for Job: ${job._id}`);
+        await session.commitTransaction();
+        return;
+    }
+
     const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
 
-    // Use stored service fee rate if available, otherwise fallback to settings
-    const finalServiceFeeRate = job.serviceFeeRateSnapshot || settings?.platformServiceFeePercent || 15;
-    const totalServiceFee = agreedPrice * (finalServiceFeeRate / 100);
-    const bookingFeePaid = job.bookingFee || 0;
-    const outstandingServiceFee = totalServiceFee - bookingFeePaid;
+    let agreedPrice = 0;
+    let totalServiceFee = 0;
+    let bookingFeePaid = job.bookingFee || 0;
+    let outstandingServiceFee = 0;
+    let finalServiceFeeRate = job.serviceFeeRateSnapshot || settings?.platformServiceFeePercent || 15;
+
+    const isNegotiated = job.priceNegotiationRequired !== false;
+
+    if (isNegotiated) {
+        // SCENARIO A: Negotiated Job
+        agreedPrice = job.agreedPrice || totalAmount;
+        totalServiceFee = agreedPrice * (finalServiceFeeRate / 100);
+        outstandingServiceFee = totalServiceFee - bookingFeePaid;
+    } else {
+        // SCENARIO B: Fixed Price Job
+        // Booking Fee = Entire Platform Service Fee
+        agreedPrice = 0; // "N/A" representation for numeric field
+        totalServiceFee = bookingFeePaid;
+        outstandingServiceFee = 0;
+        finalServiceFeeRate = 0; // Not applicable
+    }
 
     // 1. Gross Earning Ledger (Informational in direct model)
-    await new Ledger({
-      transactionId: `GE-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-      jobId,
-      toUserId: providerId,
-      amount: agreedPrice,
-      currency,
-      countryCode,
-      type: TransactionType.SERVICE_FEE, // Keeping enum for compatibility, but it represents Gross Earning
-      status: 'COMPLETED',
-      isTestTransaction: isTest,
-      description: 'Job marked COMPLETED (Gross Earnings)'
-    }).save({ session });
+    // Only for negotiated jobs, otherwise it's direct/fixed
+    if (isNegotiated) {
+        await new Ledger({
+            transactionId: `GE-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+            jobId: job._id,
+            toUserId: providerId,
+            amount: agreedPrice,
+            currency,
+            countryCode,
+            type: TransactionType.SERVICE_FEE,
+            status: 'COMPLETED',
+            isTestTransaction: isTest,
+            description: `Job marked COMPLETED (Gross Earnings: ${currency} ${agreedPrice})`
+        }).save({ session });
+    }
 
     // 2. Service Fee Ledger (Platform Revenue)
     await new Ledger({
         transactionId: `SF-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-        jobId,
+        jobId: job._id,
         fromUserId: providerId,
         amount: totalServiceFee,
         currency,
         countryCode,
-        type: TransactionType.COMMISSION, // Renaming terminology to Service Fee
+        type: TransactionType.COMMISSION,
         status: 'COMPLETED',
         isTestTransaction: isTest,
-        description: `Negotiated Job: Service Fee Added (${finalServiceFeeRate}%)`
+        description: isNegotiated
+            ? `Negotiated Job: Service Fee Added (${finalServiceFeeRate}%)`
+            : `Fixed Price Job: Booking Fee as Service Fee`
     }).save({ session });
 
     // 3. Create Service Fee Record
     const serviceFeeRecord = new CommissionRecord({
-        jobId,
+        jobId: job._id,
         providerId,
         customerId: job.customerId,
-        acceptedPrice: agreedPrice,
-        serviceFeePercentage: finalServiceFeeRate,
+        acceptedPrice: isNegotiated ? agreedPrice : 0, // 0 for Fixed Price
+        serviceFeePercentage: isNegotiated ? finalServiceFeeRate : 0,
         serviceFeeAmount: totalServiceFee,
         bookingFeePaid: bookingFeePaid,
-        outstandingBalance: outstandingServiceFee,
+        outstandingBalance: Math.max(0, outstandingServiceFee),
         status: outstandingServiceFee <= 0 ? 'PAID' : 'OUTSTANDING',
         countryCode,
         currency,
         timeline: [
             { event: 'JOB_COMPLETED', timestamp: new Date() },
-            { event: 'SERVICE_FEE_CALCULATED', timestamp: new Date(), metadata: { serviceFeeAmount: totalServiceFee, bookingFeePaid } }
+            { event: 'SERVICE_FEE_CALCULATED', timestamp: new Date(), metadata: { serviceFeeAmount: totalServiceFee, bookingFeePaid, isNegotiated } }
         ]
     });
     await serviceFeeRecord.save({ session });
 
     // 4. Update Provider Wallet Service Fee Balance
-    // Debt is stored as negative per user requirement (Outstanding = Red/Negative)
-    const wallet = await Wallet.findOneAndUpdate(
-        { userId: providerId },
-        { $inc: { serviceFeeBalance: -outstandingServiceFee } },
-        { session, new: true, upsert: true }
-    );
+    // Debt is stored as negative per user requirement
+    if (outstandingServiceFee > 0) {
+        const wallet = await Wallet.findOneAndUpdate(
+            { userId: providerId },
+            { $inc: { serviceFeeBalance: -outstandingServiceFee } },
+            { session, new: true, upsert: true }
+        );
 
-    // 5. Suspension Logic
-    const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
-    if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance < -suspensionThreshold) {
-        wallet.status = 'SUSPENDED';
-        wallet.isSuspended = true;
-        wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
-        await wallet.save({ session });
+        // 5. Suspension Logic
+        const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
+        if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance < -suspensionThreshold) {
+            wallet.status = 'SUSPENDED';
+            wallet.isSuspended = true;
+            wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
+            await wallet.save({ session });
 
-        await auditService.logAdminAction({
-            countryCode,
-            adminId: 'SYSTEM',
-            adminRole: 'SYSTEM',
-            action: 'PROVIDER_AUTO_SUSPEND',
-            entityType: 'Provider',
-            entityId: providerId,
-            afterState: { status: 'SUSPENDED', serviceFeeBalance: wallet.serviceFeeBalance },
-            ipAddress: 'System',
-            systemSource: 'CORE_ENGINE'
-        });
+            await auditService.logAdminAction({
+                countryCode,
+                adminId: 'SYSTEM',
+                adminRole: 'SYSTEM',
+                action: 'PROVIDER_AUTO_SUSPEND',
+                entityType: 'Provider',
+                entityId: providerId,
+                afterState: { status: 'SUSPENDED', serviceFeeBalance: wallet.serviceFeeBalance },
+                ipAddress: 'System',
+                systemSource: 'CORE_ENGINE'
+            }, session);
+        }
     }
 
     await session.commitTransaction();
+    logger.info(`FINANCIALS | COMPLETED | Job: ${job._id} | Negotiated: ${isNegotiated} | Outstanding: ${outstandingServiceFee}`);
   } catch (error) {
     await session.abortTransaction();
+    logger.error(`FINANCIALS | FAILED | Job: ${typeof jobOrId === 'string' ? jobOrId : jobOrId._id} | Error: ${error}`);
     throw error;
   } finally {
     session.endSession();

@@ -25,22 +25,23 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
         return job; // Already completed
     }
 
-    job.status = JobStatus.COMPLETED;
-    job.completedAt = new Date();
-    await job.save();
-
     // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
+    // Run financials BEFORE status change to ensure retryability
     const totalAmount = (job.serviceFee || 0) + job.bookingFee;
     const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
 
     await financialService.completeJobFinancials(
-        job.id,
+        job,
         job.providerId!.toString(),
         totalAmount,
         serviceFeeRate,
         'USD', // Should come from settings/snapshot
         job.countryCode
     );
+
+    job.status = JobStatus.COMPLETED;
+    job.completedAt = new Date();
+    await job.save();
 
     // PAGE 7: Increment Completed Jobs
     const provider = await Provider.findOneAndUpdate(
