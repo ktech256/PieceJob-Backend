@@ -98,7 +98,7 @@ export const transferFunds = async (fromUserId: string | null, toUserId: string 
 
 import ServiceFeeRecord from '../models/ServiceFeeRecord';
 
-export const getWalletBalance = async (userId: string) => {
+export const getWalletBalance = async (userId: string): Promise<any> => {
     const wallet = await Wallet.findOne({ userId: new mongoose.Types.ObjectId(userId) }).lean();
     if (!wallet) return null;
 
@@ -117,7 +117,7 @@ export const getWalletBalance = async (userId: string) => {
             providerKeeps: lastRecord.acceptedPrice - lastRecord.serviceFeeAmount,
             outstandingBalance: lastRecord.outstandingBalance
         } : null
-    };
+    } as any;
 };
 
 export const getTransactionHistory = async (userId: string, filters: any = {}) => {
