@@ -18,73 +18,85 @@ import * as pricingService from './pricing.service';
 import { calculateDistance } from '../utils/location';
 
 export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
-    const job = await Job.findById(jobId);
-    if (!job) throw new Error('Job not found');
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const job = await Job.findById(jobId).session(session);
+        if (!job) throw new Error('Job not found');
 
-    if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CLOSED || job.status === JobStatus.RATED) {
-        return job; // Already completed
+        if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CLOSED || job.status === JobStatus.RATED) {
+            await session.commitTransaction();
+            return job; // Already completed
+        }
+
+        // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
+        // Run financials BEFORE status change to ensure retryability
+        const totalAmount = (job.serviceFee || 0) + job.bookingFee;
+        const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
+
+        await financialService.completeJobFinancials(
+            job,
+            job.providerId!.toString(),
+            totalAmount,
+            serviceFeeRate,
+            'USD', // Should come from settings/snapshot
+            job.countryCode,
+            session
+        );
+
+        job.status = JobStatus.COMPLETED;
+        job.completedAt = new Date();
+        await job.save({ session });
+
+        // PAGE 7: Increment Completed Jobs
+        const provider = await Provider.findOneAndUpdate(
+            { userId: job.providerId },
+            {
+                $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 },
+                currentAvailabilityStatus: 'ONLINE'
+            },
+            { session, new: true }
+        );
+
+        if (provider) {
+            emitAdminUpdate('provider_status_changed', {
+                userId: job.providerId,
+                isOnline: provider.isOnline,
+                status: provider.currentAvailabilityStatus,
+                timestamp: new Date()
+            });
+        }
+
+        // Notifications & Sockets
+        const statusPayload = { jobId: job.id, status: job.status, adminOverride };
+        require('../socket/socket.service').emitJobUpdate(job.id, 'status_updated', statusPayload);
+        emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
+        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+        if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+
+        // Notify Customer
+        await notificationService.notifyUser(
+            job.customerId.toString(),
+            'Job Completed',
+            adminOverride
+                ? 'Administrator has marked your job as completed. Please rate your provider.'
+                : 'Your job has been marked as completed. Please rate your provider.'
+        );
+
+        // PAGE 12: Fraud Analysis (Fake Completion)
+        fraudService.analyzeJobCompletion(job.id);
+
+        // Track frequent address (Issue 2)
+        await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+
+        await session.commitTransaction();
+        return job;
+    } catch (error) {
+        await session.abortTransaction();
+        throw error;
+    } finally {
+        session.endSession();
     }
-
-    // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
-    // Run financials BEFORE status change to ensure retryability
-    const totalAmount = (job.serviceFee || 0) + job.bookingFee;
-    const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
-
-    await financialService.completeJobFinancials(
-        job,
-        job.providerId!.toString(),
-        totalAmount,
-        serviceFeeRate,
-        'USD', // Should come from settings/snapshot
-        job.countryCode
-    );
-
-    job.status = JobStatus.COMPLETED;
-    job.completedAt = new Date();
-    await job.save();
-
-    // PAGE 7: Increment Completed Jobs
-    const provider = await Provider.findOneAndUpdate(
-        { userId: job.providerId },
-        {
-            $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 },
-            currentAvailabilityStatus: 'ONLINE'
-        },
-        { new: true }
-    );
-
-    if (provider) {
-        emitAdminUpdate('provider_status_changed', {
-            userId: job.providerId,
-            isOnline: provider.isOnline,
-            status: provider.currentAvailabilityStatus,
-            timestamp: new Date()
-        });
-    }
-
-    // Notifications & Sockets
-    const statusPayload = { jobId: job.id, status: job.status, adminOverride };
-    require('../socket/socket.service').emitJobUpdate(job.id, 'status_updated', statusPayload);
-    emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-    emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-    if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
-
-    // Notify Customer
-    await notificationService.notifyUser(
-        job.customerId.toString(),
-        'Job Completed',
-        adminOverride
-            ? 'Administrator has marked your job as completed. Please rate your provider.'
-            : 'Your job has been marked as completed. Please rate your provider.'
-    );
-
-    // PAGE 12: Fraud Analysis (Fake Completion)
-    fraudService.analyzeJobCompletion(job.id);
-
-    // Track frequent address (Issue 2)
-    await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
-
-    return job;
 };
 
 export const findEligibleProviders = async (job: IJob, wave: number) => {

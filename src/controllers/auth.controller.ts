@@ -449,7 +449,19 @@ export const refreshToken = async (req: Request, res: Response) => {
       { expiresIn: '1h' }
     );
 
-    res.status(200).json({ success: true, token: newToken });
+    const newRefreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_SECRET || 'refresh_secret',
+      { expiresIn: '7d' }
+    );
+
+    res.status(200).json({
+        success: true,
+        data: { token: newToken, refreshToken: newRefreshToken },
+        // Legacy support
+        token: newToken,
+        refreshToken: newRefreshToken
+    });
   } catch (error) {
     res.status(401).json({ success: false, message: 'Invalid refresh token' });
   }

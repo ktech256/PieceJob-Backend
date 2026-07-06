@@ -41,9 +41,9 @@ export const handleBookingFee = async (jobId: string, customerId: string, amount
   }
 };
 
-export const completeJobFinancials = async (jobOrId: string | IJob, providerId: string, totalAmount: number, serviceFeeRate: number, currency: string, countryCode: string) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+export const completeJobFinancials = async (jobOrId: string | IJob, providerId: string, totalAmount: number, serviceFeeRate: number, currency: string, countryCode: string, existingSession?: mongoose.ClientSession) => {
+  const session = existingSession || await mongoose.startSession();
+  if (!existingSession) session.startTransaction();
   try {
     const isTest = await testUserService.isTestUser(providerId);
 
@@ -57,6 +57,20 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
 
     if (!job) throw new Error('Job not found');
 
+    // FORENSIC: Ensure we have countryCode and currency
+    let finalCountryCode = countryCode || job.countryCode;
+    let finalCurrency = currency || job.pricingSnapshot?.currencyCode || 'USD';
+
+    if (!finalCountryCode) {
+        // Fallback to provider or customer countryCode
+        const user = await mongoose.model('User').findById(providerId || job.customerId).session(session as any);
+        if (user) {
+            finalCountryCode = user.countryCode;
+        }
+    }
+
+    if (!finalCountryCode) throw new Error('FINANCIALS_ERROR: countryCode is missing from payload, job document, and user profile.');
+
     // 1.1 IDEMPOTENCY CHECK: Check if financial records already exist for this job
     const existingRecord = await CommissionRecord.findOne({ jobId: job._id }).session(session);
     if (existingRecord) {
@@ -65,7 +79,7 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         return;
     }
 
-    const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
+    const settings = await SystemSettings.findOne({ countryCode: finalCountryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
 
     let agreedPrice = 0;
     let totalServiceFee = 0;
@@ -97,12 +111,12 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
             jobId: job._id,
             toUserId: providerId,
             amount: agreedPrice,
-            currency,
-            countryCode,
-            type: TransactionType.SERVICE_FEE,
+            currency: finalCurrency,
+            countryCode: finalCountryCode,
+            type: TransactionType.SERVICE_FEE, // Keeping enum for compatibility, but it represents Gross Earning
             status: 'COMPLETED',
             isTestTransaction: isTest,
-            description: `Job marked COMPLETED (Gross Earnings: ${currency} ${agreedPrice})`
+            description: `Job marked COMPLETED (Gross Earnings: ${finalCurrency} ${agreedPrice})`
         }).save({ session });
     }
 
@@ -112,8 +126,8 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         jobId: job._id,
         fromUserId: providerId,
         amount: totalServiceFee,
-        currency,
-        countryCode,
+        currency: finalCurrency,
+        countryCode: finalCountryCode,
         type: TransactionType.COMMISSION,
         status: 'COMPLETED',
         isTestTransaction: isTest,
@@ -133,8 +147,8 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         bookingFeePaid: bookingFeePaid,
         outstandingBalance: Math.max(0, outstandingServiceFee),
         status: outstandingServiceFee <= 0 ? 'PAID' : 'OUTSTANDING',
-        countryCode,
-        currency,
+        countryCode: finalCountryCode,
+        currency: finalCurrency,
         timeline: [
             { event: 'JOB_COMPLETED', timestamp: new Date() },
             { event: 'SERVICE_FEE_CALCULATED', timestamp: new Date(), metadata: { serviceFeeAmount: totalServiceFee, bookingFeePaid, isNegotiated } }
@@ -144,14 +158,23 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
 
     // 4. Update Provider Wallet Service Fee Balance
     // Debt is stored as negative per user requirement
-    if (outstandingServiceFee > 0) {
-        const wallet = await Wallet.findOneAndUpdate(
-            { userId: providerId },
-            { $inc: { serviceFeeBalance: -outstandingServiceFee } },
-            { session, new: true, upsert: true }
-        );
+    // ALWAYS update wallet to ensure countryCode/currency are set if it was upserted
+    const walletUpdate: any = {
+        $setOnInsert: { countryCode: finalCountryCode, currency: finalCurrency }
+    };
 
-        // 5. Suspension Logic
+    if (outstandingServiceFee > 0) {
+        walletUpdate.$inc = { serviceFeeBalance: -outstandingServiceFee };
+    }
+
+    const wallet = await Wallet.findOneAndUpdate(
+        { userId: providerId },
+        walletUpdate,
+        { session, new: true, upsert: true, runValidators: false }
+    );
+
+    // 5. Suspension Logic (only if debt increased)
+    if (outstandingServiceFee > 0) {
         const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
         if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance < -suspensionThreshold) {
             wallet.status = 'SUSPENDED';
@@ -160,7 +183,7 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
             await wallet.save({ session });
 
             await auditService.logAdminAction({
-                countryCode,
+                countryCode: finalCountryCode,
                 adminId: 'SYSTEM',
                 adminRole: 'SYSTEM',
                 action: 'PROVIDER_AUTO_SUSPEND',
@@ -173,14 +196,14 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         }
     }
 
-    await session.commitTransaction();
+    if (!existingSession) await session.commitTransaction();
     logger.info(`FINANCIALS | COMPLETED | Job: ${job._id} | Negotiated: ${isNegotiated} | Outstanding: ${outstandingServiceFee}`);
   } catch (error) {
-    await session.abortTransaction();
+    if (!existingSession) await session.abortTransaction();
     logger.error(`FINANCIALS | FAILED | Job: ${typeof jobOrId === 'string' ? jobOrId : jobOrId._id} | Error: ${error}`);
     throw error;
   } finally {
-    session.endSession();
+    if (!existingSession) session.endSession();
   }
 };
 
