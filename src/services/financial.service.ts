@@ -108,18 +108,19 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
     await serviceFeeRecord.save({ session });
 
     // 4. Update Provider Wallet Service Fee Balance
+    // Debt is stored as negative per user requirement (Outstanding = Red/Negative)
     const wallet = await Wallet.findOneAndUpdate(
         { userId: providerId },
-        { $inc: { serviceFeeBalance: outstandingServiceFee } },
+        { $inc: { serviceFeeBalance: -outstandingServiceFee } },
         { session, new: true, upsert: true }
     );
 
     // 5. Suspension Logic
     const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
-    if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance > suspensionThreshold) {
+    if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance < -suspensionThreshold) {
         wallet.status = 'SUSPENDED';
         wallet.isSuspended = true;
-        wallet.suspendReason = `Outstanding service fee (${wallet.serviceFeeBalance}) exceeds threshold (${suspensionThreshold})`;
+        wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
         await wallet.save({ session });
 
         await auditService.logAdminAction({

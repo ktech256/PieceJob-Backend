@@ -132,7 +132,7 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        const { vendor, voucherNumber } = req.body;
+        const { vendor, voucherNumber, amount } = req.body;
         const providerId = req.user?.userId;
         const countryCode = req.user?.countryCode;
 
@@ -150,13 +150,21 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, message: 'Invalid or expired voucher' });
         }
 
+        // If user provided an amount, ensure it matches the voucher's value (within tolerance)
+        if (amount && Math.abs(amount - verification.amount) > 0.01) {
+             return res.status(400).json({
+                 success: false,
+                 message: `Voucher value mismatch. Entered: ${amount}, Actual: ${verification.amount}`
+             });
+        }
+
         const paymentAmount = verification.amount;
 
         const wallet = await Wallet.findOne({ userId: providerId }).session(session);
         if (!wallet) throw new Error('Wallet not found');
 
-        // Logic Change: serviceFeeBalance can go negative (Credit)
-        wallet.serviceFeeBalance -= paymentAmount;
+        // Logic Change: serviceFeeBalance is negative for debt, positive for credit
+        wallet.serviceFeeBalance += paymentAmount;
 
         // Record Timeline in all associated outstanding ServiceFeeRecords
         const serviceFeeRecords = await CommissionRecord.find({
@@ -181,7 +189,7 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
         const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
         if (settings?.autoUnsuspendEnabled && wallet.isSuspended) {
             const threshold = settings?.serviceFeeSuspensionThreshold || 100;
-            if (wallet.serviceFeeBalance <= threshold) {
+            if (wallet.serviceFeeBalance >= -threshold) {
                 wallet.status = 'ACTIVE';
                 wallet.isSuspended = false;
                 wallet.suspendReason = undefined;
