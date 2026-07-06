@@ -7,6 +7,7 @@ export interface IUsedVoucher extends Document {
     countryCode: string;
     redeemedBy: mongoose.Types.ObjectId;
     redeemedAt: Date;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
     ledgerReference?: string;
 }
 
@@ -17,6 +18,7 @@ const UsedVoucherSchema: Schema = new Schema({
     countryCode: { type: String, required: true },
     redeemedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     redeemedAt: { type: Date, default: Date.now },
+    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'APPROVED' },
     ledgerReference: { type: String }
 }, { timestamps: true });
 

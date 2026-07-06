@@ -31,10 +31,14 @@ export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => 
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
 
-        const [outstandingAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeeCreditsAgg, collectedAllTimeAgg] = await Promise.all([
-            ServiceFeeRecord.aggregate([
-                { $match: { ...query, status: { $in: ['OUTSTANDING', 'PARTIAL'] } } },
-                { $group: { _id: null, total: { $sum: "$outstandingBalance" } } }
+        const [outstandingWalletsAgg, creditWalletsAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeePaidAgg, collectedAllTimeAgg] = await Promise.all([
+            Wallet.aggregate([
+                { $match: { ...query, serviceFeeBalance: { $gt: 0 } } },
+                { $group: { _id: null, total: { $sum: "$serviceFeeBalance" } } }
+            ]),
+            Wallet.aggregate([
+                { $match: { ...query, serviceFeeBalance: { $lt: 0 } } },
+                { $group: { _id: null, total: { $sum: "$serviceFeeBalance" } } }
             ]),
             Ledger.aggregate([
                 { $match: { ...query, type: TransactionType.COMMISSION, createdAt: { $gte: startOfDay } } },
@@ -70,13 +74,14 @@ export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => 
         res.status(200).json({
             success: true,
             stats: {
-                serviceFeeBalance: outstandingAgg[0]?.total || 0,
+                totalOutstanding: outstandingWalletsAgg[0]?.total || 0,
+                totalCredits: Math.abs(creditWalletsAgg[0]?.total || 0),
                 collectedToday: collectedTodayAgg[0]?.total || 0,
                 collectedThisWeek: collectedThisWeekAgg[0]?.total || 0,
                 collectedThisMonth: collectedThisMonthAgg[0]?.total || 0,
                 collectedAllTime: collectedAllTimeAgg[0]?.total || 0,
                 waivedServiceFee: waivedAgg[0]?.total || 0,
-                bookingFeePaid: bookingFeeCreditsAgg[0]?.total || 0,
+                bookingFeePaid: bookingFeePaidAgg[0]?.total || 0,
                 topOwingProviders
             }
         });
@@ -289,7 +294,7 @@ export const listUsedVouchers = async (req: AuthRequest, res: Response) => {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
         const vouchers = await mongoose.model('UsedVoucher').find({ countryCode })
             .sort({ redeemedAt: -1 })
-            .populate('redeemedBy', 'firstName lastName email');
+            .populate('redeemedBy', 'firstName lastName email profilePhoto');
         res.status(200).json({ success: true, data: vouchers });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to list vouchers', error });

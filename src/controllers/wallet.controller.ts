@@ -199,8 +199,13 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
             countryCode: wallet.countryCode,
             type: TransactionType.CREDIT_TOPUP,
             status: 'COMPLETED',
-            description: `Service fee payment via ${vendor} Voucher`,
-            metadata: { vendor, voucherNumber }
+            description: `Voucher Payment: ${vendor}`,
+            metadata: {
+                vendor,
+                voucherNumber,
+                previousServiceFeeBalance: wallet.serviceFeeBalance + paymentAmount,
+                currentServiceFeeBalance: wallet.serviceFeeBalance
+            }
         }).save({ session });
 
         // Mark Voucher as Used

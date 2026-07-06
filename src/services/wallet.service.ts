@@ -96,8 +96,28 @@ export const transferFunds = async (fromUserId: string | null, toUserId: string 
     // For now, mutateWallet handles individual user perspectives.
 };
 
+import ServiceFeeRecord from '../models/ServiceFeeRecord';
+
 export const getWalletBalance = async (userId: string) => {
-    return await Wallet.findOne({ userId: new mongoose.Types.ObjectId(userId) });
+    const wallet = await Wallet.findOne({ userId: new mongoose.Types.ObjectId(userId) }).lean();
+    if (!wallet) return null;
+
+    // Fetch the most recent completed service fee record for this provider
+    const lastRecord = await ServiceFeeRecord.findOne({ providerId: new mongoose.Types.ObjectId(userId) })
+        .sort({ createdAt: -1 })
+        .lean();
+
+    return {
+        ...wallet,
+        lastServiceFeeDetails: lastRecord ? {
+            serviceFeePercentage: lastRecord.serviceFeePercentage,
+            bookingFeePaid: lastRecord.bookingFeePaid,
+            acceptedPrice: lastRecord.acceptedPrice,
+            serviceFeeAmount: lastRecord.serviceFeeAmount,
+            providerKeeps: lastRecord.acceptedPrice - lastRecord.serviceFeeAmount,
+            outstandingBalance: lastRecord.outstandingBalance
+        } : null
+    };
 };
 
 export const getTransactionHistory = async (userId: string, filters: any = {}) => {

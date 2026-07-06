@@ -84,7 +84,7 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
         type: TransactionType.COMMISSION, // Renaming terminology to Service Fee
         status: 'COMPLETED',
         isTestTransaction: isTest,
-        description: `Service Fee (${finalServiceFeeRate}%)`
+        description: `Negotiated Job: Service Fee Added (${finalServiceFeeRate}%)`
     }).save({ session });
 
     // 3. Create Service Fee Record
