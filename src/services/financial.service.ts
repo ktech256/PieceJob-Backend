@@ -1,6 +1,6 @@
 import Wallet from '../models/Wallet';
 import Ledger, { TransactionType } from '../models/Ledger';
-import Job, { JobStatus } from '../models/Job';
+import Job, { JobStatus, IJob } from '../models/Job';
 import User from '../models/User';
 import CommissionRecord from '../models/ServiceFeeRecord';
 import SystemSettings from '../models/SystemSettings';
