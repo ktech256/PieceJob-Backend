@@ -51,6 +51,8 @@ export const adminGetJobDetails = async (req: AuthRequest, res: Response) => {
     }
 };
 
+import * as jobService from '../../services/job.service';
+
 export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
@@ -60,39 +62,60 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
         const previousStatus = job.status;
-        job.status = status;
 
-        if (status === JobStatus.CANCELLED) {
-            job.cancelledBy = req.user?.userId as any;
-            job.cancellationReason = `[ADMIN OVERRIDE] ${reason}`;
+        if (status === JobStatus.COMPLETED) {
+            await jobService.completeJob(jobId, true);
+        } else {
+            job.status = status;
 
-            // If it was broadcasted, we need to clear broadcasts
-            try {
-                const { clearJobBroadcasts } = require('../../services/job-broadcast.queue');
-                await clearJobBroadcasts(jobId);
-            } catch (e) {
-                logger.error(`[ADMIN] Error clearing broadcasts: ${e}`);
+            if (status === JobStatus.CANCELLED) {
+                job.cancelledBy = req.user?.userId as any;
+                job.cancellationReason = `[ADMIN OVERRIDE] ${reason}`;
+
+                // If it was broadcasted, we need to clear broadcasts
+                try {
+                    const { clearJobBroadcasts } = require('../../services/job-broadcast.queue');
+                    await clearJobBroadcasts(jobId);
+                } catch (e) {
+                    logger.error(`[ADMIN] Error clearing broadcasts: ${e}`);
+                }
+
+                // If it had a provider, make them online again
+                if (job.providerId) {
+                    await Provider.findOneAndUpdate(
+                        { userId: job.providerId },
+                        { currentAvailabilityStatus: 'ONLINE' }
+                    );
+                }
             }
 
-            // If it had a provider, make them online again
+            if (status === JobStatus.STARTED) {
+                job.startedAt = new Date();
+            }
+
+            await job.save();
+
+            // Notifications & Sockets for non-completed overrides
+            const statusPayload = { jobId: job.id, status, adminOverride: true, reason };
+            emitJobUpdate(job.id, 'status_updated', statusPayload);
+            emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
+            emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+            if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+
+            notificationService.notifyUser(
+                job.customerId.toString(),
+                'Job Status Updated',
+                `Administrator has manually updated your job to ${status}.`
+            );
+
             if (job.providerId) {
-                await Provider.findOneAndUpdate(
-                    { userId: job.providerId },
-                    { currentAvailabilityStatus: 'ONLINE' }
+                notificationService.notifyUser(
+                    job.providerId.toString(),
+                    'Job Status Updated',
+                    `Administrator has manually updated your job to ${status}.`
                 );
             }
         }
-
-        if (status === JobStatus.STARTED) {
-            job.startedAt = new Date();
-        }
-
-        if (status === JobStatus.COMPLETED) {
-            job.completedAt = new Date();
-            // Note: Financials might need manual handling if skipped, but simple override for now.
-        }
-
-        await job.save();
 
         // Audit Log
         await auditService.logAdminAction({
@@ -107,27 +130,6 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
             ipAddress: req.ip,
             systemSource: 'ADMIN_DASHBOARD'
         });
-
-        // Notifications & Sockets
-        const statusPayload = { jobId: job.id, status, adminOverride: true, reason };
-        emitJobUpdate(job.id, 'status_updated', statusPayload);
-        emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-        if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
-
-        notificationService.notifyUser(
-            job.customerId.toString(),
-            'Job Status Updated',
-            `Administrator has manually updated your job to ${status}.`
-        );
-
-        if (job.providerId) {
-            notificationService.notifyUser(
-                job.providerId.toString(),
-                'Job Status Updated',
-                `Administrator has manually updated your job to ${status}.`
-            );
-        }
 
         res.status(200).json({ success: true, message: `Job status updated to ${status}` });
     } catch (error: any) {

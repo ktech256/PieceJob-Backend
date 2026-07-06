@@ -52,9 +52,11 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
         });
 
         // SECTION: JOB TRACKING & ETA (PAGE 5)
+        // Arrival only detected when provider is actually dispatched (EN_ROUTE)
+        // This prevents bypassing negotiation/photos in PROVIDER_ACCEPTED state
         const activeJob = await Job.findOne({
             providerId: userId,
-            status: { $in: [JobStatus.ACCEPTED, JobStatus.PROVIDER_ACCEPTED, JobStatus.EN_ROUTE] }
+            status: JobStatus.EN_ROUTE
         });
 
         if (activeJob) {

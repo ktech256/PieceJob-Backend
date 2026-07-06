@@ -725,81 +725,24 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
     }
 
     if (status === JobStatus.COMPLETED) {
-        job.completedAt = new Date();
+        await jobService.completeJob(job.id);
+    } else {
+        job.status = status;
+        await job.save();
 
-        // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
-        const totalAmount = (job.serviceFee || 0) + job.bookingFee;
-        const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
+        console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${status}`);
+        logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
+        emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
-        await financialService.completeJobFinancials(
-            job.id,
-            job.providerId!.toString(),
-            totalAmount,
-            serviceFeeRate,
-            'USD', // Should come from settings/snapshot
-            job.countryCode
-        );
-
-        // PAGE 7: Increment Completed Jobs
-        const provider = await Provider.findOneAndUpdate(
-            { userId: job.providerId },
-            {
-                $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 },
-                currentAvailabilityStatus: 'ONLINE'
-            },
-            { new: true }
-        );
-
-        if (provider) {
-            emitAdminUpdate('provider_status_changed', {
-                userId: job.providerId,
-                isOnline: provider.isOnline,
-                status: provider.currentAvailabilityStatus,
-                timestamp: new Date()
-            });
-        }
-
-        // Notify Customer
-        await notificationService.notifyUser(
-            job.customerId.toString(),
-            'Job Completed',
-            'Your job has been marked as completed. Please rate your provider.'
-        );
-
-        // PAGE 12: Fraud Analysis (Fake Completion)
-        fraudService.analyzeJobCompletion(job.id);
-
-        // Track frequent address (Issue 2)
-        await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+        const statusPayload = { jobId: job.id, status };
+        // Notify participants
+        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+        if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+        emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
+        emitJobUpdate(job.id, 'status_updated', statusPayload);
     }
-
-    job.status = status;
-    await job.save();
-
-    console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${status}`);
-    logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
-    emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
     const sanitized = await sanitizeJobForMobile(job);
-    const statusPayload = { jobId: job.id, status, providerInfo: sanitized.providerInfo };
-
-    // Enhance response data if provider assigned
-    if (sanitized.providerId && sanitized.providerInfo) {
-        const provider = await Provider.findOne({ userId: sanitized.providerId });
-        if (provider) {
-            sanitized.providerInfo.ratingAvg = provider.ratingAvg;
-            sanitized.providerInfo.jobsCompleted = provider.jobsCompleted;
-        }
-    }
-
-    // 1. Notify participants via their private user rooms (Global Observer)
-    emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-    if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
-    emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-
-    // 2. Notify the specific job room (Tracking Screen)
-    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${status}`);
-    emitJobUpdate(job.id, 'status_updated', statusPayload);
 
     res.status(200).json({ success: true, data: sanitized });
   } catch (error) {

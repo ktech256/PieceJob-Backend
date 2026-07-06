@@ -7,11 +7,85 @@ import mongoose from 'mongoose';
 import { emitToUser, emitJobUpdate } from '../socket/socket.service';
 import { addJobToBroadcastQueue } from './job-broadcast.queue';
 import * as notificationService from './notification.service';
+import * as performanceService from './provider-performance.service';
+import * as fraudService from './fraud.service';
+import * as userContextService from './user-context.service';
+import * as financialService from './financial.service';
 import { logger } from '../utils/logger';
 
 import * as settingsService from './settings.service';
 import * as pricingService from './pricing.service';
 import { calculateDistance } from '../utils/location';
+import { emitAdminUpdate, emitToUser, emitToWorkspace } from '../socket/socket.service';
+
+export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
+    const job = await Job.findById(jobId);
+    if (!job) throw new Error('Job not found');
+
+    if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CLOSED || job.status === JobStatus.RATED) {
+        return job; // Already completed
+    }
+
+    job.status = JobStatus.COMPLETED;
+    job.completedAt = new Date();
+    await job.save();
+
+    // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
+    const totalAmount = (job.serviceFee || 0) + job.bookingFee;
+    const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
+
+    await financialService.completeJobFinancials(
+        job.id,
+        job.providerId!.toString(),
+        totalAmount,
+        serviceFeeRate,
+        'USD', // Should come from settings/snapshot
+        job.countryCode
+    );
+
+    // PAGE 7: Increment Completed Jobs
+    const provider = await Provider.findOneAndUpdate(
+        { userId: job.providerId },
+        {
+            $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 },
+            currentAvailabilityStatus: 'ONLINE'
+        },
+        { new: true }
+    );
+
+    if (provider) {
+        emitAdminUpdate('provider_status_changed', {
+            userId: job.providerId,
+            isOnline: provider.isOnline,
+            status: provider.currentAvailabilityStatus,
+            timestamp: new Date()
+        });
+    }
+
+    // Notifications & Sockets
+    const statusPayload = { jobId: job.id, status: job.status, adminOverride };
+    require('../socket/socket.service').emitJobUpdate(job.id, 'status_updated', statusPayload);
+    emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
+    emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+    if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+
+    // Notify Customer
+    await notificationService.notifyUser(
+        job.customerId.toString(),
+        'Job Completed',
+        adminOverride
+            ? 'Administrator has marked your job as completed. Please rate your provider.'
+            : 'Your job has been marked as completed. Please rate your provider.'
+    );
+
+    // PAGE 12: Fraud Analysis (Fake Completion)
+    fraudService.analyzeJobCompletion(job.id);
+
+    // Track frequent address (Issue 2)
+    await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+
+    return job;
+};
 
 export const findEligibleProviders = async (job: IJob, wave: number) => {
   const settings = await settingsService.getSettings(job.countryCode);
