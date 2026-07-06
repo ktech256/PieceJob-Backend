@@ -4,7 +4,7 @@ import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
-import { emitToUser, emitJobUpdate } from '../socket/socket.service';
+import { emitToUser, emitJobUpdate, emitAdminUpdate, emitToWorkspace } from '../socket/socket.service';
 import { addJobToBroadcastQueue } from './job-broadcast.queue';
 import * as notificationService from './notification.service';
 import * as performanceService from './provider-performance.service';
@@ -16,7 +16,6 @@ import { logger } from '../utils/logger';
 import * as settingsService from './settings.service';
 import * as pricingService from './pricing.service';
 import { calculateDistance } from '../utils/location';
-import { emitAdminUpdate, emitToUser, emitToWorkspace } from '../socket/socket.service';
 
 export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
     const job = await Job.findById(jobId);
@@ -243,7 +242,7 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
           distanceLabel = distanceMeters < 1000 ? `${Math.round(distanceMeters)}m away` : `${distanceKm}km away`;
       }
 
-      // HIDE SPECIFIC ADDRESS: "139 Erasmus St, Flora Park, Polokwane, 0699," -> "Flora Park, Polokwane"
+      // HIDE SPECIFIC ADDRESS: \"139 Erasmus St, Flora Park, Polokwane, 0699,\" -> \"Flora Park, Polokwane\"
       const rawAddress = job.location.address || '';
       const addressParts = rawAddress.split(',').map(p => p.trim()).filter(p => p.length > 0);
 
@@ -260,7 +259,7 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
           address: obscuredAddress
       };
 
-      console.log(`[PRIVACY_AUDIT] Obscuring address for provider ${targetUserId}: "${rawAddress}" -> "${obscuredAddress}" | Distance: ${distanceLabel}`);
+      console.log(`[PRIVACY_AUDIT] Obscuring address for provider ${targetUserId}: \"${rawAddress}\" -> \"${obscuredAddress}\" | Distance: ${distanceLabel}`);
 
       emitToUser(targetUserId.toString(), 'NEW_JOB_BROADCAST', {
         jobId: job.id,
@@ -411,7 +410,7 @@ export const expireInactiveNegotiations = async () => {
     for (const job of jobsToExpire) {
         job.priceStatus = 'EXPIRED';
         // We don't automatically cancel the job, but we mark the negotiation as expired.
-        // The spec says "Status EXPIRED. Notify both users."
+        // The spec says \"Status EXPIRED. Notify both users.\"
         await job.save();
 
         await notificationService.notifyUser(job.customerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
