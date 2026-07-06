@@ -247,7 +247,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
         }
     }
 
-    const commissionRate = await pricingService.getCommissionRate(job.countryCode, provider.tier);
+    const serviceFeeRate = await pricingService.getServiceFeeRate(job.countryCode, provider.tier);
 
     job.providerId = providerId as any;
 
@@ -271,7 +271,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     }];
 
     job.acceptedAt = new Date();
-    job.commissionRateSnapshot = commissionRate;
+    job.serviceFeeRateSnapshot = serviceFeeRate;
     job.version += 1;
 
     await job.save({ session });

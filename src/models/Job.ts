@@ -61,8 +61,8 @@ export interface IJob extends Document {
   completedAt?: Date;
   scheduledAt?: Date;
 
-  // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
-  commissionRateSnapshot?: number;
+  // PAGE 4.6 – SERVICE FEE LOCK & PRICING SNAPSHOT
+  serviceFeeRateSnapshot?: number;
   photoSharingRequired?: boolean;
   priceNegotiationRequired?: boolean;
   pricingSnapshot?: {
@@ -143,8 +143,8 @@ const JobSchema: Schema = new Schema({
   completedAt: { type: Date },
   scheduledAt: { type: Date },
 
-  // PAGE 4.6 – COMMISSION LOCK & PRICING SNAPSHOT
-  commissionRateSnapshot: { type: Number },
+  // PAGE 4.6 – SERVICE FEE LOCK & PRICING SNAPSHOT
+  serviceFeeRateSnapshot: { type: Number, alias: 'commissionRateSnapshot' },
   photoSharingRequired: { type: Boolean, default: false },
   priceNegotiationRequired: { type: Boolean, default: false },
   pricingSnapshot: {

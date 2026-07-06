@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
-import CommissionRecord from '../../models/CommissionRecord';
+import ServiceFeeRecord from '../../models/ServiceFeeRecord';
 import Wallet from '../../models/Wallet';
 import Ledger from '../../models/Ledger';
 import Job from '../../models/Job';
@@ -9,7 +9,7 @@ import AuditLog from '../../models/AuditLog';
 import User from '../../models/User';
 import mongoose from 'mongoose';
 
-export const getCommissionOverview = async (req: AuthRequest, res: Response) => {
+export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || 'ZA';
 
@@ -21,7 +21,7 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
         const [walletAgg, todayAgg, weekAgg, monthAgg, recordAgg] = await Promise.all([
             Wallet.aggregate([
                 { $match: { countryCode } },
-                { $group: { _id: null, total: { $sum: "$outstandingCommission" } } }
+                { $group: { _id: null, total: { $sum: "$serviceFeeBalance" } } }
             ]),
             Ledger.aggregate([
                 { $match: { countryCode, type: 'CREDIT_TOPUP', status: 'COMPLETED', createdAt: { $gte: startOfToday } } },
@@ -35,30 +35,30 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
                 { $match: { countryCode, type: 'CREDIT_TOPUP', status: 'COMPLETED', createdAt: { $gte: startOfMonth } } },
                 { $group: { _id: null, total: { $sum: "$amount" } } }
             ]),
-            CommissionRecord.aggregate([
+            ServiceFeeRecord.aggregate([
                 { $match: { countryCode } },
                 { $group: {
                     _id: null,
-                    credits: { $sum: "$bookingFeeCredit" },
+                    credits: { $sum: "$bookingFeePaid" },
                     waived: { $sum: "$waivedAmount" }
                 } }
             ])
         ]);
 
-        const topOwingProviders = await Wallet.find({ countryCode, outstandingCommission: { $gt: 0 } })
-            .sort({ outstandingCommission: -1 })
+        const topOwingProviders = await Wallet.find({ countryCode, serviceFeeBalance: { $gt: 0 } })
+            .sort({ serviceFeeBalance: -1 })
             .limit(5)
             .populate('userId', 'firstName lastName email profilePhoto');
 
         res.status(200).json({
             success: true,
             stats: {
-                outstandingCommission: walletAgg[0]?.total || 0,
+                serviceFeeBalance: walletAgg[0]?.total || 0,
                 collectedToday: todayAgg[0]?.total || 0,
                 collectedThisWeek: weekAgg[0]?.total || 0,
                 collectedThisMonth: monthAgg[0]?.total || 0,
-                bookingFeeCredits: recordAgg[0]?.credits || 0,
-                waivedCommission: recordAgg[0]?.waived || 0,
+                bookingFeePaid: recordAgg[0]?.credits || 0,
+                waivedServiceFee: recordAgg[0]?.waived || 0,
                 topOwingProviders
             }
         });
@@ -67,10 +67,10 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
     }
 };
 
-export const listCommissionRecords = async (req: AuthRequest, res: Response) => {
+export const listServiceFeeRecords = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || 'ZA';
-        const records = await CommissionRecord.find({ countryCode })
+        const records = await ServiceFeeRecord.find({ countryCode })
             .sort({ createdAt: -1 })
             .populate('jobId', 'serviceName')
             .populate('providerId', 'firstName lastName email profilePhoto');
@@ -108,10 +108,10 @@ export const listUsedVouchers = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const getCommissionTimeline = async (req: AuthRequest, res: Response) => {
+export const getServiceFeeTimeline = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
-        const record = await CommissionRecord.findOne({ jobId })
+        const record = await ServiceFeeRecord.findOne({ jobId })
             .populate('jobId')
             .populate('providerId', 'firstName lastName profilePhoto')
             .populate('customerId', 'firstName lastName profilePhoto');
@@ -137,7 +137,7 @@ export const bulkSuspend = async (req: AuthRequest, res: Response) => {
     try {
         const { threshold, countryCode } = req.body;
         const result = await Wallet.updateMany(
-            { countryCode, outstandingCommission: { $gt: threshold }, isSuspended: false },
+            { countryCode, serviceFeeBalance: { $gt: threshold }, isSuspended: false },
             {
                 $set: {
                     status: 'SUSPENDED',
@@ -171,14 +171,14 @@ export const bulkUnsuspend = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const waiveCommission = async (req: AuthRequest, res: Response) => {
+export const waiveServiceFee = async (req: AuthRequest, res: Response) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
         const { recordId, reason } = req.body;
         const adminId = req.user?.userId;
 
-        const record = await CommissionRecord.findById(recordId).session(session);
+        const record = await ServiceFeeRecord.findById(recordId).session(session);
         if (!record) throw new Error('Record not found');
 
         const amountToWaive = record.outstandingBalance;
@@ -194,10 +194,10 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
         // Update Wallet
         const wallet = await Wallet.findOne({ userId: record.providerId }).session(session);
         if (wallet) {
-            wallet.outstandingCommission = Math.max(0, wallet.outstandingCommission - amountToWaive);
+            wallet.serviceFeeBalance = Math.max(0, wallet.serviceFeeBalance - amountToWaive);
             // Check if can unsuspend
             const settings = await SystemSettings.findOne({ countryCode: record.countryCode }) || await SystemSettings.findOne({ countryCode: 'GLOBAL' });
-            if (wallet.outstandingCommission <= (settings?.commissionSuspensionThreshold || 100)) {
+            if (wallet.serviceFeeBalance <= (settings?.serviceFeeSuspensionThreshold || 100)) {
                 wallet.status = 'ACTIVE';
                 wallet.isSuspended = false;
             }

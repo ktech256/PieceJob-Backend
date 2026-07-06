@@ -1,5 +1,5 @@
 import PricingRule, { IPricingRule, PricingLevel } from '../models/PricingRule';
-import CommissionRule from '../models/CommissionRule';
+import ServiceFeeRule from '../models/ServiceFeeRule';
 import Job from '../models/Job';
 import Service from '../models/Service';
 import { JobStatus } from '../models/Job';
@@ -157,11 +157,11 @@ export const calculateJobPrice = async (
     };
 };
 
-export const getCommissionRate = async (countryCode: string, tier: ProviderTier): Promise<number> => {
-    const rule = await CommissionRule.findOne({ countryCode, tier, isActive: true });
-    if (rule) return rule.commissionPercentage;
+export const getServiceFeeRate = async (countryCode: string, tier: ProviderTier): Promise<number> => {
+    const rule = await ServiceFeeRule.findOne({ countryCode, tier, isActive: true });
+    if (rule) return rule.serviceFeePercentage;
 
-    // PAGE 7: DEFAULT TIER COMMISSIONS
+    // PAGE 7: DEFAULT TIER SERVICE FEES
     const defaults: Record<string, number> = {
         [ProviderTier.BRONZE]: 20,
         [ProviderTier.SILVER]: 18,

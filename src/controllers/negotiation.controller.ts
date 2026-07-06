@@ -3,7 +3,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import PriceProposal from '../models/PriceProposal';
 import ChatMessage from '../models/Chat';
-import CommissionRecord from '../models/CommissionRecord';
+import ServiceFeeRecord from '../models/ServiceFeeRecord';
 import SystemSettings from '../models/SystemSettings';
 import { emitJobUpdate } from '../socket/socket.service';
 import * as notificationService from '../services/notification.service';
@@ -139,14 +139,14 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
                 job.status = JobStatus.ACCEPTED;
 
                 // Record Timeline Event
-                const commissionRecord = await CommissionRecord.findOne({ jobId: job._id });
-                if (commissionRecord) {
-                    commissionRecord.timeline.push({
+                const serviceFeeRecord = await ServiceFeeRecord.findOne({ jobId: job._id });
+                if (serviceFeeRecord) {
+                    serviceFeeRecord.timeline.push({
                         event: 'PRICE_ACCEPTED_DISPATCH_ENABLED',
                         timestamp: new Date(),
                         metadata: { agreedPrice: proposal.amount }
                     });
-                    await commissionRecord.save();
+                    await serviceFeeRecord.save();
                 }
             }
 

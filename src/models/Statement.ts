@@ -13,7 +13,7 @@ export interface IStatement extends Document {
   periodEnd: Date;
   summary: {
     grossEarnings?: number;
-    platformCommission?: number;
+    platformServiceFee?: number;
     netEarnings?: number;
     totalExpenditure?: number;
     jobCount: number;
@@ -39,7 +39,7 @@ const StatementSchema: Schema = new Schema({
   periodEnd: { type: Date, required: true },
   summary: {
     grossEarnings: Number,
-    platformCommission: Number,
+    platformServiceFee: { type: Number, alias: 'platformCommission' },
     netEarnings: Number,
     totalExpenditure: Number,
     jobCount: { type: Number, default: 0 },

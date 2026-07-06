@@ -13,12 +13,12 @@ export const reconcileJob = async (jobId: string) => {
 
         const ledgerEntries = await Ledger.find({ jobId: job._id, status: 'COMPLETED' });
 
-        const serviceFee = ledgerEntries.find(e => e.type === TransactionType.SERVICE_FEE)?.amount || 0;
-        const commission = ledgerEntries.find(e => e.type === TransactionType.COMMISSION)?.amount || 0;
+        const grossEarning = ledgerEntries.find(e => e.type === TransactionType.SERVICE_FEE)?.amount || 0;
+        const serviceFee = ledgerEntries.find(e => e.type === TransactionType.COMMISSION)?.amount || 0;
 
-        const providerNet = serviceFee - commission;
+        const providerNet = grossEarning - serviceFee;
 
-        if (providerNet <= 0 && serviceFee > 0) {
+        if (providerNet <= 0 && grossEarning > 0) {
              throw new Error('Reconciliation Error: Negative or zero net earnings on paid job');
         }
 
@@ -57,7 +57,7 @@ export const runFullReconciliation = async (countryCode: string) => {
             { $match: { toUserId: wallet.userId, status: 'COMPLETED', type: TransactionType.SERVICE_FEE } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
-        const totalCommission = await Ledger.aggregate([
+        const totalServiceFee = await Ledger.aggregate([
             { $match: { fromUserId: wallet.userId, status: 'COMPLETED', type: TransactionType.COMMISSION } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
@@ -66,7 +66,7 @@ export const runFullReconciliation = async (countryCode: string) => {
             { $group: { _id: null, total: { $sum: "$amount" } } }
         ]);
 
-        const expectedBalance = (totalEarnings[0]?.total || 0) - (totalCommission[0]?.total || 0) - (totalPayouts[0]?.total || 0);
+        const expectedBalance = (totalEarnings[0]?.total || 0) - (totalServiceFee[0]?.total || 0) - (totalPayouts[0]?.total || 0);
         const actualBalance = wallet.balanceMain + wallet.balanceEscrow;
 
         if (Math.abs(expectedBalance - actualBalance) > 0.01) {

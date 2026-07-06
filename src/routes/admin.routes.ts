@@ -177,14 +177,21 @@ router.get('/finance/wallets', hasPermission('MANAGE_FINANCE'), financeControlle
 router.get('/finance/refunds', hasPermission('MANAGE_FINANCE'), financeController.listRefunds);
 router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeController.listReferrals);
 
-// NEW COMMISSION ROUTES
-router.get('/finance/commissions/overview', hasPermission('MANAGE_FINANCE'), financeController.getCommissionOverview);
-router.get('/finance/commissions/records', hasPermission('MANAGE_FINANCE'), financeController.listCommissionRecords);
-router.get('/finance/commissions/vouchers', hasPermission('MANAGE_FINANCE'), financeController.listUsedVouchers);
-router.post('/finance/commissions/waive', hasPermission('MANAGE_FINANCE'), financeController.waiveCommission);
-router.post('/finance/commissions/bulk-suspend', hasPermission('MANAGE_FINANCE'), financeController.bulkSuspendProviders);
-router.post('/finance/commissions/bulk-unsuspend', hasPermission('MANAGE_FINANCE'), financeController.bulkUnsuspendProviders);
-router.get('/finance/commissions/timeline/:jobId', hasPermission('MANAGE_FINANCE'), financeController.getCommissionTimeline);
+// NEW SERVICE FEE ROUTES
+router.get('/finance/service-fees/overview', hasPermission('MANAGE_FINANCE'), financeController.getServiceFeeOverview);
+router.get('/finance/commissions/overview', hasPermission('MANAGE_FINANCE'), financeController.getServiceFeeOverview); // Backward compatibility
+router.get('/finance/service-fees/records', hasPermission('MANAGE_FINANCE'), financeController.listServiceFeeRecords);
+router.get('/finance/commissions/records', hasPermission('MANAGE_FINANCE'), financeController.listServiceFeeRecords); // Backward compatibility
+router.get('/finance/service-fees/vouchers', hasPermission('MANAGE_FINANCE'), financeController.listUsedVouchers);
+router.get('/finance/commissions/vouchers', hasPermission('MANAGE_FINANCE'), financeController.listUsedVouchers); // Backward compatibility
+router.post('/finance/service-fees/waive', hasPermission('MANAGE_FINANCE'), financeController.waiveServiceFee);
+router.post('/finance/commissions/waive', hasPermission('MANAGE_FINANCE'), financeController.waiveServiceFee); // Backward compatibility
+router.post('/finance/service-fees/bulk-suspend', hasPermission('MANAGE_FINANCE'), financeController.bulkSuspendProviders);
+router.post('/finance/commissions/bulk-suspend', hasPermission('MANAGE_FINANCE'), financeController.bulkSuspendProviders); // Backward compatibility
+router.post('/finance/service-fees/bulk-unsuspend', hasPermission('MANAGE_FINANCE'), financeController.bulkUnsuspendProviders);
+router.post('/finance/commissions/bulk-unsuspend', hasPermission('MANAGE_FINANCE'), financeController.bulkUnsuspendProviders); // Backward compatibility
+router.get('/finance/service-fees/timeline/:jobId', hasPermission('MANAGE_FINANCE'), financeController.getServiceFeeTimeline);
+router.get('/finance/commissions/timeline/:jobId', hasPermission('MANAGE_FINANCE'), financeController.getServiceFeeTimeline); // Backward compatibility
 
 router.post('/finance/reconciliation/run', hasPermission('MANAGE_FINANCE'), financeController.runReconciliation);
 router.post('/finance/statements/provider/generate', hasPermission('MANAGE_FINANCE'), financeController.generateProviderStatement);
@@ -194,8 +201,10 @@ router.get('/pricing/rules', hasPermission('MANAGE_PRICING'), pricingAdminContro
 router.post('/pricing/rules', hasPermission('MANAGE_PRICING'), pricingAdminController.createPricingRule);
 router.patch('/pricing/rules/:id', hasPermission('MANAGE_PRICING'), pricingAdminController.updatePricingRule);
 router.delete('/pricing/rules/:id', hasPermission('MANAGE_PRICING'), pricingAdminController.deletePricingRule);
-router.get('/pricing/commissions', hasPermission('MANAGE_PRICING'), pricingAdminController.listCommissions);
-router.post('/pricing/commissions', hasPermission('MANAGE_PRICING'), pricingAdminController.updateCommission);
+router.get('/pricing/service-fees', hasPermission('MANAGE_PRICING'), pricingAdminController.listServiceFees);
+router.get('/pricing/commissions', hasPermission('MANAGE_PRICING'), pricingAdminController.listServiceFees); // Backward compatibility
+router.post('/pricing/service-fees', hasPermission('MANAGE_PRICING'), pricingAdminController.updateServiceFee);
+router.post('/pricing/commissions', hasPermission('MANAGE_PRICING'), pricingAdminController.updateServiceFee); // Backward compatibility
 router.get('/pricing/pricebot', hasPermission('MANAGE_PRICING'), pricingAdminController.getPriceBotSuggestions);
 router.post('/pricing/pricebot/analyze', hasPermission('MANAGE_PRICING'), pricingAdminController.triggerPriceBot);
 router.get('/pricing/simulate', hasPermission('MANAGE_PRICING'), pricingAdminController.simulatePricing);

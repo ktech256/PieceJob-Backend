@@ -2,7 +2,7 @@ import Wallet from '../models/Wallet';
 import Ledger, { TransactionType } from '../models/Ledger';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
-import CommissionRecord from '../models/CommissionRecord';
+import CommissionRecord from '../models/ServiceFeeRecord';
 import SystemSettings from '../models/SystemSettings';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
@@ -41,7 +41,7 @@ export const handleBookingFee = async (jobId: string, customerId: string, amount
   }
 };
 
-export const completeJobFinancials = async (jobId: string, providerId: string, totalAmount: number, commissionRate: number, currency: string, countryCode: string) => {
+export const completeJobFinancials = async (jobId: string, providerId: string, totalAmount: number, serviceFeeRate: number, currency: string, countryCode: string) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -53,88 +53,86 @@ export const completeJobFinancials = async (jobId: string, providerId: string, t
     const agreedPrice = job.agreedPrice || totalAmount;
     const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
 
-    // Use stored commission rate if available, otherwise fallback to settings
-    const finalCommissionRate = job.commissionRateSnapshot || settings?.platformCommissionPercent || 15;
-    const commissionAmount = agreedPrice * (finalCommissionRate / 100);
-    const bookingFeeCredit = job.bookingFee || 0;
-    const outstandingCommission = Math.max(0, commissionAmount - bookingFeeCredit);
+    // Use stored service fee rate if available, otherwise fallback to settings
+    const finalServiceFeeRate = job.serviceFeeRateSnapshot || settings?.platformServiceFeePercent || 15;
+    const totalServiceFee = agreedPrice * (finalServiceFeeRate / 100);
+    const bookingFeePaid = job.bookingFee || 0;
+    const outstandingServiceFee = totalServiceFee - bookingFeePaid;
 
-    // 1. Service Fee Ledger (Gross Earning - Informational in direct model)
+    // 1. Gross Earning Ledger (Informational in direct model)
     await new Ledger({
-      transactionId: `SF-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+      transactionId: `GE-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
       jobId,
       toUserId: providerId,
       amount: agreedPrice,
       currency,
       countryCode,
-      type: TransactionType.SERVICE_FEE,
+      type: TransactionType.SERVICE_FEE, // Keeping enum for compatibility, but it represents Gross Earning
       status: 'COMPLETED',
       isTestTransaction: isTest,
-      description: 'Job marked COMPLETED (Direct Payment Model)'
+      description: 'Job marked COMPLETED (Gross Earnings)'
     }).save({ session });
 
-    // 2. Commission Ledger (Platform Revenue)
+    // 2. Service Fee Ledger (Platform Revenue)
     await new Ledger({
-        transactionId: `CM-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+        transactionId: `SF-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
         jobId,
         fromUserId: providerId,
-        amount: commissionAmount,
+        amount: totalServiceFee,
         currency,
         countryCode,
-        type: TransactionType.COMMISSION,
+        type: TransactionType.COMMISSION, // Renaming terminology to Service Fee
         status: 'COMPLETED',
         isTestTransaction: isTest,
-        description: `Platform Commission (${finalCommissionRate}%)`
+        description: `Service Fee (${finalServiceFeeRate}%)`
     }).save({ session });
 
-    // 3. Create Commission Record
-    const commissionRecord = new CommissionRecord({
+    // 3. Create Service Fee Record
+    const serviceFeeRecord = new CommissionRecord({
         jobId,
         providerId,
         customerId: job.customerId,
         acceptedPrice: agreedPrice,
-        commissionPercentage: finalCommissionRate,
-        commissionAmount,
-        bookingFeeCredit,
-        outstandingBalance: outstandingCommission,
-        status: outstandingCommission === 0 ? 'PAID' : 'OUTSTANDING',
+        serviceFeePercentage: finalServiceFeeRate,
+        serviceFeeAmount: totalServiceFee,
+        bookingFeePaid: bookingFeePaid,
+        outstandingBalance: outstandingServiceFee,
+        status: outstandingServiceFee <= 0 ? 'PAID' : 'OUTSTANDING',
         countryCode,
         currency,
         timeline: [
             { event: 'JOB_COMPLETED', timestamp: new Date() },
-            { event: 'COMMISSION_CALCULATED', timestamp: new Date(), metadata: { commissionAmount, bookingFeeCredit } }
+            { event: 'SERVICE_FEE_CALCULATED', timestamp: new Date(), metadata: { serviceFeeAmount: totalServiceFee, bookingFeePaid } }
         ]
     });
-    await commissionRecord.save({ session });
+    await serviceFeeRecord.save({ session });
 
-    // 4. Update Provider Wallet Outstanding Commission
-    if (outstandingCommission > 0) {
-        const wallet = await Wallet.findOneAndUpdate(
-            { userId: providerId },
-            { $inc: { outstandingCommission: outstandingCommission } },
-            { session, new: true, upsert: true }
-        );
+    // 4. Update Provider Wallet Service Fee Balance
+    const wallet = await Wallet.findOneAndUpdate(
+        { userId: providerId },
+        { $inc: { serviceFeeBalance: outstandingServiceFee } },
+        { session, new: true, upsert: true }
+    );
 
-        // 5. Suspension Logic
-        const suspensionThreshold = settings?.commissionSuspensionThreshold || 100;
-        if (settings?.autoSuspendEnabled && wallet.outstandingCommission > suspensionThreshold) {
-            wallet.status = 'SUSPENDED';
-            wallet.isSuspended = true;
-            wallet.suspendReason = `Outstanding commission (${wallet.outstandingCommission}) exceeds threshold (${suspensionThreshold})`;
-            await wallet.save({ session });
+    // 5. Suspension Logic
+    const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
+    if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance > suspensionThreshold) {
+        wallet.status = 'SUSPENDED';
+        wallet.isSuspended = true;
+        wallet.suspendReason = `Outstanding service fee (${wallet.serviceFeeBalance}) exceeds threshold (${suspensionThreshold})`;
+        await wallet.save({ session });
 
-            await auditService.logAdminAction({
-                countryCode,
-                adminId: 'SYSTEM',
-                adminRole: 'SYSTEM',
-                action: 'PROVIDER_AUTO_SUSPEND',
-                entityType: 'Provider',
-                entityId: providerId,
-                afterState: { status: 'SUSPENDED', outstandingCommission: wallet.outstandingCommission },
-                ipAddress: 'System',
-                systemSource: 'CORE_ENGINE'
-            });
-        }
+        await auditService.logAdminAction({
+            countryCode,
+            adminId: 'SYSTEM',
+            adminRole: 'SYSTEM',
+            action: 'PROVIDER_AUTO_SUSPEND',
+            entityType: 'Provider',
+            entityId: providerId,
+            afterState: { status: 'SUSPENDED', serviceFeeBalance: wallet.serviceFeeBalance },
+            ipAddress: 'System',
+            systemSource: 'CORE_ENGINE'
+        });
     }
 
     await session.commitTransaction();

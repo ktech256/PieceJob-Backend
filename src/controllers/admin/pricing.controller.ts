@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import PricingRule, { PricingLevel } from '../../models/PricingRule';
-import CommissionRule from '../../models/CommissionRule';
+import ServiceFeeRule from '../../models/ServiceFeeRule';
 import PriceBotSuggestion from '../../models/PriceBotSuggestion';
 import * as pricingService from '../../services/pricing.service';
 import * as pricebotService from '../../services/pricebot.service';
@@ -83,30 +83,30 @@ export const deletePricingRule = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const listCommissions = async (req: AuthRequest, res: Response) => {
+export const listServiceFees = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.user?.countryCode;
         const query: any = {};
         if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
 
-        const rules = await CommissionRule.find(query);
+        const rules = await ServiceFeeRule.find(query);
         res.status(200).json({ success: true, rules });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to list commissions', error });
+        res.status(500).json({ success: false, message: 'Failed to list service fees', error });
     }
 };
 
-export const updateCommission = async (req: AuthRequest, res: Response) => {
+export const updateServiceFee = async (req: AuthRequest, res: Response) => {
     try {
-        const { countryCode, tier, commissionPercentage } = req.body;
-        const rule = await CommissionRule.findOneAndUpdate(
+        const { countryCode, tier, serviceFeePercentage } = req.body;
+        const rule = await ServiceFeeRule.findOneAndUpdate(
             { countryCode, tier },
-            { commissionPercentage, isActive: true },
+            { serviceFeePercentage, isActive: true },
             { new: true, upsert: true }
         );
         res.status(200).json({ success: true, rule });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to update commission', error });
+        res.status(500).json({ success: false, message: 'Failed to update service fee', error });
     }
 };
 

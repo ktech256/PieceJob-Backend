@@ -63,7 +63,7 @@ export const getMyInvoices = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const getMyCommissionRate = async (req: AuthRequest, res: Response) => {
+export const getMyServiceFeeRate = async (req: AuthRequest, res: Response) => {
     try {
         const provider = await Provider.findOne({ userId: req.user?.userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
@@ -71,10 +71,10 @@ export const getMyCommissionRate = async (req: AuthRequest, res: Response) => {
         const countryCode = req.user?.countryCode;
         if (!countryCode) return res.status(400).json({ success: false, message: 'Country code missing' });
 
-        const rate = await pricingService.getCommissionRate(countryCode, provider.tier);
-        res.status(200).json({ success: true, commissionRate: rate });
+        const rate = await pricingService.getServiceFeeRate(countryCode, provider.tier);
+        res.status(200).json({ success: true, serviceFeeRate: rate });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch commission rate', error });
+        res.status(500).json({ success: false, message: 'Failed to fetch service fee rate', error });
     }
 };
 
@@ -125,10 +125,10 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response) => {
 import * as voucherService from '../services/voucher.service';
 import SystemSettings from '../models/SystemSettings';
 import UsedVoucher from '../models/UsedVoucher';
-import CommissionRecord from '../models/CommissionRecord';
+import CommissionRecord from '../models/ServiceFeeRecord';
 import * as auditService from '../services/audit.service';
 
-export const payCommission = async (req: AuthRequest, res: Response) => {
+export const payServiceFee = async (req: AuthRequest, res: Response) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
@@ -155,35 +155,33 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
         const wallet = await Wallet.findOne({ userId: providerId }).session(session);
         if (!wallet) throw new Error('Wallet not found');
 
-        const previousOutstanding = wallet.outstandingCommission;
-        wallet.outstandingCommission = Math.max(0, wallet.outstandingCommission - paymentAmount);
+        // Logic Change: serviceFeeBalance can go negative (Credit)
+        wallet.serviceFeeBalance -= paymentAmount;
 
-        // Record Timeline in all associated outstanding CommissionRecords
-        const commissionRecords = await CommissionRecord.find({
+        // Record Timeline in all associated outstanding ServiceFeeRecords
+        const serviceFeeRecords = await CommissionRecord.find({
             providerId,
             status: { $in: ['OUTSTANDING', 'PARTIAL'] }
         }).session(session);
 
-        for (const record of commissionRecords) {
+        for (const record of serviceFeeRecords) {
             record.timeline.push({
                 event: 'VOUCHER_PAYMENT_REDEEMED',
                 timestamp: new Date(),
                 metadata: { vendor, amount: paymentAmount, voucherNumber }
             });
+            // Update status if balance for this record is paid (though total wallet balance is different)
+            // For now, keeping it simple as per instructions.
             await record.save({ session });
         }
 
-        // If payment exceeds outstanding, add to main balance
-        const overpayment = Math.max(0, paymentAmount - previousOutstanding);
-        if (overpayment > 0) {
-            wallet.balanceMain += overpayment;
-        }
+        // Overpayment logic removed as it's now stored as negative serviceFeeBalance (Credit)
 
         // Automatic Unsuspension
         const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
         if (settings?.autoUnsuspendEnabled && wallet.isSuspended) {
-            const threshold = settings?.commissionSuspensionThreshold || 100;
-            if (wallet.outstandingCommission <= threshold) {
+            const threshold = settings?.serviceFeeSuspensionThreshold || 100;
+            if (wallet.serviceFeeBalance <= threshold) {
                 wallet.status = 'ACTIVE';
                 wallet.isSuspended = false;
                 wallet.suspendReason = undefined;
@@ -201,8 +199,8 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
             countryCode: wallet.countryCode,
             type: TransactionType.CREDIT_TOPUP,
             status: 'COMPLETED',
-            description: `Commission payment via ${vendor} Voucher`,
-            metadata: { vendor, voucherNumber, overpayment }
+            description: `Service fee payment via ${vendor} Voucher`,
+            metadata: { vendor, voucherNumber }
         }).save({ session });
 
         // Mark Voucher as Used
@@ -219,10 +217,10 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
             countryCode: wallet.countryCode,
             adminId: 'SYSTEM',
             adminRole: 'SYSTEM',
-            action: 'COMMISSION_PAYMENT',
+            action: 'SERVICE_FEE_PAYMENT',
             entityType: 'Wallet',
             entityId: wallet._id.toString(),
-            afterState: { outstandingCommission: wallet.outstandingCommission, balanceMain: wallet.balanceMain },
+            afterState: { serviceFeeBalance: wallet.serviceFeeBalance, balanceMain: wallet.balanceMain },
             ipAddress: req.ip,
             systemSource: 'MOBILE_APP'
         });
@@ -230,10 +228,10 @@ export const payCommission = async (req: AuthRequest, res: Response) => {
         await session.commitTransaction();
         res.status(200).json({
             success: true,
-            message: 'Commission paid successfully',
+            message: 'Service fee paid successfully',
             data: {
                 paymentAmount,
-                outstandingCommission: wallet.outstandingCommission,
+                serviceFeeBalance: wallet.serviceFeeBalance,
                 balanceMain: wallet.balanceMain,
                 isSuspended: wallet.isSuspended
             }

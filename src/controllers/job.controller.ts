@@ -729,13 +729,13 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
         // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
         const totalAmount = (job.serviceFee || 0) + job.bookingFee;
-        const commissionRate = job.commissionRateSnapshot || 15;
+        const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
 
         await financialService.completeJobFinancials(
             job.id,
             job.providerId!.toString(),
             totalAmount,
-            commissionRate,
+            serviceFeeRate,
             'USD', // Should come from settings/snapshot
             job.countryCode
         );

@@ -4,7 +4,7 @@ export interface ISystemSettings extends Document {
   countryCode: string; // "GLOBAL" or ISO code
   matchingRadiusKm: number;
   baseBookingFee: number;
-  platformCommissionPercent: number;
+  platformServiceFeePercent: number;
   surgeMultiplierMax: number;
   escrowCoolingPeriodHours: number;
   cancellationGraceProviderSec: number;
@@ -13,9 +13,9 @@ export interface ISystemSettings extends Document {
   sosAlertRadiusKm: number;
   referralRewardAmount: number;
 
-  // Structured Negotiation & Commission
+  // Structured Negotiation & Service Fee
   maxNegotiationRounds: number;
-  commissionSuspensionThreshold: number;
+  serviceFeeSuspensionThreshold: number;
   autoSuspendEnabled: boolean;
   autoUnsuspendEnabled: boolean;
   voucherVendors: {
@@ -71,7 +71,7 @@ const SystemSettingsSchema: Schema = new Schema({
   countryCode: { type: String, required: true, unique: true },
   matchingRadiusKm: { type: Number, default: 5 },
   baseBookingFee: { type: Number, default: 0 },
-  platformCommissionPercent: { type: Number, default: 15 },
+  platformServiceFeePercent: { type: Number, default: 15, alias: 'platformCommissionPercent' },
   surgeMultiplierMax: { type: Number, default: 2.5 },
   escrowCoolingPeriodHours: { type: Number, default: 12 },
   cancellationGraceProviderSec: { type: Number, default: 90 },
@@ -80,9 +80,9 @@ const SystemSettingsSchema: Schema = new Schema({
   sosAlertRadiusKm: { type: Number, default: 5 },
   referralRewardAmount: { type: Number, default: 10 },
 
-  // Structured Negotiation & Commission
+  // Structured Negotiation & Service Fee
   maxNegotiationRounds: { type: Number, default: 4 },
-  commissionSuspensionThreshold: { type: Number, default: 100 },
+  serviceFeeSuspensionThreshold: { type: Number, default: 100, alias: 'commissionSuspensionThreshold' },
   autoSuspendEnabled: { type: Boolean, default: true },
   autoUnsuspendEnabled: { type: Boolean, default: true },
   voucherVendors: [{

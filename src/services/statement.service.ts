@@ -23,10 +23,10 @@ export const generateStatement = async (userId: string, userType: 'CUSTOMER' | '
     const summary: any = { jobCount: 0, payoutCount: 0 };
     if (userType === 'PROVIDER') {
         const gross = logs.filter(l => l.type === TransactionType.SERVICE_FEE).reduce((acc, curr) => acc + curr.amount, 0);
-        const commission = logs.filter(l => l.type === TransactionType.COMMISSION).reduce((acc, curr) => acc + curr.amount, 0);
+        const serviceFee = logs.filter(l => l.type === TransactionType.COMMISSION).reduce((acc, curr) => acc + curr.amount, 0);
         summary.grossEarnings = gross;
-        summary.platformCommission = commission;
-        summary.netEarnings = gross - commission;
+        summary.platformServiceFee = serviceFee;
+        summary.netEarnings = gross - serviceFee;
         summary.jobCount = logs.filter(l => l.type === TransactionType.SERVICE_FEE).length;
         summary.payoutCount = logs.filter(l => l.type === TransactionType.PAYOUT).length;
     } else {

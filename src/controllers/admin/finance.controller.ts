@@ -10,12 +10,12 @@ import { StatementType } from '../../models/Statement';
 import Job from '../../models/Job';
 import mongoose from 'mongoose';
 
-import CommissionRecord from '../../models/CommissionRecord';
+import ServiceFeeRecord from '../../models/ServiceFeeRecord';
 import SystemSettings from '../../models/SystemSettings';
 import Country from '../../models/Country';
 import * as financialService from '../../services/financial.service';
 
-export const getCommissionOverview = async (req: AuthRequest, res: Response) => {
+export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
         const query: any = { countryCode };
@@ -32,7 +32,7 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
         startOfMonth.setHours(0, 0, 0, 0);
 
         const [outstandingAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeeCreditsAgg, collectedAllTimeAgg] = await Promise.all([
-            CommissionRecord.aggregate([
+            ServiceFeeRecord.aggregate([
                 { $match: { ...query, status: { $in: ['OUTSTANDING', 'PARTIAL'] } } },
                 { $group: { _id: null, total: { $sum: "$outstandingBalance" } } }
             ]),
@@ -48,13 +48,13 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
                 { $match: { ...query, type: TransactionType.COMMISSION, createdAt: { $gte: startOfMonth } } },
                 { $group: { _id: null, total: { $sum: "$amount" } } }
             ]),
-            CommissionRecord.aggregate([
+            ServiceFeeRecord.aggregate([
                 { $match: { ...query, status: 'WAIVED' } },
                 { $group: { _id: null, total: { $sum: "$waivedAmount" } } }
             ]),
-            CommissionRecord.aggregate([
+            ServiceFeeRecord.aggregate([
                 { $match: query },
-                { $group: { _id: null, total: { $sum: "$bookingFeeCredit" } } }
+                { $group: { _id: null, total: { $sum: "$bookingFeePaid" } } }
             ]),
             Ledger.aggregate([
                 { $match: { ...query, type: TransactionType.COMMISSION, status: 'COMPLETED' } },
@@ -62,30 +62,30 @@ export const getCommissionOverview = async (req: AuthRequest, res: Response) => 
             ])
         ]);
 
-        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER', outstandingCommission: { $gt: 0 } })
-            .sort({ outstandingCommission: -1 })
+        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER', serviceFeeBalance: { $gt: 0 } })
+            .sort({ serviceFeeBalance: -1 })
             .limit(10)
             .populate('userId', 'firstName lastName email profilePhoto');
 
         res.status(200).json({
             success: true,
             stats: {
-                outstandingCommission: outstandingAgg[0]?.total || 0,
+                serviceFeeBalance: outstandingAgg[0]?.total || 0,
                 collectedToday: collectedTodayAgg[0]?.total || 0,
                 collectedThisWeek: collectedThisWeekAgg[0]?.total || 0,
                 collectedThisMonth: collectedThisMonthAgg[0]?.total || 0,
                 collectedAllTime: collectedAllTimeAgg[0]?.total || 0,
-                waivedCommission: waivedAgg[0]?.total || 0,
-                bookingFeeCredits: bookingFeeCreditsAgg[0]?.total || 0,
+                waivedServiceFee: waivedAgg[0]?.total || 0,
+                bookingFeePaid: bookingFeeCreditsAgg[0]?.total || 0,
                 topOwingProviders
             }
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Commission overview failed', error });
+        res.status(500).json({ success: false, message: 'Service fee overview failed', error });
     }
 };
 
-export const listCommissionRecords = async (req: AuthRequest, res: Response) => {
+export const listServiceFeeRecords = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
         const { status, providerId } = req.query;
@@ -93,7 +93,7 @@ export const listCommissionRecords = async (req: AuthRequest, res: Response) => 
         if (status) query.status = status;
         if (providerId) query.providerId = providerId;
 
-        const records = await CommissionRecord.find(query)
+        const records = await ServiceFeeRecord.find(query)
             .sort({ createdAt: -1 })
             .populate('providerId', 'firstName lastName email profilePhoto')
             .populate('customerId', 'firstName lastName profilePhoto')
@@ -101,16 +101,16 @@ export const listCommissionRecords = async (req: AuthRequest, res: Response) => 
 
         res.status(200).json({ success: true, data: records });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to list commission records', error });
+        res.status(500).json({ success: false, message: 'Failed to list service fee records', error });
     }
 };
 
-export const waiveCommission = async (req: AuthRequest, res: Response) => {
+export const waiveServiceFee = async (req: AuthRequest, res: Response) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
         const { recordId, amount, reason } = req.body;
-        const record = await CommissionRecord.findById(recordId).session(session);
+        const record = await ServiceFeeRecord.findById(recordId).session(session);
         if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
 
         const waiveAmount = amount || record.outstandingBalance;
@@ -121,7 +121,7 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
         record.waivedBy = new mongoose.Types.ObjectId(req.user?.userId);
 
         record.timeline.push({
-            event: 'COMMISSION_WAIVED',
+            event: 'SERVICE_FEE_WAIVED',
             timestamp: new Date(),
             metadata: { waiveAmount, reason, adminId: req.user?.userId }
         });
@@ -131,7 +131,7 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
         // Update Wallet
         await Wallet.findOneAndUpdate(
             { userId: record.providerId },
-            { $inc: { outstandingCommission: -waiveAmount } },
+            { $inc: { serviceFeeBalance: -waiveAmount } },
             { session }
         );
 
@@ -139,8 +139,8 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
             countryCode: record.countryCode,
             adminId: req.user?.userId as string,
             adminRole: req.user?.role as string,
-            action: 'COMMISSION_WAIVE',
-            entityType: 'CommissionRecord',
+            action: 'SERVICE_FEE_WAIVE',
+            entityType: 'ServiceFeeRecord',
             entityId: record.id,
             afterState: {
                 waivedAmount: record.waivedAmount,
@@ -153,7 +153,7 @@ export const waiveCommission = async (req: AuthRequest, res: Response) => {
         });
 
         await session.commitTransaction();
-        res.status(200).json({ success: true, message: 'Commission waived successfully' });
+        res.status(200).json({ success: true, message: 'Service fee waived successfully' });
     } catch (error: any) {
         await session.abortTransaction();
         res.status(500).json({ success: false, message: error.message });
@@ -168,7 +168,7 @@ export const bulkSuspendProviders = async (req: AuthRequest, res: Response) => {
         const providersToSuspend = await Wallet.find({
             countryCode,
             role: 'PROVIDER',
-            outstandingCommission: { $gt: threshold },
+            serviceFeeBalance: { $gt: threshold },
             isSuspended: { $ne: true }
         });
 
@@ -180,7 +180,7 @@ export const bulkSuspendProviders = async (req: AuthRequest, res: Response) => {
                 $set: {
                     status: 'SUSPENDED',
                     isSuspended: true,
-                    suspendReason: `Bulk suspension: Outstanding commission exceeds ${threshold}`
+                    suspendReason: `Bulk suspension: Outstanding service fee exceeds ${threshold}`
                 }
             }
         );
@@ -243,10 +243,10 @@ export const bulkUnsuspendProviders = async (req: AuthRequest, res: Response) =>
     }
 };
 
-export const getCommissionTimeline = async (req: AuthRequest, res: Response) => {
+export const getServiceFeeTimeline = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
-        const record = await CommissionRecord.findOne({ jobId })
+        const record = await ServiceFeeRecord.findOne({ jobId })
             .populate('jobId')
             .populate('providerId', 'firstName lastName profilePhoto')
             .populate('customerId', 'firstName lastName profilePhoto');
@@ -308,7 +308,7 @@ export const getOverview = async (req: AuthRequest, res: Response) => {
 
         const currencySymbol = country?.currencySymbol || country?.currency;
 
-        const [revenueAgg, commissionAgg, escrowAgg, pendingPayoutsAgg, customerWalletsCount, providerWalletsAgg] = await Promise.all([
+        const [revenueAgg, serviceFeeAgg, escrowAgg, pendingPayoutsAgg, customerWalletsCount, providerWalletsAgg] = await Promise.all([
             Ledger.aggregate([
                 { $match: { ...query, status: 'COMPLETED', type: { $in: [TransactionType.SERVICE_FEE, TransactionType.BOOKING_FEE] } } },
                 { $group: { _id: null, total: { $sum: "$amount" } } }
@@ -346,7 +346,7 @@ export const getOverview = async (req: AuthRequest, res: Response) => {
             success: true,
             stats: {
                 totalRevenue: revenueAgg[0]?.total || 0,
-                netCommission: commissionAgg[0]?.total || 0,
+                netServiceFee: serviceFeeAgg[0]?.total || 0,
                 pendingPayouts: pendingPayoutsAgg[0]?.total || 0,
                 activeEscrow: escrowAgg[0]?.total || 0,
                 totalCustomerWallets: customerWalletsCount,

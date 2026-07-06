@@ -9,8 +9,10 @@ router.get('/history', authenticate, walletController.getTransactionHistory);
 router.get('/payouts', authenticate, walletController.getMyPayouts);
 router.get('/statements', authenticate, walletController.getMyStatements);
 router.get('/invoices', authenticate, walletController.getMyInvoices);
-router.get('/commission-rate', authenticate, walletController.getMyCommissionRate);
+router.get('/service-fee-rate', authenticate, walletController.getMyServiceFeeRate);
+router.get('/commission-rate', authenticate, walletController.getMyServiceFeeRate); // Backward compatibility
 router.post('/withdraw', authenticate, walletController.requestWithdrawal);
-router.post('/pay-commission', authenticate, walletController.payCommission);
+router.post('/pay-service-fee', authenticate, walletController.payServiceFee);
+router.post('/pay-commission', authenticate, walletController.payServiceFee); // Backward compatibility
 
 export default router;

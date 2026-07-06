@@ -153,9 +153,9 @@ export const getFinancialBreakdown = async (countryCode: string = 'GLOBAL', targ
         breakdown[type] += targetAmount;
     });
 
-    const grossCommission = breakdown[TransactionType.COMMISSION] || 0;
+    const grossServiceFee = breakdown[TransactionType.COMMISSION] || 0;
     const bookingFees = breakdown[TransactionType.BOOKING_FEE] || 0;
-    const grossRevenue = grossCommission + bookingFees;
+    const grossRevenue = grossServiceFee + bookingFees;
 
     const payouts = breakdown[TransactionType.PAYOUT] || 0;
     const refunds = breakdown[TransactionType.REFUND] || 0;
@@ -168,7 +168,7 @@ export const getFinancialBreakdown = async (countryCode: string = 'GLOBAL', targ
     return {
         currency: targetCurrency,
         grossRevenue,
-        grossCommission,
+        grossServiceFee,
         bookingFees,
         payouts,
         refunds,
