@@ -20,7 +20,7 @@ export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => 
 
         const [walletAgg, todayAgg, weekAgg, monthAgg, recordAgg] = await Promise.all([
             Wallet.aggregate([
-                { $match: { countryCode } },
+                { $match: { countryCode, serviceFeeBalance: { $lt: 0 } } },
                 { $group: { _id: null, total: { $sum: "$serviceFeeBalance" } } }
             ]),
             Ledger.aggregate([
@@ -45,15 +45,15 @@ export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => 
             ])
         ]);
 
-        const topOwingProviders = await Wallet.find({ countryCode, serviceFeeBalance: { $gt: 0 } })
-            .sort({ serviceFeeBalance: -1 })
+        const topOwingProviders = await Wallet.find({ countryCode, serviceFeeBalance: { $lt: 0 } })
+            .sort({ serviceFeeBalance: 1 })
             .limit(5)
             .populate('userId', 'firstName lastName email profilePhoto');
 
         res.status(200).json({
             success: true,
             stats: {
-                serviceFeeBalance: walletAgg[0]?.total || 0,
+                serviceFeeBalance: Math.abs(walletAgg[0]?.total || 0),
                 collectedToday: todayAgg[0]?.total || 0,
                 collectedThisWeek: weekAgg[0]?.total || 0,
                 collectedThisMonth: monthAgg[0]?.total || 0,
@@ -137,7 +137,7 @@ export const bulkSuspend = async (req: AuthRequest, res: Response) => {
     try {
         const { threshold, countryCode } = req.body;
         const result = await Wallet.updateMany(
-            { countryCode, serviceFeeBalance: { $gt: threshold }, isSuspended: false },
+            { countryCode, serviceFeeBalance: { $lt: -threshold }, isSuspended: false },
             {
                 $set: {
                     status: 'SUSPENDED',
@@ -194,10 +194,10 @@ export const waiveServiceFee = async (req: AuthRequest, res: Response) => {
         // Update Wallet
         const wallet = await Wallet.findOne({ userId: record.providerId }).session(session);
         if (wallet) {
-            wallet.serviceFeeBalance = Math.max(0, wallet.serviceFeeBalance - amountToWaive);
+            wallet.serviceFeeBalance = Math.min(0, wallet.serviceFeeBalance + amountToWaive);
             // Check if can unsuspend
             const settings = await SystemSettings.findOne({ countryCode: record.countryCode }) || await SystemSettings.findOne({ countryCode: 'GLOBAL' });
-            if (wallet.serviceFeeBalance <= (settings?.serviceFeeSuspensionThreshold || 100)) {
+            if (wallet.serviceFeeBalance >= -(settings?.serviceFeeSuspensionThreshold || 100)) {
                 wallet.status = 'ACTIVE';
                 wallet.isSuspended = false;
             }

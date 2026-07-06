@@ -33,11 +33,11 @@ export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => 
 
         const [outstandingWalletsAgg, creditWalletsAgg, collectedTodayAgg, collectedThisWeekAgg, collectedThisMonthAgg, waivedAgg, bookingFeePaidAgg, collectedAllTimeAgg] = await Promise.all([
             Wallet.aggregate([
-                { $match: { ...query, serviceFeeBalance: { $gt: 0 } } },
+                { $match: { ...query, serviceFeeBalance: { $lt: 0 } } },
                 { $group: { _id: null, total: { $sum: "$serviceFeeBalance" } } }
             ]),
             Wallet.aggregate([
-                { $match: { ...query, serviceFeeBalance: { $lt: 0 } } },
+                { $match: { ...query, serviceFeeBalance: { $gt: 0 } } },
                 { $group: { _id: null, total: { $sum: "$serviceFeeBalance" } } }
             ]),
             Ledger.aggregate([
@@ -66,16 +66,16 @@ export const getServiceFeeOverview = async (req: AuthRequest, res: Response) => 
             ])
         ]);
 
-        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER', serviceFeeBalance: { $gt: 0 } })
-            .sort({ serviceFeeBalance: -1 })
+        const topOwingProviders = await Wallet.find({ ...query, role: 'PROVIDER', serviceFeeBalance: { $lt: 0 } })
+            .sort({ serviceFeeBalance: 1 })
             .limit(10)
             .populate('userId', 'firstName lastName email profilePhoto');
 
         res.status(200).json({
             success: true,
             stats: {
-                totalOutstanding: outstandingWalletsAgg[0]?.total || 0,
-                totalCredits: Math.abs(creditWalletsAgg[0]?.total || 0),
+                totalOutstanding: Math.abs(outstandingWalletsAgg[0]?.total || 0),
+                totalCredits: creditWalletsAgg[0]?.total || 0,
                 collectedToday: collectedTodayAgg[0]?.total || 0,
                 collectedThisWeek: collectedThisWeekAgg[0]?.total || 0,
                 collectedThisMonth: collectedThisMonthAgg[0]?.total || 0,
@@ -136,7 +136,7 @@ export const waiveServiceFee = async (req: AuthRequest, res: Response) => {
         // Update Wallet
         await Wallet.findOneAndUpdate(
             { userId: record.providerId },
-            { $inc: { serviceFeeBalance: -waiveAmount } },
+            { $inc: { serviceFeeBalance: waiveAmount } },
             { session }
         );
 
@@ -173,7 +173,7 @@ export const bulkSuspendProviders = async (req: AuthRequest, res: Response) => {
         const providersToSuspend = await Wallet.find({
             countryCode,
             role: 'PROVIDER',
-            serviceFeeBalance: { $gt: threshold },
+            serviceFeeBalance: { $lt: -threshold },
             isSuspended: { $ne: true }
         });
 
