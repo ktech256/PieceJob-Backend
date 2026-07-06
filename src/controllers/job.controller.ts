@@ -53,7 +53,12 @@ const sanitizeJobForMobile = async (job: any) => {
     // Enrich taskPhotos with signed URLs
     if (sanitized.taskPhotos && Array.isArray(sanitized.taskPhotos)) {
         sanitized.taskPhotos = await Promise.all(sanitized.taskPhotos.map(async (path: string) => {
-            return await storageService.getSignedUrl(path);
+            try {
+                return await storageService.getSignedUrl(path);
+            } catch (err) {
+                logger.error(`Failed to sign URL for ${path}: ${err}`);
+                return path; // Fallback to raw path if signing fails
+            }
         }));
     }
 
@@ -724,11 +729,12 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         }
     }
 
+    let updatedJob;
     if (status === JobStatus.COMPLETED) {
-        await jobService.completeJob(job.id);
+        updatedJob = await jobService.completeJob(job.id);
     } else {
         job.status = status;
-        await job.save();
+        updatedJob = await job.save();
 
         console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${status}`);
         logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
@@ -742,7 +748,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         emitJobUpdate(job.id, 'status_updated', statusPayload);
     }
 
-    const sanitized = await sanitizeJobForMobile(job);
+    const sanitized = await sanitizeJobForMobile(updatedJob || job);
 
     res.status(200).json({ success: true, data: sanitized });
   } catch (error) {

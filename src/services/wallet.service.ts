@@ -102,21 +102,22 @@ export const getWalletBalance = async (userId: string): Promise<any> => {
     const wallet = await Wallet.findOne({ userId: new mongoose.Types.ObjectId(userId) }).lean();
     if (!wallet) return null;
 
-    // Fetch the most recent completed service fee record for this provider
-    const lastRecord = await ServiceFeeRecord.findOne({ providerId: new mongoose.Types.ObjectId(userId) })
+    // Fetch the 5 most recent service fee records for this provider
+    const recentRecords = await ServiceFeeRecord.find({ providerId: new mongoose.Types.ObjectId(userId) })
         .sort({ createdAt: -1 })
+        .limit(5)
         .lean();
 
     return {
         ...wallet,
-        lastServiceFeeDetails: lastRecord ? {
-            serviceFeePercentage: lastRecord.serviceFeePercentage,
-            bookingFeePaid: lastRecord.bookingFeePaid,
-            acceptedPrice: lastRecord.acceptedPrice,
-            serviceFeeAmount: lastRecord.serviceFeeAmount,
-            providerKeeps: lastRecord.acceptedPrice - lastRecord.serviceFeeAmount,
-            outstandingBalance: lastRecord.outstandingBalance
-        } : null
+        recentServiceFees: recentRecords.map(r => ({
+            jobId: r.jobId,
+            date: r.createdAt,
+            acceptedPrice: r.acceptedPrice,
+            serviceFeeAmount: r.serviceFeeAmount,
+            outstandingBalance: r.outstandingBalance,
+            status: r.status
+        }))
     } as any;
 };
 
