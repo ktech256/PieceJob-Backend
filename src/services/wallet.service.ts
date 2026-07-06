@@ -128,5 +128,5 @@ export const getTransactionHistory = async (userId: string, filters: any = {}) =
         ],
         ...filters
     };
-    return await Ledger.find(query).sort({ createdAt: -1 }).limit(100);
+    return await Ledger.find(query).sort({ createdAt: -1 }).limit(25);
 };

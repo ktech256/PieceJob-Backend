@@ -428,11 +428,11 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
             return res.status(200).json({ success: true, data: null });
         }
 
-        // Logic to close "active" state if user has already rated a completed job
+        // Logic to close "active" state if user has already rated or dismissed a completed job
         const isCustomer = job.customerId.toString() === userId;
         if (job.status === JobStatus.COMPLETED) {
-            if (isCustomer && job.customerRated) return res.status(200).json({ success: true, data: null });
-            if (!isCustomer && job.providerRated) return res.status(200).json({ success: true, data: null });
+            if (isCustomer && (job.customerRated || job.customerRatingDismissed)) return res.status(200).json({ success: true, data: null });
+            if (!isCustomer && (job.providerRated || job.providerRatingDismissed)) return res.status(200).json({ success: true, data: null });
         }
 
         let providerData = null;
@@ -986,6 +986,30 @@ export const rateJob = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: 'Thank you for your review' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Rating failed', error });
+    }
+};
+
+export const dismissRating = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const userId = req.user?.userId;
+        const role = req.user?.role;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        if (role === 'CUSTOMER') {
+            if (job.customerId.toString() !== userId) return res.status(403).json({ success: false, message: 'Unauthorized' });
+            job.customerRatingDismissed = true;
+        } else if (role === 'PROVIDER') {
+            if (job.providerId?.toString() !== userId) return res.status(403).json({ success: false, message: 'Unauthorized' });
+            job.providerRatingDismissed = true;
+        }
+
+        await job.save();
+        res.status(200).json({ success: true, message: 'Rating request dismissed' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Dismissal failed', error });
     }
 };
 

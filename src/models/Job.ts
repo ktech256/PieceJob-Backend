@@ -100,6 +100,8 @@ export interface IJob extends Document {
 
   customerRated?: boolean;
   providerRated?: boolean;
+  customerRatingDismissed?: boolean;
+  providerRatingDismissed?: boolean;
 
   isTestJob: boolean;
   version: number;
@@ -182,6 +184,8 @@ const JobSchema: Schema = new Schema({
 
   customerRated: { type: Boolean, default: false },
   providerRated: { type: Boolean, default: false },
+  customerRatingDismissed: { type: Boolean, default: false },
+  providerRatingDismissed: { type: Boolean, default: false },
 
   isTestJob: { type: Boolean, default: false },
   version: { type: Number, default: 1 }
