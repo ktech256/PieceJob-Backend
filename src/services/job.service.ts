@@ -79,92 +79,107 @@ const recoverJobMetadata = async (job: IJob, session: mongoose.ClientSession) =>
 };
 
 export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    try {
-        const job = await Job.findById(jobId).session(session);
-        if (!job) throw new Error('Job not found');
+    const MAX_RETRIES = 3;
+    let retryCount = 0;
 
-        if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CLOSED || job.status === JobStatus.RATED) {
+    while (retryCount < MAX_RETRIES) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+        try {
+            const job = await Job.findById(jobId).session(session);
+            if (!job) throw new Error('Job not found');
+
+            if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CLOSED || job.status === JobStatus.RATED) {
+                await session.commitTransaction();
+                session.endSession();
+                return job; // Already completed
+            }
+
+            // FORENSIC: Verify and repair countryCode and currency early
+            const metadata = await recoverJobMetadata(job, session);
+
+            if (!job.countryCode) {
+                throw new Error(`JOB_COMPLETION_FAILED: countryCode missing and unrecoverable for Job: ${jobId}`);
+            }
+
+            // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
+            // Run financials BEFORE status change to ensure retryability
+            const totalAmount = (job.serviceFee || 0) + job.bookingFee;
+            const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
+
+            if (!job.providerId) {
+                throw new Error(`JOB_COMPLETION_FAILED: Cannot complete a job that has no assigned provider.`);
+            }
+
+            await financialService.completeJobFinancials(
+                job,
+                job.providerId.toString(),
+                totalAmount,
+                serviceFeeRate,
+                metadata.currency,
+                job.countryCode,
+                session
+            );
+
+            job.status = JobStatus.COMPLETED;
+            job.completedAt = new Date();
+            await job.save({ session });
+
+            // PAGE 7: Increment Completed Jobs
+            const provider = await Provider.findOne({ userId: job.providerId }).session(session);
+            if (provider) {
+                provider.jobsCompleted += 1;
+                provider.performance.completedJobs += 1;
+                provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
+                await provider.save({ session });
+
+                emitAdminUpdate('provider_status_changed', {
+                    userId: job.providerId,
+                    isOnline: provider.isOnline,
+                    status: provider.currentAvailabilityStatus,
+                    timestamp: new Date()
+                });
+            }
+
+            // Notifications & Sockets
+            const statusPayload = { jobId: job.id, status: job.status, adminOverride };
+            require('../socket/socket.service').emitJobUpdate(job.id, 'status_updated', statusPayload);
+            emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
+            emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
+            if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+
+            // Notify Customer
+            await notificationService.notifyUser(
+                job.customerId.toString(),
+                'Job Completed',
+                adminOverride
+                    ? 'Administrator has marked your job as completed. Please rate your provider.'
+                    : 'Your job has been marked as completed. Please rate your provider.'
+            );
+
+            // PAGE 12: Fraud Analysis (Fake Completion)
+            fraudService.analyzeJobCompletion(job.id);
+
+            // Track frequent address (Issue 2)
+            await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+
             await session.commitTransaction();
-            return job; // Already completed
+            session.endSession();
+            return job;
+        } catch (error: any) {
+            await session.abortTransaction();
+            session.endSession();
+
+            const isWriteConflict = error.message.includes('Write conflict') || error.code === 112;
+            if (isWriteConflict && retryCount < MAX_RETRIES - 1) {
+                retryCount++;
+                const delay = Math.pow(2, retryCount) * 100; // Exponential backoff
+                logger.warn(`JOB_COMPLETION | Write conflict. Retrying in ${delay}ms... (Attempt ${retryCount + 1})`);
+                await new Promise(res => setTimeout(res, delay));
+            } else {
+                throw error;
+            }
         }
-
-        // FORENSIC: Verify and repair countryCode and currency early
-        const metadata = await recoverJobMetadata(job, session);
-
-        if (!job.countryCode) {
-             throw new Error(`JOB_COMPLETION_FAILED: countryCode missing and unrecoverable for Job: ${jobId}`);
-        }
-
-        // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
-        // Run financials BEFORE status change to ensure retryability
-        const totalAmount = (job.serviceFee || 0) + job.bookingFee;
-        const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
-
-        if (!job.providerId) {
-            throw new Error(`JOB_COMPLETION_FAILED: Cannot complete a job that has no assigned provider.`);
-        }
-
-        await financialService.completeJobFinancials(
-            job,
-            job.providerId.toString(),
-            totalAmount,
-            serviceFeeRate,
-            metadata.currency,
-            job.countryCode,
-            session
-        );
-
-        job.status = JobStatus.COMPLETED;
-        job.completedAt = new Date();
-        await job.save({ session });
-
-        // PAGE 7: Increment Completed Jobs
-        const provider = await Provider.findOne({ userId: job.providerId }).session(session);
-        if (provider) {
-            provider.jobsCompleted += 1;
-            provider.performance.completedJobs += 1;
-            provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
-            await provider.save({ session });
-
-            emitAdminUpdate('provider_status_changed', {
-                userId: job.providerId,
-                isOnline: provider.isOnline,
-                status: provider.currentAvailabilityStatus,
-                timestamp: new Date()
-            });
-        }
-
-        // Notifications & Sockets
-        const statusPayload = { jobId: job.id, status: job.status, adminOverride };
-        require('../socket/socket.service').emitJobUpdate(job.id, 'status_updated', statusPayload);
-        emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-        if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
-
-        // Notify Customer
-        await notificationService.notifyUser(
-            job.customerId.toString(),
-            'Job Completed',
-            adminOverride
-                ? 'Administrator has marked your job as completed. Please rate your provider.'
-                : 'Your job has been marked as completed. Please rate your provider.'
-        );
-
-        // PAGE 12: Fraud Analysis (Fake Completion)
-        fraudService.analyzeJobCompletion(job.id);
-
-        // Track frequent address (Issue 2)
-        await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
-
-        await session.commitTransaction();
-        return job;
-    } catch (error) {
-        await session.abortTransaction();
-        throw error;
-    } finally {
-        session.endSession();
     }
 };
 

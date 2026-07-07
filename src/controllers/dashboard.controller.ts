@@ -49,15 +49,14 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             currency: wallet?.currency || currencySymbol
         };
 
-        // 3. Active Job
-        const activeJobRaw = await Job.findOne({
+        // 3. Active Jobs (Multiple support)
+        const activeJobsRaw = await Job.find({
             customerId: userId,
             status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName profilePhoto');
 
-        let activeJob = null;
-        if (activeJobRaw) {
-            const aj = activeJobRaw.toObject() as any;
+        const activeJobs = await Promise.all(activeJobsRaw.map(async (jobRaw) => {
+            const aj = jobRaw.toObject() as any;
             const p = aj.providerId as any;
             if (p && typeof p === 'object') {
                 aj.providerId = p._id; // Restore as string to avoid Android parsing crash
@@ -69,8 +68,10 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                     jobsCompleted: 0
                 };
             }
-            activeJob = await enrichWithNegotiation(aj);
-        }
+            return await enrichWithNegotiation(aj);
+        }));
+
+        const activeJob = activeJobs.length > 0 ? activeJobs[0] : null;
 
         // 4. Promotions
         const now = new Date();
@@ -233,6 +234,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 },
                 wallet: walletData,
                 activeJob,
+                activeJobs,
                 promotions,
                 referralCampaign,
                 latestActivity,

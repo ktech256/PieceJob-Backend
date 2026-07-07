@@ -630,6 +630,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId: (finalJob.providerId as any)._id });
         if (provider) {
             providerData = {
+                id: (finalJob.providerId as any)._id.toString(),
                 firstName: (finalJob.providerId as any).firstName,
                 lastName: (finalJob.providerId as any).lastName,
                 ratingAvg: provider.ratingAvg,
@@ -1018,8 +1019,10 @@ export const uploadTaskPhotos = async (req: AuthRequest, res: Response) => {
             data.id = data._id?.toString();
             data.jobId = data.jobId?.toString();
             if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId._id = data.senderId._id?.toString();
                 data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
             }
+            if (data.receiverId) data.receiverId = data.receiverId.toString();
         }
 
         // Enrich metadata photos with signed URLs for socket emit
@@ -1085,8 +1088,10 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
             data.id = data._id?.toString();
             data.jobId = data.jobId?.toString();
             if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId._id = data.senderId._id?.toString();
                 data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
             }
+            if (data.receiverId) data.receiverId = data.receiverId.toString();
         }
 
         // Enrich metadata photos with signed URLs for socket emit
@@ -1149,8 +1154,16 @@ export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
             data.id = data._id?.toString();
             data.jobId = data.jobId?.toString();
             if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId._id = data.senderId._id?.toString();
                 data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
             }
+            if (data.receiverId) data.receiverId = data.receiverId.toString();
+        }
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId._id = data.senderId._id?.toString();
+                data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+            }
+            if (data.receiverId) data.receiverId = data.receiverId.toString();
         }
 
         // Enrich metadata photos with signed URLs for socket emit
