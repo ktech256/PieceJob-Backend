@@ -79,7 +79,7 @@ const recoverJobMetadata = async (job: IJob, session: mongoose.ClientSession) =>
 };
 
 export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 5; // Increased retries for high concurrency
     let retryCount = 0;
 
     while (retryCount < MAX_RETRIES) {
@@ -132,21 +132,31 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 provider.performance.completedJobs += 1;
                 provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
                 await provider.save({ session });
+            }
 
-                emitAdminUpdate('provider_status_changed', {
+            // PAGE 12: Fraud Analysis (Fake Completion)
+            // Note: This service call should ideally be transactional if it modifies DB,
+            // but if it's async/queue based, it's fine.
+            fraudService.analyzeJobCompletion(job.id);
+
+            // Track frequent address (Issue 2)
+            await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+
+            await session.commitTransaction();
+            session.endSession();
+
+            // EMIT SOCKET EVENTS ONLY AFTER SUCCESSFUL COMMIT
+            const socketService = require('../socket/socket.service');
+            socketService.syncJobStatus(job, 'status_updated', { adminOverride });
+
+            if (provider) {
+                socketService.emitAdminUpdate('provider_status_changed', {
                     userId: job.providerId,
                     isOnline: provider.isOnline,
                     status: provider.currentAvailabilityStatus,
                     timestamp: new Date()
                 });
             }
-
-            // Notifications & Sockets
-            const statusPayload = { jobId: job.id, status: job.status, adminOverride };
-            require('../socket/socket.service').emitJobUpdate(job.id, 'status_updated', statusPayload);
-            emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-            emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-            if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
 
             // Notify Customer
             await notificationService.notifyUser(
@@ -157,26 +167,19 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                     : 'Your job has been marked as completed. Please rate your provider.'
             );
 
-            // PAGE 12: Fraud Analysis (Fake Completion)
-            fraudService.analyzeJobCompletion(job.id);
-
-            // Track frequent address (Issue 2)
-            await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
-
-            await session.commitTransaction();
-            session.endSession();
             return job;
         } catch (error: any) {
             await session.abortTransaction();
             session.endSession();
 
-            const isWriteConflict = error.message.includes('Write conflict') || error.code === 112;
+            const isWriteConflict = error.message.includes('Write conflict') || error.code === 112 || error.hasErrorLabel?.('TransientTransactionError');
             if (isWriteConflict && retryCount < MAX_RETRIES - 1) {
                 retryCount++;
-                const delay = Math.pow(2, retryCount) * 100; // Exponential backoff
-                logger.warn(`JOB_COMPLETION | Write conflict. Retrying in ${delay}ms... (Attempt ${retryCount + 1})`);
+                const delay = Math.pow(2, retryCount) * 100 + Math.random() * 100; // Exponential backoff with jitter
+                logger.warn(`JOB_COMPLETION | Write conflict. Retrying in ${Math.round(delay)}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
                 await new Promise(res => setTimeout(res, delay));
             } else {
+                logger.error(`JOB_COMPLETION | FATAL ERROR | Job: ${jobId} | Error: ${error.message}`);
                 throw error;
             }
         }

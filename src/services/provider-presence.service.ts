@@ -71,9 +71,9 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
                 activeJob.notificationsSent = [...sent, 'ARRIVED'];
                 await activeJob.save();
 
-                // Also emit via socket for immediate UI update
-                emitAdminUpdate('job_status_updated', { jobId: activeJob.id, status: JobStatus.ARRIVED });
-                require('../socket/socket.service').emitJobUpdate(activeJob.id, 'status_updated', { jobId: activeJob.id, status: JobStatus.ARRIVED });
+                // Unified Real-Time Sync
+                const { syncJobStatus } = require('../socket/socket.service');
+                syncJobStatus(activeJob);
             }
             else if (distance <= 1000 && distance > 500 && !sent.includes('ALMOST_THERE')) {
                 // ~5 mins away

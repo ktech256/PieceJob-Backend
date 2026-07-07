@@ -5,7 +5,7 @@ import PriceProposal from '../models/PriceProposal';
 import ChatMessage from '../models/Chat';
 import ServiceFeeRecord from '../models/ServiceFeeRecord';
 import SystemSettings from '../models/SystemSettings';
-import { emitJobUpdate } from '../socket/socket.service';
+import { emitJobUpdate, syncJobStatus } from '../socket/socket.service';
 import * as notificationService from '../services/notification.service';
 import mongoose from 'mongoose';
 
@@ -184,12 +184,14 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
                     data.senderId.profilePicture = data.senderId.profilePhoto;
                 }
             }
-            emitJobUpdate(job._id.toString(), 'new_message', data);
-            emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, status: job.status, priceStatus: 'ACCEPTED', agreedPrice: job.agreedPrice });
+
+            const socketService = require('../socket/socket.service');
+            socketService.emitJobUpdate(job._id.toString(), 'new_message', data);
+            socketService.syncJobStatus(job, 'status_updated', { priceStatus: 'ACCEPTED', agreedPrice: job.agreedPrice });
 
             await notificationService.notifyUser(
                 proposal.senderId.toString(),
-                'Price Accepted',
+                'Price Proposal Accepted',
                 `The price proposal of ${proposal.amount} has been accepted.`,
                 { type: 'PRICE_ACCEPTED', jobId: job._id.toString() }
             );
@@ -244,8 +246,10 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
                     data.senderId.profilePicture = data.senderId.profilePhoto;
                 }
             }
-            emitJobUpdate(job._id.toString(), 'new_message', data);
-            emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, status: JobStatus.BROADCASTED, providerId: null });
+
+            const socketService = require('../socket/socket.service');
+            socketService.emitJobUpdate(job._id.toString(), 'new_message', data);
+            socketService.syncJobStatus(job, 'status_updated', { providerId: null });
 
             if (rejectedProviderId) {
                 await notificationService.notifyUser(

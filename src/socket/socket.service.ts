@@ -140,6 +140,44 @@ export const emitJobUpdate = (jobId: string, event: string, data: any) => {
   }
 };
 
+/**
+ * Unified helper to synchronize job status across all relevant participants and dashboards.
+ * Ensures consistent real-time updates for Customer App, Provider App, and Admin Dashboard.
+ */
+export const syncJobStatus = (job: any, event: string = 'status_updated', additionalData: any = {}) => {
+    if (!io || !job) return;
+
+    const jobId = (job._id || job.id).toString();
+    const statusPayload = {
+        jobId,
+        status: job.status,
+        ...additionalData
+    };
+
+    console.log(`[SOCKET_SYNC] Syncing Status | Job: ${jobId} | Status: ${job.status} | Event: ${event}`);
+
+    // 1. Emit to Job Room (Tracking Screens)
+    io.to(`job_${jobId}`).emit(event, statusPayload);
+
+    // 2. Emit to Workspace Room (Admin Dashboard & Global Listeners)
+    if (job.countryCode) {
+        io.to(`workspace_${job.countryCode}`).emit(event, statusPayload);
+    }
+
+    // 3. Emit to Customer's User Room (Customer Dashboard)
+    if (job.customerId) {
+        io.to(`user_${job.customerId.toString()}`).emit(event, statusPayload);
+    }
+
+    // 4. Emit to Provider's User Room (Provider Dashboard)
+    if (job.providerId) {
+        io.to(`user_${job.providerId.toString()}`).emit(event, statusPayload);
+    }
+
+    // 5. Explicit Admin Update
+    io.to('admin_monitoring').emit('job_status_updated', statusPayload);
+};
+
 export const emitToUser = (userId: string, event: string, data: any) => {
   if (io) {
     io.to(`user_${userId}`).emit(event, data);

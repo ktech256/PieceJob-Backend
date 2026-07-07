@@ -12,7 +12,7 @@ import Provider from '../models/Provider';
 import ChatMessage from '../models/Chat';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
-import { emitAdminUpdate, emitJobUpdate, emitToUser, emitToWorkspace } from '../socket/socket.service';
+import { emitAdminUpdate, emitJobUpdate, emitToUser, emitToWorkspace, syncJobStatus } from '../socket/socket.service';
 
 import * as performanceService from '../services/provider-performance.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
@@ -643,17 +643,8 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const sanitized = await sanitizeJobForMobile(finalJob || job);
     if (providerData) sanitized.providerInfo = providerData;
 
-    const statusPayload = { jobId: job.id, status: job.status, providerInfo: providerData };
-
-    // Notify Customer via Socket (User Room - specific for acceptance transition)
-    console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${job.status} | Target User: ${job.customerId}`);
-    emitToUser(job.customerId.toString(), 'JOB_ACCEPTED', statusPayload);
-    emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-    emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-
-    // Notify Customer via Socket (Job Room)
-    console.log(`[FORENSIC] SOCKET_STATUS_EMITTED | Room: job_${job.id} | Event: status_updated | Status: ${job.status}`);
-    emitJobUpdate(job.id, 'status_updated', statusPayload);
+    // Unified Real-Time Sync
+    syncJobStatus(finalJob || job, 'status_updated', { providerInfo: providerData });
 
     // Notify Customer via FCM
     const notificationMsg = job.status === JobStatus.PROVIDER_ACCEPTED
@@ -754,14 +745,18 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
         console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${status}`);
         logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
-        emitAdminUpdate('job_status_updated', { jobId: job.id, status });
 
-        const statusPayload = { jobId: job.id, status };
-        // Notify participants
-        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-        if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
-        emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-        emitJobUpdate(job.id, 'status_updated', statusPayload);
+        // Unified Real-Time Sync
+        syncJobStatus(updatedJob);
+
+        // Notify Customer via Push for specific statuses
+        if (status === JobStatus.ARRIVED) {
+            await notificationService.notifyUser(
+                job.customerId.toString(),
+                'Provider Arrived',
+                'Your provider has arrived at the location.'
+            );
+        }
     }
 
     const sanitized = await sanitizeJobForMobile(updatedJob || job);
