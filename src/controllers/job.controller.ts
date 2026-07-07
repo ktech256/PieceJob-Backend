@@ -682,6 +682,13 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
     const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED];
     if (terminalStatuses.includes(job.status)) {
+        if (status === job.status || (status === JobStatus.COMPLETED && (job.status === JobStatus.RATED || job.status === JobStatus.CLOSED))) {
+            return res.status(200).json({
+                success: true,
+                message: `Job already in ${job.status} state`,
+                data: await sanitizeJobForMobile(job)
+            });
+        }
         return res.status(400).json({ success: false, message: `Cannot update status of a ${job.status} job` });
     }
 

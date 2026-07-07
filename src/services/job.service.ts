@@ -29,6 +29,16 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             return job; // Already completed
         }
 
+        // FORENSIC: Verify countryCode
+        if (!job.countryCode) {
+            logger.warn(`JOB_COMPLETION | countryCode missing for Job: ${jobId}. Searching provider profile.`);
+            const provider = await mongoose.model('Provider').findOne({ userId: job.providerId }).session(session);
+            if (provider?.countryCode) {
+                job.countryCode = provider.countryCode;
+                await job.save({ session });
+            }
+        }
+
         // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
         // Run financials BEFORE status change to ensure retryability
         const totalAmount = (job.serviceFee || 0) + job.bookingFee;

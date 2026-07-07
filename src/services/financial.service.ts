@@ -63,19 +63,24 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
 
     if (!finalCountryCode) {
         // Fallback to provider or customer countryCode
+        logger.warn(`FINANCIALS | countryCode missing for Job: ${job._id}. Attempting user-level recovery.`);
         const user = await mongoose.model('User').findById(providerId || job.customerId).session(session as any);
         if (user) {
             finalCountryCode = user.countryCode;
         }
     }
 
-    if (!finalCountryCode) throw new Error('FINANCIALS_ERROR: countryCode is missing from payload, job document, and user profile.');
+    if (!finalCountryCode) {
+        logger.error(`FINANCIALS | FATAL | countryCode still missing after recovery attempts | Job: ${job._id}`);
+        throw new Error('FINANCIALS_ERROR: countryCode is missing from payload, job document, and user profile.');
+    }
 
     // 1.1 IDEMPOTENCY CHECK: Check if financial records already exist for this job
     const existingRecord = await CommissionRecord.findOne({ jobId: job._id }).session(session);
     if (existingRecord) {
         logger.warn(`FINANCIALS | SKIP | Records already exist for Job: ${job._id}`);
-        await session.commitTransaction();
+        // Do NOT commit here if session was provided by caller
+        if (!existingSession) await session.commitTransaction();
         return;
     }
 
