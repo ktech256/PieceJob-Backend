@@ -4,7 +4,7 @@ import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
-import { emitToUser, emitJobUpdate, emitAdminUpdate, emitToWorkspace } from '../socket/socket.service';
+import { emitToUser, emitJobUpdate, emitAdminUpdate, emitToWorkspace, isUserConnected } from '../socket/socket.service';
 import { addJobToBroadcastQueue } from './job-broadcast.queue';
 import * as notificationService from './notification.service';
 import * as performanceService from './provider-performance.service';
@@ -102,9 +102,13 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
         const totalAmount = (job.serviceFee || 0) + job.bookingFee;
         const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
 
+        if (!job.providerId) {
+            throw new Error(`JOB_COMPLETION_FAILED: Cannot complete a job that has no assigned provider.`);
+        }
+
         await financialService.completeJobFinancials(
             job,
-            job.providerId!.toString(),
+            job.providerId.toString(),
             totalAmount,
             serviceFeeRate,
             metadata.currency,
@@ -240,26 +244,43 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
       }).limit(10).populate('userId', 'fcmToken role firstName email');
 
       if (providers.length > 0) {
-          foundProviders = providers;
-          selectedTierLabel = tiers.join('/');
-
-          // Update stats for the summary
-          providers.forEach(p => {
-              const t = p.tier as string;
-              if (stats[t] !== undefined) stats[t]++;
-
-              // FORENSIC AUDIT DURING MATCHING
+          // FORENSIC REPAIR: Filter out providers who have NO fcmToken AND are NOT connected via Socket
+          // This prevents "Zombie Online" providers from hogging waves.
+          const reachableProviders = providers.filter(p => {
               const user = p.userId as any;
-              console.log(`[DATABASE_AUDIT] Matched Provider: ${p._id}`);
-              console.log(`[DATABASE_AUDIT] User ID: ${user?._id}`);
-              if (user) {
-                  const token = user.fcmToken || 'NULL';
-                  console.log(`[DATABASE_AUDIT] Stored FCM Token: ${token !== 'NULL' ? token.substring(0, 15) + '...' : 'NULL'}`);
-              } else {
-                  console.log(`[DATABASE_AUDIT] User object MISSING in population.`);
+              const hasToken = user && user.fcmToken;
+              const hasSocket = isUserConnected(user?._id.toString());
+
+              if (!hasToken && !hasSocket) {
+                  console.log(`[MATCHING_AUDIT] Skipping Zombie Provider: ${p._id} (No Token & No Socket)`);
+                  return false;
               }
+              return true;
           });
-          break;
+
+          if (reachableProviders.length > 0) {
+              foundProviders = reachableProviders;
+              selectedTierLabel = tiers.join('/');
+
+              // Update stats for the summary
+              reachableProviders.forEach(p => {
+                  const t = p.tier as string;
+                  if (stats[t] !== undefined) stats[t]++;
+
+                  // FORENSIC AUDIT DURING MATCHING
+                  const user = p.userId as any;
+                  console.log(`[DATABASE_AUDIT] Matched Provider: ${p._id}`);
+                  console.log(`[DATABASE_AUDIT] User ID: ${user?._id}`);
+                  if (user) {
+                      const token = user.fcmToken || 'NULL';
+                      console.log(`[DATABASE_AUDIT] Stored FCM Token: ${token !== 'NULL' ? token.substring(0, 15) + '...' : 'NULL'}`);
+                      console.log(`[DATABASE_AUDIT] Socket Connected: ${isUserConnected(user._id.toString())}`);
+                  } else {
+                      console.log(`[DATABASE_AUDIT] User object MISSING in population.`);
+                  }
+              });
+              break;
+          }
       }
   }
 
@@ -406,8 +427,9 @@ export const acceptJob = async (jobId: string, providerId: string) => {
     job.providerId = providerId as any;
 
     // PHASE 3: Dispatch Control
-    const negotiationRequired = service?.priceNegotiationRequired || false;
-    const photoSharingRequired = service?.photoSharingRequired || false;
+    // Forensic: Handle undefined flags by checking truthiness explicitly
+    const negotiationRequired = service?.priceNegotiationRequired === true;
+    const photoSharingRequired = service?.photoSharingRequired === true;
 
     job.photoSharingRequired = photoSharingRequired;
     job.priceNegotiationRequired = negotiationRequired;

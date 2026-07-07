@@ -18,7 +18,12 @@ export const saveSettings = async (req: AuthRequest, res: Response) => {
   try {
     const countryCode = req.user?.countryCode || 'GLOBAL';
     const oldSettings = await settingsService.getSettings(countryCode);
-    const settings = await settingsService.updateSettings(countryCode, req.body);
+
+    // Forensic Fix: Sanitize req.body to remove immutable or system-managed fields
+    // This prevents MongoDB from throwing errors when attempting to update _id or version manually.
+    const { _id, id, createdAt, updatedAt, __v, version, ...updateData } = req.body;
+
+    const settings = await settingsService.updateSettings(countryCode, updateData);
 
     if (settings) {
         await auditService.logAdminAction({

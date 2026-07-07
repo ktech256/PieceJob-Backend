@@ -114,8 +114,11 @@ export const calculateNegotiationPhase = async (job: any) => {
             code: job.serviceCode,
             countryCode: { $in: [job.countryCode, 'GLOBAL'] }
         }).sort({ countryCode: -1 });
-        photoRequired = service?.photoSharingRequired || false;
-        negRequired = service?.priceNegotiationRequired || false;
+
+        // Forensic Fix: Ensure we don't accidentally default to false if service lookup fails
+        // but also ensure we don't crash. We use the job's existing flags if available.
+        photoRequired = service?.photoSharingRequired ?? (job.photoSharingRequired || false);
+        negRequired = service?.priceNegotiationRequired ?? (job.priceNegotiationRequired || false);
 
         // Update the object in memory for this calculation
         job.photoSharingRequired = photoRequired;
@@ -738,7 +741,12 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
     let updatedJob;
     if (status === JobStatus.COMPLETED) {
-        updatedJob = await jobService.completeJob(job.id);
+        try {
+            updatedJob = await jobService.completeJob(job.id);
+        } catch (jobErr: any) {
+            logger.error(`JOB | COMPLETE_FAILED | Job: ${job.id} | Error: ${jobErr.message}`);
+            return res.status(400).json({ success: false, message: jobErr.message || 'Job completion protocol failed.' });
+        }
     } else {
         job.status = status;
         updatedJob = await job.save();
@@ -1170,16 +1178,21 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
         }
 
         // VALIDATION: Ensure pre-requisites are met
-        const service = await Service.findOne({
+        const service = await mongoose.model('Service').findOne({
             code: job.serviceCode,
             countryCode: { $in: [job.countryCode, 'GLOBAL'] }
         }).sort({ countryCode: -1 });
 
-        if (service?.photoSharingRequired && !job.taskPhotosSeen) {
+        if (!service) {
+            return res.status(404).json({ success: false, message: 'Service configuration not found.' });
+        }
+
+        // Forensic Fix: Use explicit boolean checks to prevent bypassing negotiation for negotiation-only services
+        if (service.photoSharingRequired === true && !job.taskPhotosSeen) {
             return res.status(403).json({ success: false, message: 'You must review the task photos before dispatching.' });
         }
 
-        if (service?.priceNegotiationRequired && job.priceStatus !== 'ACCEPTED') {
+        if (service.priceNegotiationRequired === true && job.priceStatus !== 'ACCEPTED') {
             return res.status(403).json({ success: false, message: 'You must agree on a price before dispatching.' });
         }
 

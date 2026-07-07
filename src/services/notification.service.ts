@@ -58,6 +58,10 @@ export const sendPushNotification = async (
         if (error.code === 'messaging/registration-token-not-registered') {
             logger.warn(`FCM | TOKEN_EXPIRED | Cleaning up user ${userId}`);
             await User.findByIdAndUpdate(userId, { fcmToken: null });
+
+            // FORENSIC REPAIR: If this is a provider, mark them as offline to prevent "Zombie Online" state
+            const Provider = mongoose.model('Provider');
+            await Provider.findOneAndUpdate({ userId }, { isOnline: false, currentAvailabilityStatus: 'OFFLINE' });
         }
 
         await NotificationLog.create({
