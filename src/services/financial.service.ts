@@ -61,16 +61,16 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
     let finalCountryCode = countryCode || job.countryCode;
     let finalCurrency = currency || job.pricingSnapshot?.currencyCode || 'USD';
 
-    if (!finalCountryCode) {
+    if (!finalCountryCode || finalCountryCode === "") {
         // Fallback to provider or customer countryCode
         logger.warn(`FINANCIALS | countryCode missing for Job: ${job._id}. Attempting user-level recovery.`);
         const user = await mongoose.model('User').findById(providerId || job.customerId).session(session as any);
-        if (user) {
+        if (user && user.countryCode) {
             finalCountryCode = user.countryCode;
         }
     }
 
-    if (!finalCountryCode) {
+    if (!finalCountryCode || finalCountryCode === "") {
         logger.error(`FINANCIALS | FATAL | countryCode still missing after recovery attempts | Job: ${job._id}`);
         throw new Error('FINANCIALS_ERROR: countryCode is missing from payload, job document, and user profile.');
     }
@@ -133,7 +133,7 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         amount: totalServiceFee,
         currency: finalCurrency,
         countryCode: finalCountryCode,
-        type: TransactionType.COMMISSION,
+        type: TransactionType.COMMISSION, // Renaming terminology to Service Fee
         status: 'COMPLETED',
         isTestTransaction: isTest,
         description: isNegotiated
@@ -163,7 +163,7 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
 
     // 4. Update Provider Wallet Service Fee Balance
     // Debt is stored as negative per user requirement
-    // ALWAYS update wallet to ensure countryCode/currency are set if it was upserted
+    // ALWAYS update wallet to ensure countryCode/currency are set if it was upserted or missing
     const walletUpdate: any = {
         $setOnInsert: { countryCode: finalCountryCode, currency: finalCurrency }
     };
@@ -178,6 +178,15 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         { session, new: true, upsert: true, runValidators: false }
     );
 
+    // SELF-HEALING: If existing wallet is missing countryCode or currency, repair it on the object before .save()
+    if (!wallet.countryCode || wallet.countryCode === "") {
+        logger.info(`FINANCIALS | Repairing missing countryCode on Wallet for User: ${providerId}`);
+        wallet.countryCode = finalCountryCode;
+    }
+    if (!wallet.currency) {
+        wallet.currency = finalCurrency;
+    }
+
     // 5. Suspension Logic (only if debt increased)
     if (outstandingServiceFee > 0) {
         const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
@@ -185,6 +194,7 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
             wallet.status = 'SUSPENDED';
             wallet.isSuspended = true;
             wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
+            // Validation is now safe because we repaired countryCode above if it was missing
             await wallet.save({ session });
 
             await auditService.logAdminAction({

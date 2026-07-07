@@ -17,6 +17,67 @@ import * as settingsService from './settings.service';
 import * as pricingService from './pricing.service';
 import { calculateDistance } from '../utils/location';
 
+/**
+ * Forensic helper to recover missing countryCode and currency from any associated participant.
+ */
+const recoverJobMetadata = async (job: IJob, session: mongoose.ClientSession) => {
+    const User = mongoose.model('User');
+    const Provider = mongoose.model('Provider');
+
+    let recoveredCountry = job.countryCode;
+    let recoveredCurrency = job.pricingSnapshot?.currencyCode;
+
+    // 1. Try Provider Profile
+    if (!recoveredCountry && job.providerId) {
+        const provider = await Provider.findOne({ userId: job.providerId }).session(session);
+        if (provider?.countryCode) recoveredCountry = provider.countryCode;
+
+        if (!recoveredCountry) {
+            const providerUser = await User.findById(job.providerId).session(session);
+            if (providerUser?.countryCode) recoveredCountry = providerUser.countryCode;
+        }
+    }
+
+    // 2. Try Customer User Profile
+    if (!recoveredCountry && job.customerId) {
+        const customerUser = await User.findById(job.customerId).session(session);
+        if (customerUser?.countryCode) recoveredCountry = customerUser.countryCode;
+    }
+
+    // 3. Fallback to System Settings / First Active Country if still missing
+    if (!recoveredCountry) {
+        const Country = mongoose.model('Country');
+        const activeCountry = await Country.findOne({ isActive: true }).session(session);
+        if (activeCountry) {
+            recoveredCountry = activeCountry.code;
+            recoveredCurrency = recoveredCurrency || activeCountry.currency;
+        }
+    }
+
+    // Apply repairs to the document
+    if (recoveredCountry && !job.countryCode) {
+        logger.info(`JOB_COMPLETION | Repairing missing countryCode for Job: ${job._id} -> ${recoveredCountry}`);
+        job.countryCode = recoveredCountry;
+    }
+
+    if (recoveredCurrency && !job.pricingSnapshot?.currencyCode) {
+        if (!job.pricingSnapshot) {
+            job.pricingSnapshot = {
+                basePrice: 0,
+                hourlyPrice: 0,
+                bookingFee: job.bookingFee,
+                taxPercentage: 0,
+                currencyCode: recoveredCurrency || 'USD',
+                surcharges: []
+            };
+        } else {
+            job.pricingSnapshot.currencyCode = recoveredCurrency || 'USD';
+        }
+    }
+
+    return { countryCode: recoveredCountry, currency: recoveredCurrency || 'USD' };
+};
+
 export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -29,14 +90,11 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             return job; // Already completed
         }
 
-        // FORENSIC: Verify countryCode
+        // FORENSIC: Verify and repair countryCode and currency early
+        const metadata = await recoverJobMetadata(job, session);
+
         if (!job.countryCode) {
-            logger.warn(`JOB_COMPLETION | countryCode missing for Job: ${jobId}. Searching provider profile.`);
-            const provider = await mongoose.model('Provider').findOne({ userId: job.providerId }).session(session);
-            if (provider?.countryCode) {
-                job.countryCode = provider.countryCode;
-                await job.save({ session });
-            }
+             throw new Error(`JOB_COMPLETION_FAILED: countryCode missing and unrecoverable for Job: ${jobId}`);
         }
 
         // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
@@ -49,7 +107,7 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             job.providerId!.toString(),
             totalAmount,
             serviceFeeRate,
-            'USD', // Should come from settings/snapshot
+            metadata.currency,
             job.countryCode,
             session
         );
