@@ -602,7 +602,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
             getProviderNetEarnings(userId as string, weekAgo),
             getProviderNetEarnings(userId as string, monthAgo),
             Job.aggregate([
-                { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
+                { $match: { providerId: new mongoose.Types.ObjectId(userId as string) } },
                 { $group: { _id: "$status", count: { $sum: 1 } } }
             ])
         ]);

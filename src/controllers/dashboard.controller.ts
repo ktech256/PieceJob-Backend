@@ -336,11 +336,11 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         monthAgo.setMonth(monthAgo.getMonth() - 1);
 
         const [earningsToday, earningsWeekly, earningsMonthly, jobStatsAgg] = await Promise.all([
-            getProviderNetEarnings(userId, startOfToday),
-            getProviderNetEarnings(userId, weekAgo),
-            getProviderNetEarnings(userId, monthAgo),
+            getProviderNetEarnings(userId as string, startOfToday),
+            getProviderNetEarnings(userId as string, weekAgo),
+            getProviderNetEarnings(userId as string, monthAgo),
             Job.aggregate([
-                { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
+                { $match: { providerId: new mongoose.Types.ObjectId(userId as string) } },
                 { $group: { _id: "$status", count: { $sum: 1 } } }
             ])
         ]);
@@ -386,7 +386,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         }
 
         // 3. Recent Activity (Latest 5 - Jobs ONLY)
-        const recentJobs = await Job.find({ providerId: userId })
+        const recentJobs = await Job.find({ providerId: userId as string })
             .sort({ createdAt: -1 })
             .limit(10); // Fetch more to filter down to 5 if needed, but we only show jobs anyway
 
