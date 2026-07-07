@@ -90,6 +90,8 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
     let totalServiceFee = 0;
     let bookingFeePaid = job.bookingFee || 0;
     let outstandingServiceFee = 0;
+
+    // Priority: 1. Snapshot taken at acceptance, 2. Dashboard Setting, 3. Fallback to 15%
     let finalServiceFeeRate = job.serviceFeeRateSnapshot || settings?.platformServiceFeePercent || 15;
 
     const isNegotiated = job.priceNegotiationRequired !== false;
@@ -108,22 +110,24 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         finalServiceFeeRate = 0; // Not applicable
     }
 
-    // 1. Gross Earning Ledger (Informational in direct model)
-    // Only for negotiated jobs, otherwise it's direct/fixed
-    if (isNegotiated) {
-        await new Ledger({
-            transactionId: `GE-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-            jobId: job._id,
-            toUserId: providerId,
-            amount: agreedPrice,
-            currency: finalCurrency,
-            countryCode: finalCountryCode,
-            type: TransactionType.SERVICE_FEE, // Keeping enum for compatibility, but it represents Gross Earning
-            status: 'COMPLETED',
-            isTestTransaction: isTest,
-            description: `Job marked COMPLETED (Gross Earnings: ${finalCurrency} ${agreedPrice})`
-        }).save({ session });
-    }
+    // 1. Gross Earning Ledger (Informational)
+    // Recorded for all completed jobs to track provider earnings
+    const grossAmount = isNegotiated ? agreedPrice : (job.serviceFee || 0) + bookingFeePaid;
+
+    await new Ledger({
+        transactionId: `GE-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+        jobId: job._id,
+        toUserId: providerId,
+        amount: grossAmount,
+        currency: finalCurrency,
+        countryCode: finalCountryCode,
+        type: TransactionType.SERVICE_FEE,
+        status: 'COMPLETED',
+        isTestTransaction: isTest,
+        description: isNegotiated
+            ? `Negotiated Job: Gross Earnings (${finalCurrency} ${grossAmount})`
+            : `Fixed Price Job: Gross Earnings (${finalCurrency} ${grossAmount})`
+    }).save({ session });
 
     // 2. Service Fee Ledger (Platform Revenue)
     await new Ledger({
@@ -133,11 +137,11 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         amount: totalServiceFee,
         currency: finalCurrency,
         countryCode: finalCountryCode,
-        type: TransactionType.COMMISSION, // Renaming terminology to Service Fee
+        type: TransactionType.COMMISSION, // Platform Service Fee
         status: 'COMPLETED',
         isTestTransaction: isTest,
         description: isNegotiated
-            ? `Negotiated Job: Service Fee Added (${finalServiceFeeRate}%)`
+            ? `Negotiated Job: Service Fee (${finalServiceFeeRate}%)`
             : `Fixed Price Job: Booking Fee as Service Fee`
     }).save({ session });
 

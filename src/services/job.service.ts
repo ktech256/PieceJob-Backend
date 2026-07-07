@@ -121,16 +121,13 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
         await job.save({ session });
 
         // PAGE 7: Increment Completed Jobs
-        const provider = await Provider.findOneAndUpdate(
-            { userId: job.providerId },
-            {
-                $inc: { jobsCompleted: 1, 'performance.completedJobs': 1 },
-                currentAvailabilityStatus: 'ONLINE'
-            },
-            { session, new: true }
-        );
-
+        const provider = await Provider.findOne({ userId: job.providerId }).session(session);
         if (provider) {
+            provider.jobsCompleted += 1;
+            provider.performance.completedJobs += 1;
+            provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
+            await provider.save({ session });
+
             emitAdminUpdate('provider_status_changed', {
                 userId: job.providerId,
                 isOnline: provider.isOnline,
@@ -192,6 +189,7 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
   // 2. BASE QUERY
   const baseQuery: any = {
     isOnline: true,
+    currentAvailabilityStatus: 'ONLINE', // Ensure provider is not busy with another job
     verificationStatus: 'APPROVED',
     isShadowBanned: { $ne: true },
     $or: [

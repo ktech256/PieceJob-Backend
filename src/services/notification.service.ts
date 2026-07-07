@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import NotificationLog from '../models/Notification';
 import User from '../models/User';
 import { logger } from '../utils/logger';
+import { isUserConnected, emitToUser } from '../socket/socket.service';
 
 export const sendPushNotification = async (
     userId: string,
@@ -59,9 +60,18 @@ export const sendPushNotification = async (
             logger.warn(`FCM | TOKEN_EXPIRED | Cleaning up user ${userId}`);
             await User.findByIdAndUpdate(userId, { fcmToken: null });
 
-            // FORENSIC REPAIR: If this is a provider, mark them as offline to prevent "Zombie Online" state
-            const Provider = mongoose.model('Provider');
-            await Provider.findOneAndUpdate({ userId }, { isOnline: false, currentAvailabilityStatus: 'OFFLINE' });
+            // FORENSIC REPAIR: Check if user is still reachable via Socket
+            const isConnected = isUserConnected(userId);
+
+            if (isConnected) {
+                logger.info(`FCM | TOKEN_REPAIR | User ${userId} is connected via Socket. Requesting token refresh.`);
+                emitToUser(userId, 'FORCE_REPAIR_FCM', { reason: 'stale_token' });
+            } else {
+                // Only mark offline if NOT connected via Socket
+                logger.warn(`FCM | OFFLINE_REPAIR | User ${userId} is unreachable via FCM and Socket. Forcing offline.`);
+                const Provider = mongoose.model('Provider');
+                await Provider.findOneAndUpdate({ userId }, { isOnline: false, currentAvailabilityStatus: 'OFFLINE' });
+            }
         }
 
         await NotificationLog.create({

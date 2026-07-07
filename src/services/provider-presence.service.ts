@@ -103,6 +103,7 @@ export const checkGhostOffline = async () => {
 
     for (const ghost of ghosts) {
         ghost.isOnline = false;
+        ghost.currentAvailabilityStatus = 'OFFLINE';
         await ghost.save();
 
         emitAdminUpdate('provider_presence_update', {

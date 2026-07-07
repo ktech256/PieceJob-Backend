@@ -552,6 +552,38 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
     }
 };
 
+const getProviderNetEarnings = async (userId: string, startDate: Date) => {
+    const results = await Ledger.aggregate([
+        {
+            $match: {
+                $or: [
+                    { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE },
+                    { fromUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.COMMISSION }
+                ],
+                createdAt: { $gte: startDate },
+                status: 'COMPLETED'
+            }
+        },
+        {
+            $group: {
+                _id: "$jobId",
+                gross: { $sum: { $cond: [{ $eq: ["$type", TransactionType.SERVICE_FEE] }, "$amount", 0] } },
+                commission: { $sum: { $cond: [{ $eq: ["$type", TransactionType.COMMISSION] }, "$amount", 0] } }
+            }
+        },
+        {
+            $project: {
+                net: { $cond: [{ $gt: ["$gross", 0] }, { $subtract: ["$gross", "$commission"] }, 0] }
+            }
+        },
+        {
+            $group: { _id: null, total: { $sum: "$net" } }
+        }
+    ]);
+
+    return results[0]?.total || 0;
+};
+
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
@@ -565,35 +597,25 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         const provider = await Provider.findOne({ userId });
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        const earningsToday = await Ledger.aggregate([
-            { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: startOfToday }, status: 'COMPLETED' } },
-            { $group: { _id: null, total: { $sum: "$amount" } } }
-        ]);
-
-        const earningsWeekly = await Ledger.aggregate([
-            { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: weekAgo }, status: 'COMPLETED' } },
-            { $group: { _id: null, total: { $sum: "$amount" } } }
-        ]);
-
-        const earningsMonthly = await Ledger.aggregate([
-            { $match: { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE, createdAt: { $gte: monthAgo }, status: 'COMPLETED' } },
-            { $group: { _id: null, total: { $sum: "$amount" } } }
-        ]);
-
-        const jobs = await Job.aggregate([
-            { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
-            { $group: { _id: "$status", count: { $sum: 1 } } }
+        const [earningsToday, earningsWeekly, earningsMonthly, jobsAgg] = await Promise.all([
+            getProviderNetEarnings(userId as string, startOfToday),
+            getProviderNetEarnings(userId as string, weekAgo),
+            getProviderNetEarnings(userId as string, monthAgo),
+            Job.aggregate([
+                { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
+                { $group: { _id: "$status", count: { $sum: 1 } } }
+            ])
         ]);
 
         const jobsByStatus: any = {};
-        jobs.forEach(j => { jobsByStatus[j._id] = j.count; });
+        jobsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
 
         res.status(200).json({
             success: true,
             data: {
-                earningsToday: earningsToday[0]?.total || 0,
-                earningsWeekly: earningsWeekly[0]?.total || 0,
-                earningsMonthly: earningsMonthly[0]?.total || 0,
+                earningsToday,
+                earningsWeekly,
+                earningsMonthly,
                 jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
                 jobsActive: (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0),
                 acceptanceRate: provider.performance.acceptanceRate,

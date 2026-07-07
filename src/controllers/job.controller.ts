@@ -839,15 +839,13 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
           logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
       }
 
-      // Reset provider status to ONLINE if they are still isOnline
+      // Reset provider status based on their isOnline preference
       if (job.providerId) {
-          const provider = await Provider.findOneAndUpdate(
-              { userId: job.providerId },
-              { currentAvailabilityStatus: 'ONLINE' },
-              { new: true }
-          );
-
+          const provider = await Provider.findOne({ userId: job.providerId });
           if (provider) {
+              provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
+              await provider.save();
+
               emitAdminUpdate('provider_status_changed', {
                   userId: job.providerId,
                   isOnline: provider.isOnline,

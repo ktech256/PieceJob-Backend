@@ -158,10 +158,19 @@ export const calculateJobPrice = async (
 };
 
 export const getServiceFeeRate = async (countryCode: string, tier: ProviderTier): Promise<number> => {
-    const rule = await ServiceFeeRule.findOne({ countryCode, tier, isActive: true });
+    const [rule, settings] = await Promise.all([
+        ServiceFeeRule.findOne({ countryCode, tier, isActive: true }),
+        settingsService.getSettings(countryCode)
+    ]);
+
     if (rule) return rule.serviceFeePercentage;
 
-    // PAGE 7: DEFAULT TIER SERVICE FEES
+    // Use Dashboard Setting if no tier-specific rule exists
+    if (settings && settings.platformServiceFeePercent !== undefined) {
+        return settings.platformServiceFeePercent;
+    }
+
+    // FINAL FALLBACKS (Should ideally not be reached if settings exist)
     const defaults: Record<string, number> = {
         [ProviderTier.BRONZE]: 20,
         [ProviderTier.SILVER]: 18,
