@@ -148,9 +148,15 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
 
         const populatedMessage = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
 
-        const data = populatedMessage?.toObject();
-        if (data && data.senderId && typeof data.senderId === 'object') {
-            (data.senderId as any).profilePicture = (data.senderId as any).profilePhoto;
+        const data: any = populatedMessage?.toObject();
+        if (data) {
+            data.id = data._id?.toString();
+            data.jobId = data.jobId?.toString();
+            data.senderId._id = data.senderId._id?.toString();
+            data.receiverId = data.receiverId?.toString();
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId.profilePicture = data.senderId.profilePhoto;
+            }
         }
 
         // 1. Emit via Socket to Job Room (for live updates in Chat Screen)
@@ -206,7 +212,15 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
         });
         await message.save();
 
-        const data = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const populated = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data: any = populated?.toObject();
+        if (data) {
+            data.id = data._id?.toString();
+            data.jobId = data.jobId?.toString();
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId.profilePicture = data.senderId.profilePhoto;
+            }
+        }
         emitJobUpdate(jobId, 'new_message', data);
 
         await notificationService.notifyUser(

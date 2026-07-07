@@ -11,7 +11,7 @@ export const listAllChats = async (req: AuthRequest, res: Response) => {
         const { jobId, countryCode, startDate, endDate, customerName, providerName, jobStatus, messageContent, serviceCode } = req.query;
         const query: any = {};
 
-        if (jobId) query.jobId = jobId;
+        if (jobId) query.jobId = new mongoose.Types.ObjectId(jobId as string);
         if (messageContent) query.text = { $regex: messageContent, $options: 'i' };
 
         // Date Range

@@ -1014,8 +1014,12 @@ export const uploadTaskPhotos = async (req: AuthRequest, res: Response) => {
 
         const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
         const data: any = populated?.toObject();
-        if (data && data.senderId && typeof data.senderId === 'object') {
-            data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+        if (data) {
+            data.id = data._id?.toString();
+            data.jobId = data.jobId?.toString();
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+            }
         }
 
         // Enrich metadata photos with signed URLs for socket emit
@@ -1077,8 +1081,12 @@ export const requestTaskPhotos = async (req: AuthRequest, res: Response) => {
 
         const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
         const data: any = populated?.toObject();
-        if (data && data.senderId && typeof data.senderId === 'object') {
-            data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+        if (data) {
+            data.id = data._id?.toString();
+            data.jobId = data.jobId?.toString();
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+            }
         }
 
         // Enrich metadata photos with signed URLs for socket emit
@@ -1137,8 +1145,12 @@ export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
 
         const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
         const data: any = populated?.toObject();
-        if (data && data.senderId && typeof data.senderId === 'object') {
-            data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+        if (data) {
+            data.id = data._id?.toString();
+            data.jobId = data.jobId?.toString();
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
+            }
         }
 
         // Enrich metadata photos with signed URLs for socket emit

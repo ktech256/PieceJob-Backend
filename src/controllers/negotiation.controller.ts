@@ -85,7 +85,17 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
         });
         await chatMsg.save();
 
-        const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+        const data: any = populated?.toObject();
+        if (data) {
+            data.id = data._id?.toString();
+            data.jobId = data.jobId?.toString();
+            data.senderId._id = data.senderId._id?.toString();
+            data.receiverId = data.receiverId?.toString();
+            if (data.senderId && typeof data.senderId === 'object') {
+                data.senderId.profilePicture = data.senderId.profilePhoto;
+            }
+        }
         emitJobUpdate(jobId, 'new_message', data);
 
         await notificationService.notifyUser(
@@ -163,7 +173,17 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
             });
             await chatMsg.save();
 
-            const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+            const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+            const data: any = populated?.toObject();
+            if (data) {
+                data.id = data._id?.toString();
+                data.jobId = data.jobId?.toString();
+                data.senderId._id = data.senderId._id?.toString();
+                data.receiverId = data.receiverId?.toString();
+                if (data.senderId && typeof data.senderId === 'object') {
+                    data.senderId.profilePicture = data.senderId.profilePhoto;
+                }
+            }
             emitJobUpdate(job._id.toString(), 'new_message', data);
             emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, status: job.status, priceStatus: 'ACCEPTED', agreedPrice: job.agreedPrice });
 
@@ -213,7 +233,17 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
             });
             await chatMsg.save();
 
-            const data = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+            const populated = await ChatMessage.findById(chatMsg._id).populate('senderId', 'firstName lastName role profilePhoto');
+            const data: any = populated?.toObject();
+            if (data) {
+                data.id = data._id?.toString();
+                data.jobId = data.jobId?.toString();
+                data.senderId._id = data.senderId._id?.toString();
+                data.receiverId = data.receiverId?.toString();
+                if (data.senderId && typeof data.senderId === 'object') {
+                    data.senderId.profilePicture = data.senderId.profilePhoto;
+                }
+            }
             emitJobUpdate(job._id.toString(), 'new_message', data);
             emitJobUpdate(job._id.toString(), 'status_updated', { jobId: job._id, status: JobStatus.BROADCASTED, providerId: null });
 
