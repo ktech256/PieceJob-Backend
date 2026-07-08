@@ -63,9 +63,9 @@ const sanitizeJobForMobile = async (job: any) => {
     }
 
     // PHASE 3 & 5: Privacy Hardening & Dispatch Control
-    // Hide exact address until price is accepted or provider is dispatched
+    // Hide exact address until provider is dispatched (EN_ROUTE)
     // IMPORTANT: Terminal statuses should NOT be obscured (already completed)
-    const unlockedStatuses = [JobStatus.ACCEPTED, JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
+    const unlockedStatuses = [JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
     const isUnlocked = unlockedStatuses.includes(jobObj.status);
 
     if (!isUnlocked) {
@@ -1233,9 +1233,8 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
 
         await job.save();
 
-        const statusPayload = { jobId: job.id, status: job.status };
-        emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-        emitJobUpdate(job.id, 'status_updated', statusPayload);
+        // Unified Real-Time Sync
+        syncJobStatus(job, 'status_updated');
 
         await notificationService.notifyUser(
             job.customerId.toString(),
