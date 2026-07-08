@@ -1154,12 +1154,6 @@ export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
             }
             if (data.receiverId) data.receiverId = data.receiverId.toString();
         }
-            if (data.senderId && typeof data.senderId === 'object') {
-                data.senderId._id = data.senderId._id?.toString();
-                data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
-            }
-            if (data.receiverId) data.receiverId = data.receiverId.toString();
-        }
 
         // Enrich metadata photos with signed URLs for socket emit
         if (data && data.metadata && data.metadata.type === 'PHOTO_UPLOAD' && Array.isArray(data.metadata.allPhotos)) {
