@@ -380,6 +380,10 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
+    if (!userId) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
     if (!fcmToken) {
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
