@@ -95,12 +95,9 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
 
             await job.save();
 
-            // Notifications & Sockets for non-completed overrides
-            const statusPayload = { jobId: job.id, status, adminOverride: true, reason };
-            emitJobUpdate(job.id, 'status_updated', statusPayload);
-            emitToWorkspace(job.countryCode, 'status_updated', statusPayload);
-            emitToUser(job.customerId.toString(), 'status_updated', statusPayload);
-            if (job.providerId) emitToUser(job.providerId.toString(), 'status_updated', statusPayload);
+            // Unified Real-Time Sync for non-completed overrides
+            const { syncJobStatus } = require('../../socket/socket.service');
+            syncJobStatus(job, 'status_updated', { adminOverride: true, reason });
 
             notificationService.notifyUser(
                 job.customerId.toString(),
