@@ -55,7 +55,24 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName profilePhoto');
 
-        const activeJobs = await Promise.all(activeJobsRaw.map(async (jobRaw) => {
+        const activeJobs = [];
+        const RATING_WINDOW_HOURS = 24;
+
+        for (const jobRaw of activeJobsRaw) {
+            // Filter out completed jobs that are rated, dismissed, or expired
+            if (jobRaw.status === JobStatus.COMPLETED) {
+                if (jobRaw.customerRated || jobRaw.customerRatingDismissed) continue;
+
+                const completionTime = jobRaw.completedAt || jobRaw.updatedAt;
+                const hoursSinceCompletion = (Date.now() - completionTime.getTime()) / (1000 * 60 * 60);
+                if (hoursSinceCompletion > RATING_WINDOW_HOURS) {
+                    // Silently mark as dismissed to prevent it appearing in the list again
+                    jobRaw.customerRatingDismissed = true;
+                    await jobRaw.save();
+                    continue;
+                }
+            }
+
             const aj = jobRaw.toObject() as any;
             const p = aj.providerId as any;
             if (p && typeof p === 'object') {
@@ -68,8 +85,8 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                     jobsCompleted: 0
                 };
             }
-            return await enrichWithNegotiation(aj);
-        }));
+            activeJobs.push(await enrichWithNegotiation(aj));
+        }
 
         const activeJob = activeJobs.length > 0 ? activeJobs[0] : null;
 
@@ -369,22 +386,39 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         // 2. Active Job
         const activeJobRaw = await Job.findOne({
             providerId: userId,
-            status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS] }
+            status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('customerId', 'firstName lastName profilePhoto');
 
         let activeJob = null;
         if (activeJobRaw) {
-            const aj = activeJobRaw.toObject() as any;
-            const c = aj.customerId as any;
-            if (c && typeof c === 'object') {
-                aj.customerId = c._id;
-                aj.customerInfo = {
-                    firstName: c.firstName,
-                    lastName: c.lastName,
-                    profilePicture: c.profilePhoto ? await storageService.getSignedUrl(c.profilePhoto) : null
-                };
+            // NEW RATING POLICY: Filter out completed jobs that are rated, dismissed, or expired (24h window)
+            let skip = false;
+            if (activeJobRaw.status === JobStatus.COMPLETED) {
+                if (activeJobRaw.providerRated || activeJobRaw.providerRatingDismissed) skip = true;
+                else {
+                    const completionTime = activeJobRaw.completedAt || activeJobRaw.updatedAt;
+                    const hoursSinceCompletion = (Date.now() - completionTime.getTime()) / (1000 * 60 * 60);
+                    if (hoursSinceCompletion > 24) {
+                        activeJobRaw.providerRatingDismissed = true;
+                        await activeJobRaw.save();
+                        skip = true;
+                    }
+                }
             }
-            activeJob = await enrichWithNegotiation(aj);
+
+            if (!skip) {
+                const aj = activeJobRaw.toObject() as any;
+                const c = aj.customerId as any;
+                if (c && typeof c === 'object') {
+                    aj.customerId = c._id;
+                    aj.customerInfo = {
+                        firstName: c.firstName,
+                        lastName: c.lastName,
+                        profilePicture: c.profilePhoto ? await storageService.getSignedUrl(c.profilePhoto) : null
+                    };
+                }
+                activeJob = await enrichWithNegotiation(aj);
+            }
         }
 
         // 3. Recent Activity (Latest 5 - Jobs ONLY)

@@ -439,8 +439,23 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
         // Logic to close "active" state if user has already rated or dismissed a completed job
         const isCustomer = job.customerId.toString() === userId;
         if (job.status === JobStatus.COMPLETED) {
+            // 1. Check if already rated or dismissed
             if (isCustomer && (job.customerRated || job.customerRatingDismissed)) return res.status(200).json({ success: true, data: null });
             if (!isCustomer && (job.providerRated || job.providerRatingDismissed)) return res.status(200).json({ success: true, data: null });
+
+            // 2. NEW RATING POLICY: Expiry window (24 hours)
+            const RATING_WINDOW_HOURS = 24;
+            const completionTime = job.completedAt || job.updatedAt;
+            const hoursSinceCompletion = (Date.now() - completionTime.getTime()) / (1000 * 60 * 60);
+
+            if (hoursSinceCompletion > RATING_WINDOW_HOURS) {
+                logger.info(`[FORENSIC] RATING_EXPIRED | Job: ${job._id} | Hours: ${hoursSinceCompletion.toFixed(1)}`);
+                // Silently dismiss for the requesting user
+                if (isCustomer) job.customerRatingDismissed = true;
+                else job.providerRatingDismissed = true;
+                await job.save();
+                return res.status(200).json({ success: true, data: null });
+            }
         }
 
         let providerData = null;
