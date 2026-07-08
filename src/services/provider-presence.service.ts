@@ -1,5 +1,6 @@
 import Provider from '../models/Provider';
-import { emitAdminUpdate } from '../socket/socket.service';
+import User from '../models/User';
+import { emitAdminUpdate, isUserConnected, emitToUser } from '../socket/socket.service';
 import * as fraudService from './fraud.service';
 import Job, { JobStatus } from '../models/Job';
 import * as notificationService from './notification.service';
@@ -23,6 +24,18 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
 
     if (provider && oldProvider) {
         logger.heartbeat(userId, true);
+
+        // EVENT-DRIVEN HEALTH MONITOR: Check token health during heartbeat
+        // If provider is online but has no token, request repair via Socket
+        const user = await User.findById(userId).select('fcmToken');
+        if (user && !user.fcmToken) {
+            const isConnected = isUserConnected(userId);
+            if (isConnected) {
+                logger.info(`HEALTH_MONITOR | Heartbeat Token Repair | User ${userId} is Online with NO Token. Requesting repair.`);
+                emitToUser(userId, 'FORCE_REPAIR_FCM', { reason: 'missing_token_on_heartbeat' });
+            }
+        }
+
         // PAGE 12: Fraud Checks
         if (isMock) {
             await fraudService.applyShadowBan(provider._id.toString(), 'Mock GPS detected');

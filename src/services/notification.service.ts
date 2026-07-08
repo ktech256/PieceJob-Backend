@@ -58,7 +58,14 @@ export const sendPushNotification = async (
 
         if (error.code === 'messaging/registration-token-not-registered') {
             logger.warn(`FCM | TOKEN_EXPIRED | Cleaning up user ${userId}`);
-            await User.findByIdAndUpdate(userId, { fcmToken: null });
+
+            const updateData: any = { fcmToken: null };
+            if (data?.type === 'NEW_JOB_BROADCAST' && data?.jobId) {
+                updateData.lastMissedBroadcastJobId = data.jobId;
+                logger.info(`FCM | RETRY_TRACKING | Flagged missed broadcast ${data.jobId} for User ${userId}`);
+            }
+
+            await User.findByIdAndUpdate(userId, updateData);
 
             // FORENSIC REPAIR: Check if user is still reachable via Socket
             const isConnected = isUserConnected(userId);

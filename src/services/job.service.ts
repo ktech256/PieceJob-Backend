@@ -377,7 +377,11 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
           address: obscuredAddress
       };
 
-      console.log(`[PRIVACY_AUDIT] Obscuring address for provider ${targetUserId}: \"${rawAddress}\" -> \"${obscuredAddress}\" | Distance: ${distanceLabel}`);
+      console.log(`[BROADCAST_AUDIT] Starting broadcast for Job: ${job.id} to User: ${targetUserId}`);
+
+      // 1. Socket.IO Delivery (Primary for Live)
+      const isConnected = isUserConnected(targetUserId.toString());
+      console.log(`[BROADCAST_AUDIT] User ${targetUserId} Socket Connected: ${isConnected}`);
 
       emitToUser(targetUserId.toString(), 'NEW_JOB_BROADCAST', {
         jobId: job.id,
@@ -390,7 +394,7 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
         recipientName: job.recipientName
       });
 
-      // FCM Notification
+      // 2. FCM Notification (Backup / Background)
       notificationService.notifyUser(
           targetUserId,
           'New Job Available',
@@ -405,7 +409,9 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
               distance: distanceLabel
           },
           true // Send as Data-Only message for custom handling
-      );
+      ).then(res => {
+          console.log(`[BROADCAST_AUDIT] FCM Result for User ${targetUserId}: ${res?.success ? 'SUCCESS' : 'FAILED (' + res?.error + ')'}`);
+      });
     });
 
     if (wave < 4) {

@@ -96,6 +96,7 @@ export interface IUser extends Document {
     startDate: Date;
     expiryDate: Date;
   };
+  lastMissedBroadcastJobId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -180,7 +181,8 @@ const UserSchema: Schema = new Schema({
   referralCode: { type: String, unique: true },
   referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
   referralFraudScore: { type: Number, default: 0 },
-  isReferralRewardClaimed: { type: Boolean, default: false }
+  isReferralRewardClaimed: { type: Boolean, default: false },
+  lastMissedBroadcastJobId: { type: String }
 }, { timestamps: true });
 
 UserSchema.index({ countryCode: 1 });

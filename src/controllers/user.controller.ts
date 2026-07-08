@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import User from '../models/User';
+import Job, { JobStatus } from '../models/Job';
 import * as auditService from '../services/audit.service';
 import * as storageService from '../services/storage.service';
 import { logger } from '../utils/logger';
@@ -379,29 +380,62 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
     const { fcmToken } = req.body;
     const userId = req.user?.userId;
 
-    console.log(`[FCM_CONTROLLER_ENTERED] User: ${userId}`);
-    console.log(`[FCM_CONTROLLER_ENTERED] Received token: ${fcmToken || 'NULL'}`);
-
     if (!fcmToken) {
-        console.warn(`[FCM_CONTROLLER_ENTERED] WARN: Received NULL/EMPTY token for User ${userId}. Ignoring.`);
         return res.status(200).json({ success: true, message: 'Empty token ignored' });
     }
 
-    console.log(`[FCM_DB_VERIFY] Attempting MongoDB update for User ${userId}`);
-    const result = await User.updateOne({ _id: userId }, { fcmToken });
-    console.log(`[FCM_DB_VERIFY] Update Result: Matched=${result.matchedCount}, Modified=${result.modifiedCount}`);
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // Read again to confirm save
-    const updatedUser = await User.findById(userId);
-    console.log(`[FCM_DB_VERIFY] Stored token: ${updatedUser?.fcmToken || 'NULL'}`);
+    user.fcmToken = fcmToken;
+    const missedJobId = user.lastMissedBroadcastJobId;
+    user.lastMissedBroadcastJobId = undefined; // Clear it
+    await user.save();
 
-    if (updatedUser && updatedUser.fcmToken === fcmToken) {
-        console.log(`[FCM_DB_VERIFY] Mongo Save Success for User ${userId}`);
-    } else {
-        console.error(`[FCM_DB_VERIFY] ERROR: Mismatch! Found ${updatedUser?.fcmToken ? 'DIFFERENT' : 'NULL'} token in DB.`);
+    console.log(`[FCM_REPAIR] Token updated for User ${userId}. Missed Job: ${missedJobId || 'NONE'}`);
+
+    // RETRY LOGIC: If there was a missed broadcast, attempt to re-send it now that we have a fresh token
+    if (missedJobId) {
+        const job = await Job.findById(missedJobId);
+        if (job && job.status === JobStatus.BROADCASTED) {
+            logger.info(`FCM_REPAIR | RETRYING | Resending broadcast ${missedJobId} to recovered user ${userId}`);
+
+            // Re-trigger the broadcast logic for this specific provider
+            const { emitToUser } = require('../socket/socket.service');
+            const notificationService = require('../services/notification.service');
+
+            // 1. Socket Retry (Primary)
+            emitToUser(userId.toString(), 'NEW_JOB_BROADCAST', {
+                jobId: job.id,
+                serviceCode: job.serviceCode,
+                serviceName: job.serviceName,
+                location: job.location,
+                address: job.location.address || 'Nearby Location',
+                isForSomeoneElse: job.isForSomeoneElse,
+                recipientName: job.recipientName
+            });
+
+            // 2. FCM Retry (Background)
+            await notificationService.notifyUser(
+                userId,
+                'New Job Available',
+                `The ${job.serviceName || job.serviceCode} request is still available.`,
+                {
+                    type: 'NEW_JOB_BROADCAST',
+                    jobId: job.id,
+                    serviceCode: job.serviceCode,
+                    serviceName: job.serviceName,
+                    address: job.location.address || 'Nearby Location',
+                    recipientName: job.recipientName
+                },
+                true
+            );
+        } else {
+            logger.info(`FCM_REPAIR | SKIP_RETRY | Job ${missedJobId} is no longer in BROADCASTED state.`);
+        }
     }
 
-    res.status(200).json({ success: true, message: 'FCM token updated' });
+    res.status(200).json({ success: true, message: 'FCM token updated and broadcasts checked' });
   } catch (error: any) {
     console.error(`[FCM_TOKEN_AUDIT] FATAL ERROR for User ${req.user?.userId}:`, error.message);
     res.status(500).json({ success: false, message: 'Failed to update FCM token', error });
