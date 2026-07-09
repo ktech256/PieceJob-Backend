@@ -97,14 +97,20 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 status: job.status,
                 otherUser: otherUser,
                 lastMessage: lastMessage?.text || (lastMessage?.mediaType ? 'Sent an attachment' : 'No messages yet'),
-                lastMessageTime: formatToWorkspaceTime(lastMessage?.createdAt || job.updatedAt, tz),
+                lastMessageTimeRaw: lastMessage?.createdAt || job.updatedAt,
                 unreadCount: await Message.countDocuments({ jobId: job._id, receiverId: userId, isRead: false })
             };
         }));
 
-        conversations.sort((a, b) => b.lastMessageTime.getTime() - a.lastMessageTime.getTime());
+        conversations.sort((a, b) => b.lastMessageTimeRaw.getTime() - a.lastMessageTimeRaw.getTime());
 
-        res.status(200).json({ success: true, data: conversations });
+        const data = conversations.map(conv => ({
+            ...conv,
+            lastMessageTime: formatToWorkspaceTime(conv.lastMessageTimeRaw, tz),
+            lastMessageTimeRaw: undefined // Remove raw date before sending to client
+        }));
+
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch conversations', error });
     }

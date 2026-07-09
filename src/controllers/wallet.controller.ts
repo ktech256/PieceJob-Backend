@@ -66,7 +66,7 @@ export const getMyPayouts = async (req: AuthRequest, res: Response) => {
 
     const payouts = await Payout.find({ providerId: req.user?.userId }).sort({ createdAt: -1 });
     const data = payouts.map(p => {
-        const obj = p.toObject();
+        const obj = p.toObject() as any;
         obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
         return obj;
     });
@@ -84,7 +84,7 @@ export const getMyStatements = async (req: AuthRequest, res: Response) => {
 
     const statements = await Statement.find({ userId: req.user?.userId }).sort({ periodStart: -1 });
     const data = statements.map(s => {
-        const obj = s.toObject();
+        const obj = s.toObject() as any;
         obj.periodStart = formatToWorkspaceTime(obj.periodStart, tz);
         obj.periodEnd = formatToWorkspaceTime(obj.periodEnd, tz);
         obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
@@ -107,7 +107,7 @@ export const getMyInvoices = async (req: AuthRequest, res: Response) => {
         }).sort({ createdAt: -1 });
 
         const data = invoices.map(i => {
-            const obj = i.toObject();
+            const obj = i.toObject() as any;
             obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
             return obj;
         });

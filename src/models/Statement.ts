@@ -29,6 +29,8 @@ export interface IStatement extends Document {
   }>;
   pdfUrl?: string;
   countryCode: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const StatementSchema: Schema = new Schema({

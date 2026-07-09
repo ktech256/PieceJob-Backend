@@ -29,6 +29,8 @@ export interface IPayout extends Document {
     timestamp: Date;
     note?: string;
   }>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const PayoutSchema: Schema = new Schema({
