@@ -417,34 +417,6 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                         profilePicture: c.profilePhoto ? await storageService.getSignedUrl(c.profilePhoto) : null
                     };
                 }
-
-                // ISSUE 2: Privacy Hardening for Provider Dashboard
-                // Hide exact address until provider is dispatched (EN_ROUTE)
-                const unlockedStatuses = [JobStatus.EN_ROUTE, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.IN_PROGRESS, JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED];
-                const isUnlocked = unlockedStatuses.includes(aj.status);
-
-                if (!isUnlocked) {
-                    const rawAddress = aj.location?.address || aj.address || '';
-                    const addressParts = rawAddress.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
-
-                    let obscured = 'Nearby Location';
-                    if (addressParts.length >= 3) {
-                        obscured = `${addressParts[1]}, ${addressParts[2]}`;
-                    } else if (addressParts.length >= 1) {
-                        if (/\d/.test(addressParts[0])) {
-                            obscured = 'Nearby Street';
-                        } else {
-                            obscured = addressParts[0];
-                        }
-                    }
-
-                    aj.address = obscured;
-                    if (aj.location) {
-                        aj.location.address = obscured;
-                        aj.location.coordinates = [0, 0];
-                    }
-                }
-
                 activeJob = await enrichWithNegotiation(aj);
             }
         }

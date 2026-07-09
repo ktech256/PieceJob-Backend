@@ -360,18 +360,15 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
           distanceLabel = distanceMeters < 1000 ? `${Math.round(distanceMeters)}m away` : `${distanceKm}km away`;
       }
 
-      // HIDE SPECIFIC ADDRESS: \"139 Erasmus St, Flora Park, Polokwane\" -> \"Flora Park, Polokwane\"
+      // HIDE SPECIFIC ADDRESS: \"139 Erasmus St, Flora Park, Polokwane, 0699,\" -> \"Flora Park, Polokwane\"
       const rawAddress = job.location.address || '';
       const addressParts = rawAddress.split(',').map(p => p.trim()).filter(p => p.length > 0);
 
       let obscuredAddress = 'Nearby Location';
       if (addressParts.length >= 3) {
           obscuredAddress = `${addressParts[1]}, ${addressParts[2]}`;
-      } else if (addressParts.length === 2) {
-          obscuredAddress = addressParts[1]; // Suburb/City only
-      } else if (addressParts.length === 1) {
-          if (/\d/.test(addressParts[0])) obscuredAddress = 'Nearby Location';
-          else obscuredAddress = addressParts[0];
+      } else if (addressParts.length >= 1) {
+          obscuredAddress = addressParts[0];
       }
 
       const obscuredLocation = {

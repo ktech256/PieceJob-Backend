@@ -155,9 +155,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             data.senderId._id = data.senderId._id?.toString();
             data.receiverId = data.receiverId?.toString();
             if (data.senderId && typeof data.senderId === 'object') {
-                if (data.senderId.profilePhoto) {
-                    data.senderId.profilePicture = await storageService.getSignedUrl(data.senderId.profilePhoto);
-                }
+                data.senderId.profilePicture = data.senderId.profilePhoto;
             }
         }
 
