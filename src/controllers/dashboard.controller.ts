@@ -137,7 +137,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             { $limit: 5 }
         ]);
 
-        const latestActivity = latestActivityJobs.map(j => ({
+        const latestActivity = latestActivityJobs.map((j: any) => ({
             _id: j._id,
             id: j._id,
             type: 'JOB',
@@ -227,7 +227,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         }
 
         // 7. Recommended Services
-        const usedServiceCodes = [...new Set(recentJobs.map(j => j.serviceCode))];
+        const usedServiceCodes = [...new Set(latestActivityJobs.map((j: any) => j.serviceCode))];
 
         const recommendations = await Service.find({
             isActive: true,
@@ -467,7 +467,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             { $limit: 5 }
         ]);
 
-        const activities = await Promise.all(recentJobsAgg.map(async j => {
+        const activities = await Promise.all(recentJobsAgg.map(async (j: any) => {
             let amount = 0;
             if (j.status === JobStatus.COMPLETED) {
                 if (j.priceNegotiationRequired !== false) {
