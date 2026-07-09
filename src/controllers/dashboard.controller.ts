@@ -103,32 +103,18 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             countryCode
         }).sort({ createdAt: -1 });
 
-        // 5. Latest Activity (Limited to 5 records sorted by activity timestamp)
-        const latestActivityJobs = await Job.aggregate([
-            {
-                $match: {
-                    customerId: new mongoose.Types.ObjectId(userId),
-                    status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED] }
-                }
-            },
-            {
-                $addFields: {
-                    activityTimestamp: {
-                        $cond: [
-                            { $eq: ["$status", JobStatus.COMPLETED] },
-                            { $ifNull: ["$completedAt", { $ifNull: ["$updatedAt", "$createdAt"] }] },
-                            { $ifNull: ["$cancelledAt", { $ifNull: ["$updatedAt", "$createdAt"] }] }
-                        ]
-                    }
-                }
-            },
-            { $sort: { activityTimestamp: -1 } },
-            { $limit: 5 }
-        ]);
+        // 5. Latest Activity (Limited to 5 records sorted by request time to match Job History)
+        const latestActivityJobs = await Job.find({
+            customerId: userId,
+            status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.CLOSED] }
+        })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean();
 
         const tz = country?.timezone || 'UTC';
         const latestActivity = latestActivityJobs.map((j: any) => {
-            const isNegotiated = j.priceNegotiationRequired !== false;
+            const isNegotiated = j.priceNegotiationRequired === true;
             return {
                 _id: j._id,
                 id: j._id,
@@ -137,7 +123,9 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 serviceCode: j.serviceCode,
                 serviceName: j.serviceName || j.serviceCode,
                 address: j.location?.address,
-                amount: isNegotiated ? (j.agreedPrice || (j.bookingFee + (j.serviceFee || 0))) : j.bookingFee,
+                amount: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status)
+                    ? (isNegotiated ? (j.agreedPrice || (j.serviceFee + j.bookingFee)) : j.bookingFee)
+                    : (j.bookingFee || null),
                 isNegotiated: isNegotiated,
                 startedAt: formatToWorkspaceTime(j.startedAt, tz),
                 completedAt: formatToWorkspaceTime(j.completedAt, tz),
@@ -368,33 +356,20 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        // 3. Recent Activity (Latest 5 finished jobs sorted by activity timestamp)
-        const recentJobsAgg = await Job.aggregate([
-            {
-                $match: {
-                    providerId: new mongoose.Types.ObjectId(userId as string),
-                    status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED] }
-                }
-            },
-            {
-                $addFields: {
-                    activityTimestamp: {
-                        $cond: [
-                            { $eq: ["$status", JobStatus.COMPLETED] },
-                            { $ifNull: ["$completedAt", { $ifNull: ["$updatedAt", "$createdAt"] }] },
-                            { $ifNull: ["$cancelledAt", { $ifNull: ["$updatedAt", "$createdAt"] }] }
-                        ]
-                    }
-                }
-            },
-            { $sort: { activityTimestamp: -1 } },
-            { $limit: 5 }
-        ]);
+        // 3. Recent Activity (Latest 5 records sorted by request time to match Job History)
+        const recentJobs = await Job.find({
+            providerId: userId,
+            status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.CLOSED] }
+        })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean();
 
         const tz = country?.timezone || 'UTC';
-        const activities = await Promise.all(recentJobsAgg.map(async (j: any) => {
+        const activities = await Promise.all(recentJobs.map(async (j: any) => {
             let amount: any = 0;
-            if (j.status === JobStatus.COMPLETED) {
+            const isFinished = [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status);
+            if (isFinished) {
                 if (j.priceNegotiationRequired === true) {
                     // Formula: Provider Earnings = Negotiated Total - Platform Service Fee
                     const commissionLedger = await Ledger.findOne({ jobId: j._id, type: TransactionType.COMMISSION, status: 'COMPLETED' });
