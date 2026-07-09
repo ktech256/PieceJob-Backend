@@ -114,10 +114,13 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             countryCode
         }).sort({ createdAt: -1 });
 
-        // 5. Latest Activity (Limited to 3 records as per Issue 1)
-        const recentJobs = await Job.find({ customerId: userId })
+        // 5. Latest Activity (Limited to 5 records for parity with provider)
+        const recentJobs = await Job.find({
+            customerId: userId,
+            status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED] }
+        })
             .sort({ createdAt: -1 })
-            .limit(3);
+            .limit(5);
 
         const latestActivity = recentJobs.map(j => ({
             _id: j._id,
@@ -125,8 +128,12 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             type: 'JOB',
             status: j.status,
             serviceCode: j.serviceCode,
-            serviceName: j.serviceName,
-            amount: j.bookingFee + (j.serviceFee || 0),
+            serviceName: j.serviceName || j.serviceCode,
+            address: j.location?.address, // FULL ADDRESS for customer
+            amount: j.bookingFee + (j.serviceFee || 0), // TOTAL PAID
+            startedAt: j.startedAt,
+            completedAt: j.completedAt,
+            cancelledBy: j.cancelledBy,
             createdAt: j.createdAt,
             currency: walletData.currency // Attach currency for proper UI display
         }));
