@@ -92,9 +92,14 @@ export const initSocket = (server: any) => {
       if (job && job.status === JobStatus.ACCEPTED) {
         const distance = calculateDistance(data.coordinates, job.location.coordinates);
         if (distance <= 20) {
-          job.status = JobStatus.ARRIVED;
-          await job.save();
-          io.to(`job_${data.jobId}`).emit('status_updated', { jobId: job.id, status: JobStatus.ARRIVED });
+          const updated = await Job.findOneAndUpdate(
+              { _id: data.jobId, status: JobStatus.ACCEPTED },
+              { $set: { status: JobStatus.ARRIVED } },
+              { new: true }
+          );
+          if (updated) {
+              syncJobStatus(updated);
+          }
         }
       }
     });

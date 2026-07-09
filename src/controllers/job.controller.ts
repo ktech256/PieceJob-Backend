@@ -636,7 +636,19 @@ export const getJobById = async (req: AuthRequest, res: Response) => {
 export const acceptJob = async (req: AuthRequest, res: Response) => {
   try {
     const { jobId } = req.params;
-    const job = await jobService.acceptJob(jobId, req.user!.userId);
+    const userId = req.user!.userId;
+
+    // IDEMPOTENCY CHECK: If already accepted by this user, return success
+    const existingJob = await Job.findById(jobId);
+    if (existingJob && existingJob.providerId?.toString() === userId) {
+        return res.status(200).json({
+            success: true,
+            message: 'Job already accepted',
+            data: await enrichWithNegotiation(await sanitizeJobForMobile(existingJob))
+        });
+    }
+
+    const job = await jobService.acceptJob(jobId, userId);
 
     // Re-fetch with populated provider info for immediate mobile UI update
     const finalJob = await Job.findById(job.id).populate('providerId', 'firstName lastName profilePhoto phoneNumber');
@@ -692,10 +704,11 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
     const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED];
     if (terminalStatuses.includes(job.status)) {
+        // IDEMPOTENCY: If requested status matches current status, or it's a valid terminal progression, return success
         if (status === job.status || (status === JobStatus.COMPLETED && (job.status === JobStatus.RATED || job.status === JobStatus.CLOSED))) {
             return res.status(200).json({
                 success: true,
-                message: `Job already in ${job.status} state`,
+                message: `Job is already ${job.status}`,
                 data: await sanitizeJobForMobile(job)
             });
         }
@@ -755,11 +768,25 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, message: jobErr.message || 'Job completion protocol failed.' });
         }
     } else {
-        job.status = status;
-        updatedJob = await job.save();
+        const updatePayload: any = { status: status };
+        if (distanceTravelled) updatePayload.distanceTravelled = distanceTravelled;
+        if (status === JobStatus.STARTED) updatePayload.startedAt = new Date();
+        if (status === JobStatus.ARRIVED) updatePayload.arrivedAt = new Date();
 
-        console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${job.id} | New Status: ${status}`);
-        logger.info(`JOB_STATE_CHANGED | Job: ${job.id} | New Status: ${status}`);
+        updatedJob = await Job.findOneAndUpdate(
+            { _id: jobId, status: job.status },
+            { $set: updatePayload },
+            { new: true }
+        );
+
+        if (!updatedJob) {
+             // If update failed, it means status changed between our find and update
+             const reCheck = await Job.findById(jobId);
+             return res.status(200).json({ success: true, data: await sanitizeJobForMobile(reCheck || job) });
+        }
+
+        console.log(`[FORENSIC] BACKEND_STATUS_CHANGED | Job: ${jobId} | New Status: ${status}`);
+        logger.info(`JOB_STATE_CHANGED | Job: ${jobId} | New Status: ${status}`);
 
         // Unified Real-Time Sync
         syncJobStatus(updatedJob);
@@ -767,7 +794,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         // Notify Customer via Push for specific statuses
         if (status === JobStatus.ARRIVED) {
             await notificationService.notifyUser(
-                job.customerId.toString(),
+                updatedJob.customerId.toString(),
                 'Provider Arrived',
                 'Your provider has arrived at the location.'
             );

@@ -79,37 +79,50 @@ const recoverJobMetadata = async (job: IJob, session: mongoose.ClientSession) =>
 };
 
 export const completeJob = async (jobId: string, adminOverride: boolean = false) => {
-    const MAX_RETRIES = 5; // Increased retries for high concurrency
+    const MAX_RETRIES = 5;
     let retryCount = 0;
 
     while (retryCount < MAX_RETRIES) {
         const session = await mongoose.startSession();
         session.startTransaction();
         try {
-            const job = await Job.findById(jobId).session(session);
-            if (!job) throw new Error('Job not found');
+            // 1. Atomic Status Update to 'Lock' the completion process
+            const job = await Job.findOneAndUpdate(
+                {
+                    _id: jobId,
+                    status: { $nin: [JobStatus.COMPLETED, JobStatus.CLOSED, JobStatus.RATED, JobStatus.CANCELLED] }
+                },
+                {
+                    $set: {
+                        status: JobStatus.COMPLETED,
+                        completedAt: new Date(),
+                        updatedAt: new Date()
+                    }
+                },
+                { session, new: true }
+            );
 
-            if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CLOSED || job.status === JobStatus.RATED) {
-                await session.commitTransaction();
-                session.endSession();
-                return job; // Already completed
+            if (!job) {
+                // Already completed or cancelled - Idempotent success
+                const doubleCheck = await Job.findById(jobId).session(session);
+                if (doubleCheck && [JobStatus.COMPLETED, JobStatus.CLOSED, JobStatus.RATED].includes(doubleCheck.status)) {
+                    await session.commitTransaction();
+                    session.endSession();
+                    return doubleCheck;
+                }
+                throw new Error('Job not found or in an invalid state for completion');
             }
-
-            // FORENSIC: Verify and repair countryCode and currency early
-            const metadata = await recoverJobMetadata(job, session);
-
-            if (!job.countryCode) {
-                throw new Error(`JOB_COMPLETION_FAILED: countryCode missing and unrecoverable for Job: ${jobId}`);
-            }
-
-            // PAGE 4.6 – COMPLETED JOB FINANCIALS (Using Snapshots)
-            // Run financials BEFORE status change to ensure retryability
-            const totalAmount = (job.serviceFee || 0) + job.bookingFee;
-            const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
 
             if (!job.providerId) {
-                throw new Error(`JOB_COMPLETION_FAILED: Cannot complete a job that has no assigned provider.`);
+                throw new Error('Cannot complete a job without an assigned provider');
             }
+
+            // 2. Metadata Recovery
+            const metadata = await recoverJobMetadata(job, session);
+
+            // 3. Financials (Uses internal idempotency check on CommissionRecord)
+            const totalAmount = (job.serviceFee || 0) + job.bookingFee;
+            const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
 
             await financialService.completeJobFinancials(
                 job,
@@ -121,45 +134,34 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 session
             );
 
-            job.status = JobStatus.COMPLETED;
-            job.completedAt = new Date();
-            await job.save({ session });
-
-            // PAGE 7: Increment Completed Jobs
-            const provider = await Provider.findOne({ userId: job.providerId }).session(session);
-            if (provider) {
-                provider.jobsCompleted += 1;
-                provider.performance.completedJobs += 1;
-                provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
-                await provider.save({ session });
-            }
-
-            // PAGE 12: Fraud Analysis (Fake Completion)
-            // Note: This service call should ideally be transactional if it modifies DB,
-            // but if it's async/queue based, it's fine.
-            fraudService.analyzeJobCompletion(job.id);
-
-            // Track frequent address (Issue 2)
-            await userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+            // 4. Provider Stats Update (Atomic $inc to prevent conflicts)
+            await Provider.findOneAndUpdate(
+                { userId: job.providerId },
+                {
+                    $inc: {
+                        jobsCompleted: 1,
+                        'performance.completedJobs': 1
+                    }
+                },
+                { session }
+            );
 
             await session.commitTransaction();
             session.endSession();
 
-            // EMIT SOCKET EVENTS ONLY AFTER SUCCESSFUL COMMIT
+            // FOLLOW UP (Async / Non-critical)
+            try {
+                fraudService.analyzeJobCompletion(job.id);
+                userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+            } catch (followUpErr) {
+                logger.warn(`JOB_COMPLETION | Follow-up Error: ${followUpErr}`);
+            }
+
+            // Real-Time Sync
             const socketService = require('../socket/socket.service');
             socketService.syncJobStatus(job, 'status_updated', { adminOverride });
 
-            if (provider) {
-                socketService.emitAdminUpdate('provider_status_changed', {
-                    userId: job.providerId,
-                    isOnline: provider.isOnline,
-                    status: provider.currentAvailabilityStatus,
-                    timestamp: new Date()
-                });
-            }
-
-            // Notify Customer
-            await notificationService.notifyUser(
+            notificationService.notifyUser(
                 job.customerId.toString(),
                 'Job Completed',
                 adminOverride
@@ -175,13 +177,13 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             const isWriteConflict = error.message.includes('Write conflict') || error.code === 112 || error.hasErrorLabel?.('TransientTransactionError');
             if (isWriteConflict && retryCount < MAX_RETRIES - 1) {
                 retryCount++;
-                const delay = Math.pow(2, retryCount) * 100 + Math.random() * 100; // Exponential backoff with jitter
-                logger.warn(`JOB_COMPLETION | Write conflict. Retrying in ${Math.round(delay)}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                const delay = Math.pow(2, retryCount) * 50;
                 await new Promise(res => setTimeout(res, delay));
-            } else {
-                logger.error(`JOB_COMPLETION | FATAL ERROR | Job: ${jobId} | Error: ${error.message}`);
-                throw error;
+                continue;
             }
+
+            logger.error(`JOB_COMPLETION | FATAL | Job: ${jobId} | Error: ${error.message}`);
+            throw error;
         }
     }
 };
@@ -422,102 +424,140 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
 };
 
 export const acceptJob = async (jobId: string, providerId: string) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  try {
-    const provider = await Provider.findOne({ userId: providerId }).session(session);
-    if (!provider) throw new Error('Provider profile not found');
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
 
-    const job = await Job.findOne({ _id: jobId, providerId: null, status: JobStatus.BROADCASTED }).session(session);
-    if (!job) throw new Error('Job already accepted or unavailable');
-
-    const service = await Service.findOne({
-        code: job.serviceCode,
-        countryCode: { $in: [job.countryCode, 'GLOBAL'] }
-    }).sort({ countryCode: -1 });
-    if (service) {
-        if (service.genderRule === GenderRule.MEN_ONLY && provider.gender !== 'M') {
-            throw new Error('Gender rule violation: Service restricted to Men.');
-        }
-        if (service.genderRule === GenderRule.WOMEN_ONLY && provider.gender !== 'F') {
-            throw new Error('Gender rule violation: Service restricted to Women.');
-        }
-    }
-
-    const serviceFeeRate = await pricingService.getServiceFeeRate(job.countryCode, provider.tier);
-
-    job.providerId = providerId as any;
-
-    // PHASE 3: Dispatch Control
-    // Forensic: Handle undefined flags by checking truthiness explicitly
-    const negotiationRequired = service?.priceNegotiationRequired === true;
-    const photoSharingRequired = service?.photoSharingRequired === true;
-
-    job.photoSharingRequired = photoSharingRequired;
-    job.priceNegotiationRequired = negotiationRequired;
-
-    if (negotiationRequired || photoSharingRequired) {
-        job.status = JobStatus.PROVIDER_ACCEPTED; // Hold dispatch for negotiation or photos
-    } else {
-        job.status = JobStatus.EN_ROUTE; // Dispatch immediately (Type 3)
-    }
-
-    job.negotiationTimeline = [{
-        event: 'PROVIDER_ACCEPTED',
-        timestamp: new Date(),
-        metadata: { providerId }
-    }];
-
-    job.acceptedAt = new Date();
-    job.serviceFeeRateSnapshot = serviceFeeRate;
-    job.version += 1;
-
-    await job.save({ session });
-
-    // Stop every remaining broadcast wave for this job
+  while (retryCount < MAX_RETRIES) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
-        const { clearJobBroadcasts } = require('./job-broadcast.queue');
-        await clearJobBroadcasts(jobId);
-    } catch (e) {
-        logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
+      // 1. Fetch provider first (usually read-only)
+      const provider = await Provider.findOne({ userId: providerId }).session(session);
+      if (!provider) throw new Error('Provider profile not found');
+
+      // 2. Atomic Find and Update to prevent race conditions and minimize conflicts
+      // We look for a job that is still BROADCASTED and has no providerId yet.
+      const job = await Job.findOneAndUpdate(
+        {
+          _id: jobId,
+          providerId: null,
+          status: JobStatus.BROADCASTED
+        },
+        {
+          $set: {
+            providerId: new mongoose.Types.ObjectId(providerId),
+            acceptedAt: new Date(),
+            version: 1 // Start versioning or incrementing
+          }
+        },
+        { session, new: true }
+      );
+
+      if (!job) {
+          // If no job found, it was either already accepted or doesn't exist
+          const doubleCheck = await Job.findById(jobId).session(session);
+          if (doubleCheck?.providerId?.toString() === providerId) {
+              await session.commitTransaction();
+              session.endSession();
+              return doubleCheck; // Idempotent success
+          }
+          throw new Error('Job already accepted or unavailable');
+      }
+
+      const service = await Service.findOne({
+          code: job.serviceCode,
+          countryCode: { $in: [job.countryCode, 'GLOBAL'] }
+      }).session(session).sort({ countryCode: -1 });
+
+      if (service) {
+          if (service.genderRule === GenderRule.MEN_ONLY && provider.gender !== 'M') {
+              throw new Error('Gender rule violation: Service restricted to Men.');
+          }
+          if (service.genderRule === GenderRule.WOMEN_ONLY && provider.gender !== 'F') {
+              throw new Error('Gender rule violation: Service restricted to Women.');
+          }
+      }
+
+      const serviceFeeRate = await pricingService.getServiceFeeRate(job.countryCode, provider.tier);
+
+      // PHASE 3: Dispatch Control
+      const negotiationRequired = service?.priceNegotiationRequired === true;
+      const photoSharingRequired = service?.photoSharingRequired === true;
+
+      job.photoSharingRequired = photoSharingRequired;
+      job.priceNegotiationRequired = negotiationRequired;
+
+      if (negotiationRequired || photoSharingRequired) {
+          job.status = JobStatus.PROVIDER_ACCEPTED; // Hold dispatch for negotiation or photos
+      } else {
+          job.status = JobStatus.EN_ROUTE; // Dispatch immediately (Type 3)
+      }
+
+      job.negotiationTimeline = [{
+          event: 'PROVIDER_ACCEPTED',
+          timestamp: new Date(),
+          metadata: { providerId }
+      }];
+
+      job.serviceFeeRateSnapshot = serviceFeeRate;
+      await job.save({ session });
+
+      // Stop every remaining broadcast wave for this job
+      try {
+          const { clearJobBroadcasts } = require('./job-broadcast.queue');
+          await clearJobBroadcasts(jobId);
+      } catch (e) {
+          logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
+      }
+
+      logger.info(`JOB | ACCEPTED | Job: ${jobId} | Provider: ${providerId}`);
+
+      // Termination Signal: Tell other providers to stop ringing
+      const otherProviders = await Provider.find({
+          servicesOffered: job.serviceCode,
+          countryCode: job.countryCode,
+          isOnline: true,
+          userId: { $ne: new mongoose.Types.ObjectId(providerId) }
+      }).session(session);
+
+      otherProviders.forEach(p => {
+          const targetUserId = (p.userId as any)._id || p.userId;
+          emitToUser(targetUserId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
+          notificationService.notifyUser(
+              targetUserId,
+              'Job No Longer Available',
+              'This request was accepted by another provider.',
+              { type: 'JOB_ASSIGNED_ELSEWHERE', jobId },
+              true
+          );
+      });
+
+      await Provider.findOneAndUpdate(
+          { userId: providerId },
+          {
+              $inc: { 'performance.acceptedJobs': 1 },
+              $set: { currentAvailabilityStatus: 'BUSY' }
+          },
+          { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+      return job;
+    } catch (error: any) {
+      await session.abortTransaction();
+      session.endSession();
+
+      const isWriteConflict = error.message.includes('Write conflict') || error.code === 112 || error.hasErrorLabel?.('TransientTransactionError');
+      if (isWriteConflict && retryCount < MAX_RETRIES - 1) {
+          retryCount++;
+          await new Promise(res => setTimeout(res, 50 * retryCount));
+          continue;
+      }
+
+      logger.error(`JOB | ACCEPT_FAILED | Job: ${jobId} | Error: ${error.message}`);
+      throw error;
     }
-
-    logger.info(`JOB | ACCEPTED | Job: ${jobId} | Provider: ${providerId}`);
-
-    // Termination Signal: Tell other providers to stop ringing
-    const otherProviders = await Provider.find({
-        servicesOffered: job.serviceCode,
-        countryCode: job.countryCode,
-        isOnline: true,
-        userId: { $ne: new mongoose.Types.ObjectId(providerId) }
-    }).session(session);
-
-    otherProviders.forEach(p => {
-        const targetUserId = (p.userId as any)._id || p.userId;
-        emitToUser(targetUserId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
-        notificationService.notifyUser(
-            targetUserId,
-            'Job No Longer Available',
-            'This request was accepted by another provider.',
-            { type: 'JOB_ASSIGNED_ELSEWHERE', jobId },
-            true
-        );
-    });
-
-    provider.performance.acceptedJobs += 1;
-    provider.currentAvailabilityStatus = 'BUSY';
-    await provider.save({ session });
-
-    console.log(`[FORENSIC] DB_UPDATE_FINISHED | Job: ${jobId} | New Status: ${job.status}`);
-
-    await session.commitTransaction();
-    return job;
-  } catch (error: any) {
-    await session.abortTransaction();
-    logger.error(`JOB | ACCEPT_FAILED | Job: ${jobId} | Error: ${error.message}`);
-    throw error;
-  } finally {
-    session.endSession();
   }
 };
 
