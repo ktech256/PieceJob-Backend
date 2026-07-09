@@ -559,6 +559,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
       throw error;
     }
   }
+  throw new Error('Job acceptance failed after maximum retries due to concurrent updates.');
 };
 
 export const expireInactiveNegotiations = async () => {

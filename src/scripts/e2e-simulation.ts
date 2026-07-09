@@ -69,23 +69,24 @@ async function runE2ESimulation() {
 
         // 4. Provider Accepts
         const acceptedJob = await jobService.acceptJob(job.id, providerUser._id.toString());
+        if (!acceptedJob) throw new Error('Step 4 FAILED: acceptedJob is undefined');
         console.log(`Step 4: Provider accepted job. Job status: ${acceptedJob.status}`);
 
         // 5. Provider Arrives
         acceptedJob.status = JobStatus.ARRIVED;
-        await acceptedJob.save();
+        await (acceptedJob as any).save();
         console.log('Step 5: Provider arrived at destination.');
 
         // 6. Job Started
         acceptedJob.status = JobStatus.STARTED;
         acceptedJob.startedAt = new Date();
-        await acceptedJob.save();
+        await (acceptedJob as any).save();
         console.log('Step 6: Job STARTED.');
 
         // 7. Job Completed
         acceptedJob.status = JobStatus.COMPLETED;
         acceptedJob.completedAt = new Date();
-        await acceptedJob.save();
+        await (acceptedJob as any).save();
         console.log('Step 7: Job COMPLETED.');
 
         // 8. Financial Settlement

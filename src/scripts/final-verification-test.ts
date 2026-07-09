@@ -74,6 +74,7 @@ async function runTests() {
         console.log('\n--- SECTION 2: SINGLE ACCEPTANCE ---');
         try {
             const accepted = await jobService.acceptJob(job._id.toString(), providerA._id.toString());
+            if (!accepted) throw new Error('accepted result is undefined');
             console.log('Single Acceptance Success. Status:', accepted.status);
         } catch (e: any) {
             console.log('Single Acceptance Failed:', e.message);

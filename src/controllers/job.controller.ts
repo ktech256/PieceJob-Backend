@@ -651,7 +651,7 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
     const job = await jobService.acceptJob(jobId, userId);
 
     // Re-fetch with populated provider info for immediate mobile UI update
-    const finalJob = await Job.findById(job.id).populate('providerId', 'firstName lastName profilePhoto phoneNumber');
+    const finalJob = await Job.findById(job._id).populate('providerId', 'firstName lastName profilePhoto phoneNumber');
     let providerData = null;
     if (finalJob?.providerId) {
         const provider = await Provider.findOne({ userId: (finalJob.providerId as any)._id });
