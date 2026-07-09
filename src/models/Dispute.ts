@@ -35,5 +35,7 @@ const DisputeSchema: Schema = new Schema({
 
 DisputeSchema.index({ countryCode: 1, status: 1 });
 DisputeSchema.index({ jobId: 1 });
+DisputeSchema.index({ raisedBy: 1 });
+DisputeSchema.index({ createdAt: -1 });
 
 export default mongoose.model<IDispute>('Dispute', DisputeSchema);

@@ -196,5 +196,7 @@ const JobSchema: Schema = new Schema({
 JobSchema.index({ location: '2dsphere' });
 JobSchema.index({ countryCode: 1, status: 1 });
 JobSchema.index({ providerId: 1, status: 1 });
+JobSchema.index({ customerId: 1, status: 1 });
+JobSchema.index({ createdAt: -1 });
 
 export default mongoose.model<IJob>('Job', JobSchema);

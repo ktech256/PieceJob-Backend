@@ -47,8 +47,20 @@ const sanitizeJobForMobile = async (job: any) => {
         providerInfo: providerInfo,
         customerInfo: customerInfo,
         serviceName: jobObj.serviceName || jobObj.serviceCode, // Fallback for older jobs
-        currency: jobObj.pricingSnapshot?.currencyCode || 'USD'
+        currency: jobObj.pricingSnapshot?.currencyCode || 'USD',
+        cancellationReason: jobObj.cancellationReason,
+        cancelledBy: jobObj.cancelledBy ? jobObj.cancelledBy.toString() : null
     };
+
+    if (jobObj.cancelledBy) {
+        if (customerId && jobObj.cancelledBy.toString() === customerId.toString()) {
+            sanitized.cancelledByName = customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : 'Customer';
+        } else if (providerId && jobObj.cancelledBy.toString() === providerId.toString()) {
+            sanitized.cancelledByName = providerInfo ? `${providerInfo.firstName} ${providerInfo.lastName}` : 'Provider';
+        } else {
+            sanitized.cancelledByName = 'Administrator';
+        }
+    }
 
     // Enrich taskPhotos with signed URLs
     if (sanitized.taskPhotos && Array.isArray(sanitized.taskPhotos)) {
@@ -188,7 +200,7 @@ export const enrichWithNegotiation = async (sanitizedJob: any) => {
 
 export const requestJob = async (req: AuthRequest, res: Response) => {
   try {
-    const { serviceCode, coordinates, address, pickupCoordinates, pickupAddress, isEmergency, isForSomeoneElse, recipientName, recipientPhone } = req.body;
+    const { serviceCode, coordinates, address, pickupCoordinates, pickupAddress, isEmergency, isForSomeoneElse, recipientName, recipientPhone, scheduledAt } = req.body;
     let { zoneId } = req.body;
 
     // 1. Determine which zone contains customer coordinates
@@ -274,7 +286,8 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
       },
 
       isTestJob: await testUserService.isTestUser(req.user?.userId as string),
-      status: JobStatus.DRAFT
+      status: scheduledAt ? JobStatus.SCHEDULED : JobStatus.DRAFT,
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined
     });
 
     await job.save();
@@ -522,7 +535,8 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
                         JobStatus.ARRIVED,
                         JobStatus.STARTED,
                         JobStatus.IN_PROGRESS,
-                        JobStatus.COMPLETED // COMPLETED but not yet rated can be considered active for provider UI
+                        JobStatus.SCHEDULED,
+                        JobStatus.RESCHEDULED
                     ] };
                 } else {
                     // Customers see their request lifecycle until it's archived/closed
@@ -539,7 +553,8 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
                         JobStatus.ARRIVED,
                         JobStatus.STARTED,
                         JobStatus.IN_PROGRESS,
-                        JobStatus.COMPLETED
+                        JobStatus.SCHEDULED,
+                        JobStatus.RESCHEDULED
                     ] };
                 }
             } else if (status === 'COMPLETED') {
@@ -1251,7 +1266,12 @@ export const confirmDispatch = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ success: false, message: 'You must agree on a price before dispatching.' });
         }
 
-        job.status = JobStatus.EN_ROUTE;
+        if (job.scheduledAt && new Date(job.scheduledAt) > new Date()) {
+            job.status = JobStatus.SCHEDULED;
+        } else {
+            job.status = JobStatus.EN_ROUTE;
+        }
+
         if (!job.agreedPrice) job.agreedPrice = (job.serviceFee || 0) + job.bookingFee; // Use estimate if no negotiation
 
         job.negotiationTimeline.push({
