@@ -9,6 +9,7 @@ import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
 import * as storageService from '../services/storage.service';
 import Provider from '../models/Provider';
+import Country from '../models/Country';
 import ChatMessage from '../models/Chat';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
@@ -24,8 +25,9 @@ import * as userContextService from '../services/user-context.service';
 import * as auditService from '../services/audit.service';
 import { logger } from '../utils/logger';
 import { calculateDistance } from '../utils/location';
+import { formatToWorkspaceTime } from '../utils/date';
 
-const sanitizeJobForMobile = async (job: any) => {
+export const sanitizeJobForMobile = async (job: any) => {
     const jobObj = job.toObject ? job.toObject() : job;
 
     // Populated objects have a firstName field. ObjectIds do not.
@@ -39,6 +41,10 @@ const sanitizeJobForMobile = async (job: any) => {
     if (providerInfo && providerInfo.profilePhoto) providerInfo.profilePicture = providerInfo.profilePhoto;
     if (customerInfo && customerInfo.profilePhoto) customerInfo.profilePicture = customerInfo.profilePhoto;
 
+    // Timezone Conversion (ISSUE 1 FIX)
+    const country = await Country.findOne({ code: jobObj.countryCode });
+    const tz = country?.timezone || 'UTC';
+
     const sanitized = {
         ...jobObj,
         id: (jobObj._id || jobObj.id).toString(),
@@ -49,8 +55,42 @@ const sanitizeJobForMobile = async (job: any) => {
         serviceName: jobObj.serviceName || jobObj.serviceCode, // Fallback for older jobs
         currency: jobObj.pricingSnapshot?.currencyCode || 'USD',
         cancellationReason: jobObj.cancellationReason,
-        cancelledBy: jobObj.cancelledBy ? jobObj.cancelledBy.toString() : null
+        cancelledBy: jobObj.cancelledBy ? jobObj.cancelledBy.toString() : null,
+
+        // Respect Workspace Timezone
+        createdAt: formatToWorkspaceTime(jobObj.createdAt, tz),
+        updatedAt: formatToWorkspaceTime(jobObj.updatedAt, tz),
+        startedAt: formatToWorkspaceTime(jobObj.startedAt, tz),
+        completedAt: formatToWorkspaceTime(jobObj.completedAt, tz),
+        cancelledAt: formatToWorkspaceTime(jobObj.cancelledAt, tz),
+        acceptedAt: formatToWorkspaceTime(jobObj.acceptedAt, tz),
+        arrivedAt: formatToWorkspaceTime(jobObj.arrivedAt, tz),
+        scheduledAt: formatToWorkspaceTime(jobObj.scheduledAt, tz)
     };
+
+    if (jobObj.negotiationTimeline && Array.isArray(jobObj.negotiationTimeline)) {
+        sanitized.negotiationTimeline = jobObj.negotiationTimeline.map((item: any) => ({
+            ...item,
+            timestamp: formatToWorkspaceTime(item.timestamp, tz)
+        }));
+    }
+
+    if (jobObj.status === 'COMPLETED' || jobObj.status === 'RATED' || jobObj.status === 'CLOSED') {
+        // ISSUE 2 FIX: Explicitly check for true. N/A for others.
+        const isNegotiated = jobObj.priceNegotiationRequired === true;
+        const bookingFee = jobObj.bookingFee || 0;
+        const rate = jobObj.serviceFeeRateSnapshot || 15;
+
+        if (isNegotiated) {
+            const agreedPrice = jobObj.agreedPrice || ((jobObj.serviceFee || 0) + bookingFee);
+            const totalServiceFee = agreedPrice * (rate / 100);
+            const outstanding = totalServiceFee - bookingFee;
+            sanitized.providerEarnings = agreedPrice - Math.max(0, outstanding);
+        } else {
+            // As per requirements: Non-negotiated jobs display N/A (represented as null here)
+            sanitized.providerEarnings = null;
+        }
+    }
 
     if (jobObj.cancelledBy) {
         if (customerId && jobObj.cancelledBy.toString() === customerId.toString()) {

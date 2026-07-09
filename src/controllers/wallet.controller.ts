@@ -3,11 +3,17 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Wallet from '../models/Wallet';
 import Ledger from '../models/Ledger';
 import Provider from '../models/Provider';
+import Country from '../models/Country';
 import * as pricingService from '../services/pricing.service';
 import * as walletService from '../services/wallet.service';
+import { formatToWorkspaceTime } from '../utils/date';
 
 export const getWalletBalance = async (req: AuthRequest, res: Response) => {
   try {
+    const countryCode = req.user?.countryCode;
+    const country = await Country.findOne({ code: countryCode });
+    const tz = country?.timezone || 'UTC';
+
     const wallet = await walletService.getWalletBalance(req.user?.userId as string);
     if (!wallet) {
       return res.status(200).json({
@@ -15,6 +21,14 @@ export const getWalletBalance = async (req: AuthRequest, res: Response) => {
         data: { balanceMain: 0, balanceEscrow: 0, balanceCredit: 0, balanceReferral: 0, balanceBonus: 0, currency: 'USD' }
       });
     }
+
+    if (wallet.recentServiceFees) {
+        wallet.recentServiceFees = wallet.recentServiceFees.map((f: any) => ({
+            ...f,
+            date: formatToWorkspaceTime(f.date, tz)
+        }));
+    }
+
     res.status(200).json({ success: true, data: wallet });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch wallet', error });
@@ -23,8 +37,18 @@ export const getWalletBalance = async (req: AuthRequest, res: Response) => {
 
 export const getTransactionHistory = async (req: AuthRequest, res: Response) => {
   try {
+    const countryCode = req.user?.countryCode;
+    const country = await Country.findOne({ code: countryCode });
+    const tz = country?.timezone || 'UTC';
+
     const transactions = await walletService.getTransactionHistory(req.user?.userId as string);
-    res.status(200).json({ success: true, data: transactions });
+    const data = transactions.map((t: any) => {
+        const obj = t.toObject ? t.toObject() : t;
+        obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
+        return obj;
+    });
+
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch history', error });
   }
@@ -36,8 +60,17 @@ import Invoice from '../models/Invoice';
 
 export const getMyPayouts = async (req: AuthRequest, res: Response) => {
   try {
+    const countryCode = req.user?.countryCode;
+    const country = await Country.findOne({ code: countryCode });
+    const tz = country?.timezone || 'UTC';
+
     const payouts = await Payout.find({ providerId: req.user?.userId }).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, data: payouts });
+    const data = payouts.map(p => {
+        const obj = p.toObject();
+        obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
+        return obj;
+    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch payouts', error });
   }
@@ -45,8 +78,19 @@ export const getMyPayouts = async (req: AuthRequest, res: Response) => {
 
 export const getMyStatements = async (req: AuthRequest, res: Response) => {
   try {
+    const countryCode = req.user?.countryCode;
+    const country = await Country.findOne({ code: countryCode });
+    const tz = country?.timezone || 'UTC';
+
     const statements = await Statement.find({ userId: req.user?.userId }).sort({ periodStart: -1 });
-    res.status(200).json({ success: true, data: statements });
+    const data = statements.map(s => {
+        const obj = s.toObject();
+        obj.periodStart = formatToWorkspaceTime(obj.periodStart, tz);
+        obj.periodEnd = formatToWorkspaceTime(obj.periodEnd, tz);
+        obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
+        return obj;
+    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch statements', error });
   }
@@ -54,10 +98,20 @@ export const getMyStatements = async (req: AuthRequest, res: Response) => {
 
 export const getMyInvoices = async (req: AuthRequest, res: Response) => {
     try {
+        const countryCode = req.user?.countryCode;
+        const country = await Country.findOne({ code: countryCode });
+        const tz = country?.timezone || 'UTC';
+
         const invoices = await Invoice.find({
             $or: [{ customerId: req.user?.userId }, { providerId: req.user?.userId }]
         }).sort({ createdAt: -1 });
-        res.status(200).json({ success: true, data: invoices });
+
+        const data = invoices.map(i => {
+            const obj = i.toObject();
+            obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
+            return obj;
+        });
+        res.status(200).json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to fetch invoices', error });
     }

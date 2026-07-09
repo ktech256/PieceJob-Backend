@@ -12,8 +12,9 @@ import Country from '../models/Country';
 import mongoose from 'mongoose';
 import * as storageService from '../services/storage.service';
 import * as settingsService from '../services/settings.service';
-import { enrichWithNegotiation } from './job.controller';
+import { enrichWithNegotiation, sanitizeJobForMobile } from './job.controller';
 import { logger } from '../utils/logger';
+import { formatToWorkspaceTime } from '../utils/date';
 
 export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
     try {
@@ -73,19 +74,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 }
             }
 
-            const aj = jobRaw.toObject() as any;
-            const p = aj.providerId as any;
-            if (p && typeof p === 'object') {
-                aj.providerId = p._id; // Restore as string to avoid Android parsing crash
-                aj.providerInfo = {
-                    firstName: p.firstName,
-                    lastName: p.lastName,
-                    profilePicture: p.profilePhoto ? await storageService.getSignedUrl(p.profilePhoto) : null,
-                    ratingAvg: 0,
-                    jobsCompleted: 0
-                };
-            }
-            activeJobs.push(await enrichWithNegotiation(aj));
+            activeJobs.push(await enrichWithNegotiation(await sanitizeJobForMobile(jobRaw)));
         }
 
         const activeJob = activeJobs.length > 0 ? activeJobs[0] : null;
@@ -137,6 +126,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             { $limit: 5 }
         ]);
 
+        const tz = country?.timezone || 'UTC';
         const latestActivity = latestActivityJobs.map((j: any) => {
             const isNegotiated = j.priceNegotiationRequired !== false;
             return {
@@ -149,11 +139,11 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 address: j.location?.address,
                 amount: isNegotiated ? (j.agreedPrice || (j.bookingFee + (j.serviceFee || 0))) : j.bookingFee,
                 isNegotiated: isNegotiated,
-                startedAt: j.startedAt,
-                completedAt: j.completedAt,
-                cancelledAt: j.cancelledAt,
+                startedAt: formatToWorkspaceTime(j.startedAt, tz),
+                completedAt: formatToWorkspaceTime(j.completedAt, tz),
+                cancelledAt: formatToWorkspaceTime(j.cancelledAt, tz),
                 cancelledBy: j.cancelledBy,
-                createdAt: j.createdAt,
+                createdAt: formatToWorkspaceTime(j.createdAt, tz),
                 currency: walletData.currency
             };
         });
@@ -374,17 +364,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             }
 
             if (!skip) {
-                const aj = activeJobRaw.toObject() as any;
-                const c = aj.customerId as any;
-                if (c && typeof c === 'object') {
-                    aj.customerId = c._id;
-                    aj.customerInfo = {
-                        firstName: c.firstName,
-                        lastName: c.lastName,
-                        profilePicture: c.profilePhoto ? await storageService.getSignedUrl(c.profilePhoto) : null
-                    };
-                }
-                activeJob = await enrichWithNegotiation(aj);
+                activeJob = await enrichWithNegotiation(await sanitizeJobForMobile(activeJobRaw));
             }
         }
 
@@ -411,17 +391,18 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             { $limit: 5 }
         ]);
 
+        const tz = country?.timezone || 'UTC';
         const activities = await Promise.all(recentJobsAgg.map(async (j: any) => {
-            let amount = 0;
+            let amount: any = 0;
             if (j.status === JobStatus.COMPLETED) {
-                if (j.priceNegotiationRequired !== false) {
+                if (j.priceNegotiationRequired === true) {
                     // Formula: Provider Earnings = Negotiated Total - Platform Service Fee
                     const commissionLedger = await Ledger.findOne({ jobId: j._id, type: TransactionType.COMMISSION, status: 'COMPLETED' });
                     const grossLedger = await Ledger.findOne({ jobId: j._id, type: TransactionType.SERVICE_FEE, status: 'COMPLETED' });
                     amount = (grossLedger?.amount || 0) - (commissionLedger?.amount || 0);
                 } else {
                     // Fixed Price: Provider Earnings = Service Fee (already excludes Booking Fee)
-                    amount = j.serviceFee || 0;
+                    amount = null; // Display as N/A
                 }
             }
 
@@ -433,11 +414,11 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                 serviceName: j.serviceName || j.serviceCode,
                 address: j.location?.address,
                 amount: amount,
-                startedAt: j.startedAt,
-                completedAt: j.completedAt,
-                cancelledAt: j.cancelledAt,
+                startedAt: formatToWorkspaceTime(j.startedAt, tz),
+                completedAt: formatToWorkspaceTime(j.completedAt, tz),
+                cancelledAt: formatToWorkspaceTime(j.cancelledAt, tz),
                 cancelledBy: j.cancelledBy,
-                createdAt: j.createdAt
+                createdAt: formatToWorkspaceTime(j.createdAt, tz)
             };
         }));
 

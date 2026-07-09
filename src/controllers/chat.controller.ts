@@ -3,9 +3,11 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Message from '../models/Chat';
 import Job from '../models/Job';
 import User, { UserRole } from '../models/User';
+import Country from '../models/Country';
 import * as notificationService from '../services/notification.service';
 import * as storageService from '../services/storage.service';
 import { emitToUser, emitJobUpdate } from '../socket/socket.service';
+import { formatToWorkspaceTime } from '../utils/date';
 
 export const getJobMessages = async (req: AuthRequest, res: Response) => {
     try {
@@ -24,6 +26,9 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ success: false, message: 'Unauthorized to access this chat' });
         }
 
+        const country = await Country.findOne({ code: job.countryCode });
+        const tz = country?.timezone || 'UTC';
+
         const messages = await Message.find({ jobId })
             .sort({ createdAt: 1 })
             .populate('senderId', 'firstName lastName role profilePhoto');
@@ -31,6 +36,8 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
         // Map profilePhoto to profilePicture for Android
         const data = await Promise.all(messages.map(async (m) => {
             const obj: any = m.toObject();
+            obj.createdAt = formatToWorkspaceTime(obj.createdAt, tz);
+
             if (obj.senderId && typeof obj.senderId === 'object') {
                 if (obj.senderId.profilePhoto) {
                     obj.senderId.profilePicture = await storageService.getSignedUrl(obj.senderId.profilePhoto);
@@ -60,6 +67,9 @@ export const getJobMessages = async (req: AuthRequest, res: Response) => {
 export const getConversations = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
+        const countryCode = req.user?.countryCode;
+        const country = await Country.findOne({ code: countryCode });
+        const tz = country?.timezone || 'UTC';
 
         // Find all jobs where this user is a participant
         const jobs = await Job.find({
@@ -87,7 +97,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 status: job.status,
                 otherUser: otherUser,
                 lastMessage: lastMessage?.text || (lastMessage?.mediaType ? 'Sent an attachment' : 'No messages yet'),
-                lastMessageTime: lastMessage?.createdAt || job.updatedAt,
+                lastMessageTime: formatToWorkspaceTime(lastMessage?.createdAt || job.updatedAt, tz),
                 unreadCount: await Message.countDocuments({ jobId: job._id, receiverId: userId, isRead: false })
             };
         }));
@@ -146,6 +156,9 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         await message.save();
         console.log(`[FORENSIC] CHAT_DATABASE_SAVE | Message: ${message._id}`);
 
+        const country = await Country.findOne({ code: job.countryCode });
+        const tz = country?.timezone || 'UTC';
+
         const populatedMessage = await Message.findById(message._id).populate('senderId', 'firstName lastName role profilePhoto');
 
         const data: any = populatedMessage?.toObject();
@@ -154,6 +167,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             data.jobId = data.jobId?.toString();
             data.senderId._id = data.senderId._id?.toString();
             data.receiverId = data.receiverId?.toString();
+            data.createdAt = formatToWorkspaceTime(data.createdAt, tz);
             if (data.senderId && typeof data.senderId === 'object') {
                 data.senderId.profilePicture = data.senderId.profilePhoto;
             }
