@@ -445,7 +445,12 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                 type: 'JOB',
                 status: j.status,
                 title: `${j.status.replace('_', ' ')}: ${j.serviceName || j.serviceCode}`,
+                serviceName: j.serviceName || j.serviceCode,
+                address: j.location?.address,
                 amount: amount,
+                startedAt: j.startedAt,
+                completedAt: j.completedAt,
+                cancelledBy: j.cancelledBy,
                 createdAt: j.createdAt
             };
         }));

@@ -102,7 +102,7 @@ export const proposePrice = async (req: AuthRequest, res: Response) => {
             receiverId.toString(),
             'New Price Proposal',
             `A new price of ${amount} has been proposed for your job.`,
-            { type: 'PRICE_PROPOSAL', jobId: jobId.toString(), proposalId: proposal._id.toString() }
+            { type: 'PRICE_PROPOSAL', jobId: jobId.toString(), proposalId: proposal._id.toString(), senderId: senderId?.toString() }
         );
 
         res.status(201).json({ success: true, proposal });
