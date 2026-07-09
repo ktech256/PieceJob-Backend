@@ -59,6 +59,7 @@ export interface IJob extends Document {
   arrivedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
+  cancelledAt?: Date;
   scheduledAt?: Date;
 
   // PAGE 4.6 – SERVICE FEE LOCK & PRICING SNAPSHOT
@@ -143,6 +144,7 @@ const JobSchema: Schema = new Schema({
   arrivedAt: { type: Date },
   startedAt: { type: Date },
   completedAt: { type: Date },
+  cancelledAt: { type: Date },
   scheduledAt: { type: Date },
 
   // PAGE 4.6 – SERVICE FEE LOCK & PRICING SNAPSHOT

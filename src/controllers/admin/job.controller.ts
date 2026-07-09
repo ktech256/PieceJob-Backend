@@ -69,6 +69,7 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
             job.status = status;
 
             if (status === JobStatus.CANCELLED) {
+                job.cancelledAt = new Date();
                 job.cancelledBy = req.user?.userId as any;
                 job.cancellationReason = `[ADMIN OVERRIDE] ${reason}`;
 

@@ -114,15 +114,30 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             countryCode
         }).sort({ createdAt: -1 });
 
-        // 5. Latest Activity (Limited to 5 records for parity with provider)
-        const recentJobs = await Job.find({
-            customerId: userId,
-            status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED] }
-        })
-            .sort({ createdAt: -1 })
-            .limit(5);
+        // 5. Latest Activity (Limited to 5 records sorted by activity timestamp)
+        const latestActivityJobs = await Job.aggregate([
+            {
+                $match: {
+                    customerId: new mongoose.Types.ObjectId(userId),
+                    status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED] }
+                }
+            },
+            {
+                $addFields: {
+                    activityTimestamp: {
+                        $cond: [
+                            { $eq: ["$status", JobStatus.COMPLETED] },
+                            { $ifNull: ["$completedAt", "$updatedAt"] },
+                            { $ifNull: ["$cancelledAt", "$updatedAt"] }
+                        ]
+                    }
+                }
+            },
+            { $sort: { activityTimestamp: -1 } },
+            { $limit: 5 }
+        ]);
 
-        const latestActivity = recentJobs.map(j => ({
+        const latestActivity = latestActivityJobs.map(j => ({
             _id: j._id,
             id: j._id,
             type: 'JOB',
@@ -133,6 +148,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             amount: j.bookingFee + (j.serviceFee || 0), // TOTAL PAID
             startedAt: j.startedAt,
             completedAt: j.completedAt,
+            cancelledAt: j.cancelledAt,
             cancelledBy: j.cancelledBy,
             createdAt: j.createdAt,
             currency: walletData.currency // Attach currency for proper UI display
@@ -428,12 +444,30 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        // 3. Recent Activity (Latest 5 - Jobs ONLY)
-        const recentJobs = await Job.find({ providerId: userId as string })
-            .sort({ createdAt: -1 })
-            .limit(10); // Fetch more to filter down to 5 if needed, but we only show jobs anyway
+        // 3. Recent Activity (Latest 5 finished jobs sorted by activity timestamp)
+        const recentJobsAgg = await Job.aggregate([
+            {
+                $match: {
+                    providerId: new mongoose.Types.ObjectId(userId as string),
+                    status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED] }
+                }
+            },
+            {
+                $addFields: {
+                    activityTimestamp: {
+                        $cond: [
+                            { $eq: ["$status", JobStatus.COMPLETED] },
+                            { $ifNull: ["$completedAt", "$updatedAt"] },
+                            { $ifNull: ["$cancelledAt", "$updatedAt"] }
+                        ]
+                    }
+                }
+            },
+            { $sort: { activityTimestamp: -1 } },
+            { $limit: 5 }
+        ]);
 
-        const activities = await Promise.all(recentJobs.map(async j => {
+        const activities = await Promise.all(recentJobsAgg.map(async j => {
             let amount = 0;
             if (j.status === JobStatus.COMPLETED) {
                 if (j.priceNegotiationRequired !== false) {
@@ -457,6 +491,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                 amount: amount,
                 startedAt: j.startedAt,
                 completedAt: j.completedAt,
+                cancelledAt: j.cancelledAt,
                 cancelledBy: j.cancelledBy,
                 createdAt: j.createdAt
             };

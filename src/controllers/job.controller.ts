@@ -835,6 +835,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       }
 
       job.status = JobStatus.CANCELLED;
+      job.cancelledAt = new Date();
       job.cancelledBy = new mongoose.Types.ObjectId(userId);
       job.cancellationReason = reason || 'Cancelled via App';
       await job.save();
