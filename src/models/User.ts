@@ -33,6 +33,7 @@ export interface IUser extends Document {
   referredBy?: mongoose.Types.ObjectId;
   referralFraudScore: number;
   isReferralRewardClaimed: boolean;
+  isReferralDisabled: boolean;
   isTestUser: boolean;
   gender?: string;
   dob?: string;
@@ -182,6 +183,7 @@ const UserSchema: Schema = new Schema({
   referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
   referralFraudScore: { type: Number, default: 0 },
   isReferralRewardClaimed: { type: Boolean, default: false },
+  isReferralDisabled: { type: Boolean, default: false },
   lastMissedBroadcastJobId: { type: String }
 }, { timestamps: true });
 

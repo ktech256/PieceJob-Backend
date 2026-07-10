@@ -11,6 +11,7 @@ import * as auditService from '../../services/audit.service';
 import { StatementType } from '../../models/Statement';
 import Job from '../../models/Job';
 import mongoose from 'mongoose';
+import * as referralService from '../../services/referral.service';
 import { logger } from '../../utils/logger';
 
 import ServiceFeeRecord from '../../models/ServiceFeeRecord';
@@ -426,10 +427,32 @@ export const listRefunds = async (req: AuthRequest, res: Response) => {
 export const listReferrals = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
-        const referrals = await Ledger.find({ countryCode, type: TransactionType.REFERRAL_REWARD })
+        const referrals = await mongoose.model('ReferralReward').find({ countryCode })
             .sort({ createdAt: -1 })
-            .populate('toUserId', 'firstName lastName');
+            .populate('toUserId', 'firstName lastName')
+            .populate('referredId', 'firstName lastName');
         res.status(200).json({ success: true, data: referrals });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getReferralAnalytics = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const analytics = await referralService.getReferralAnalytics(countryCode);
+        res.status(200).json({ success: true, data: analytics });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const toggleReferralPrivileges = async (req: AuthRequest, res: Response) => {
+    try {
+        const { userId, isDisabled } = req.body;
+        const adminId = req.user?.userId || 'SYSTEM';
+        const user = await referralService.toggleUserReferralPrivileges(userId, isDisabled, adminId);
+        res.status(200).json({ success: true, data: user });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

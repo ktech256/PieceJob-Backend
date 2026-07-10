@@ -15,6 +15,8 @@ router.get('/referrals', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER
 router.post('/referrals', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.createReferralCampaign);
 router.patch('/referrals/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.updateReferralCampaign);
 router.delete('/referrals/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.deleteReferralCampaign);
+router.get('/referrals/analytics', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.getReferralAnalytics);
+router.post('/referrals/toggle-privileges', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.toggleReferralPrivileges);
 
 router.post('/notifications/push', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.sendCustomPush);
 

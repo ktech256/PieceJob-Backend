@@ -170,6 +170,32 @@ export const registerCustomer = async (req: Request, res: Response) => {
     await user.save({ session });
     logger.auth('REGISTER_CUSTOMER', true, cleanEmail);
 
+    // Create Referral Record if referred
+    if (referredBy) {
+        const campaign = await mongoose.model('ReferralCampaign').findOne({
+            countryCode,
+            isActive: true,
+            startDate: { $lte: new Date() },
+            endDate: { $gte: new Date() }
+        }).session(session);
+
+        if (campaign) {
+            await mongoose.model('ReferralRecord').create([{
+                referrerId: referredBy,
+                referredId: user._id,
+                campaignId: campaign._id,
+                countryCode
+            }], { session });
+
+            // Notification: Referral Registered
+            await notificationService.notifyUser(
+                referredBy.toString(),
+                'New Referral Joined!',
+                `${user.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
+            );
+        }
+    }
+
     // Fulfill Welcome Bonus
     await promotionService.fulfillSignupBonus(user._id.toString(), countryCode);
 
@@ -248,6 +274,17 @@ export const registerProvider = async (req: Request, res: Response) => {
 
     // 4. Persistence: User
     const passwordHash = await bcrypt.hash(password, 10);
+
+    let referredBy: any = null;
+    if (referralCode) {
+      const referrer = await User.findOne({ referralCode });
+      if (referrer) {
+          referredBy = referrer._id;
+          // Fraud Protection: Circular Referral or same device check could be here
+          await fraudService.checkReferralAbuse(referrer._id.toString(), uuidv4()); // Temporary ID as user not saved yet
+      }
+    }
+
     const user = new User({
       firstName,
       lastName,
@@ -263,10 +300,37 @@ export const registerProvider = async (req: Request, res: Response) => {
       idOrPassportNumber: actualIdNumber,
       isTestUser: testUserService.isTestNumber(cleanPhone),
       referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+      referredBy
     });
 
     const savedUser = await user.save({ session });
     logger.auth('REGISTER_PROVIDER', true, cleanEmail);
+
+    // Create Referral Record if referred
+    if (referredBy) {
+        const campaign = await mongoose.model('ReferralCampaign').findOne({
+            countryCode,
+            isActive: true,
+            startDate: { $lte: new Date() },
+            endDate: { $gte: new Date() }
+        }).session(session);
+
+        if (campaign) {
+            await mongoose.model('ReferralRecord').create([{
+                referrerId: referredBy,
+                referredId: savedUser._id,
+                campaignId: campaign._id,
+                countryCode
+            }], { session });
+
+            // Notification: Referral Registered
+            await notificationService.notifyUser(
+                referredBy.toString(),
+                'New Referral Joined!',
+                `${savedUser.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
+            );
+        }
+    }
 
     // 5. Persistence: Provider Profile
     const provider = new Provider({

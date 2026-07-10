@@ -231,6 +231,33 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         await serviceFeeRecord.save({ session });
     }
 
+    // --- REFERRAL BALANCE AUTO-CONSUMPTION (FOR PROVIDERS) ---
+    // If provider has Referral Balance, automatically apply it to reduce the debt (balanceCredit)
+    if (wallet.balanceCredit < 0 && wallet.balanceReferral > 0) {
+        const referralUsed = Math.min(Math.abs(wallet.balanceCredit), wallet.balanceReferral);
+        wallet.balanceCredit += referralUsed;
+        wallet.balanceReferral -= referralUsed;
+
+        await new Ledger({
+            transactionId: `RC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+            jobId: job._id,
+            fromUserId: providerId,
+            toUserId: providerId,
+            amount: referralUsed,
+            currency: finalCurrency,
+            countryCode: finalCountryCode,
+            type: TransactionType.SERVICE_FEE,
+            status: 'COMPLETED',
+            description: `Referral Balance applied to reduce Job Debt`,
+            metadata: {
+                previousReferralBalance: wallet.balanceReferral + referralUsed,
+                applied: referralUsed,
+                newDebt: wallet.balanceCredit
+            }
+        }).save({ session });
+    }
+    // --- END REFERRAL BALANCE AUTO-CONSUMPTION ---
+
     // Legacy sync: serviceFeeBalance tracks debt (negative)
     wallet.serviceFeeBalance = Math.min(0, wallet.balanceCredit);
 
@@ -397,7 +424,7 @@ export const releaseEscrowFunds = async () => {
         }
 
         // REFERRAL REWARD - Still process this as it encourages growth
-        await referralService.processReferralReward(job.customerId.toString(), session);
+        await referralService.handleJobCompletion(job, session);
 
         job.status = JobStatus.CLOSED;
         await job.save({ session });
@@ -493,3 +520,40 @@ export const reconcileProviderCredit = async (providerId: string, amountToApply:
 
     return remaining;
 }
+
+/**
+ * Specifically uses balanceReferral to clear outstanding service fees for providers.
+ */
+export const applyReferralBalanceToServiceFees = async (providerId: string, amount: number, session: mongoose.ClientSession) => {
+    const wallet = await Wallet.findOne({ userId: new mongoose.Types.ObjectId(providerId) }).session(session);
+    if (!wallet || wallet.balanceReferral <= 0 || wallet.balanceCredit >= 0) return;
+
+    const amountToUse = Math.min(wallet.balanceReferral, Math.abs(wallet.balanceCredit), amount);
+    if (amountToUse <= 0) return;
+
+    // 1. Deduct from Referral Balance
+    wallet.balanceReferral -= amountToUse;
+    // 2. Add to Credit Balance (Reducing debt)
+    wallet.balanceCredit += amountToUse;
+    wallet.serviceFeeBalance = Math.min(0, wallet.balanceCredit);
+    await wallet.save({ session });
+
+    // 3. Record Ledger for the internal transfer
+    await new Ledger({
+        transactionId: `RC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+        fromUserId: providerId,
+        toUserId: providerId,
+        amount: amountToUse,
+        currency: wallet.currency,
+        countryCode: wallet.countryCode,
+        type: TransactionType.SERVICE_FEE,
+        status: 'COMPLETED',
+        description: 'Referral Balance applied to Outstanding Service Fees'
+    }).save({ session });
+
+    // 4. Reconcile historical records
+    await reconcileProviderCredit(providerId, amountToUse, session, {
+        source: 'REFERRAL_BALANCE_APPLIED',
+        description: 'Referral Balance Applied'
+    });
+};

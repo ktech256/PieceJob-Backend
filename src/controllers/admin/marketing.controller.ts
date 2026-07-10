@@ -5,6 +5,7 @@ import ReferralCampaign from '../../models/ReferralCampaign';
 import User, { UserRole } from '../../models/User';
 import * as storageService from '../../services/storage.service';
 import * as notificationService from '../../services/notification.service';
+import * as referralService from '../../services/referral.service';
 import * as socketService from '../../socket/socket.service';
 import { logger } from '../../utils/logger';
 
@@ -159,6 +160,30 @@ export const deleteReferralCampaign = async (req: AuthRequest, res: Response) =>
     try {
         await ReferralCampaign.findByIdAndDelete(req.params.id);
         res.status(200).json({ success: true, message: 'Campaign deleted' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getReferralAnalytics = async (req: AuthRequest, res: Response) => {
+    try {
+        const { countryCode } = req.query;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'Country code required' });
+
+        const analytics = await referralService.getReferralAnalytics(countryCode as string);
+        res.status(200).json({ success: true, data: analytics });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const toggleReferralPrivileges = async (req: AuthRequest, res: Response) => {
+    try {
+        const { userId, isDisabled } = req.body;
+        const adminId = req.user?.userId || 'SYSTEM';
+
+        const user = await referralService.toggleUserReferralPrivileges(userId, isDisabled, adminId);
+        res.status(200).json({ success: true, data: user });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

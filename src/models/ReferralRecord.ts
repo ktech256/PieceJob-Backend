@@ -1,0 +1,31 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IReferralRecord extends Document {
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    campaignId: mongoose.Types.ObjectId;
+    countryCode: string;
+    jobsCompletedCount: number;
+    rewardsIssuedCount: number;
+    isFraudSuspicious: boolean;
+    isDisabled: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const ReferralRecordSchema: Schema = new Schema({
+    referrerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    referredId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    campaignId: { type: Schema.Types.ObjectId, ref: 'ReferralCampaign', required: true },
+    countryCode: { type: String, required: true },
+    jobsCompletedCount: { type: Number, default: 0 },
+    rewardsIssuedCount: { type: Number, default: 0 },
+    isFraudSuspicious: { type: Boolean, default: false },
+    isDisabled: { type: Boolean, default: false }
+}, { timestamps: true });
+
+ReferralRecordSchema.index({ referrerId: 1 });
+ReferralRecordSchema.index({ referredId: 1 }, { unique: true });
+ReferralRecordSchema.index({ countryCode: 1 });
+
+export default mongoose.model<IReferralRecord>('ReferralRecord', ReferralRecordSchema);

@@ -176,6 +176,8 @@ router.get('/finance/ledger', hasPermission('MANAGE_FINANCE'), financeController
 router.get('/finance/wallets', hasPermission('MANAGE_FINANCE'), financeController.listWallets);
 router.get('/finance/refunds', hasPermission('MANAGE_FINANCE'), financeController.listRefunds);
 router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeController.listReferrals);
+router.get('/finance/referrals/analytics', hasPermission('MANAGE_FINANCE'), financeController.getReferralAnalytics);
+router.post('/finance/referrals/toggle-privileges', hasPermission('MANAGE_FINANCE'), financeController.toggleReferralPrivileges);
 
 // NEW SERVICE FEE ROUTES
 router.get('/finance/service-fees/overview', hasPermission('MANAGE_FINANCE'), financeController.getServiceFeeOverview);

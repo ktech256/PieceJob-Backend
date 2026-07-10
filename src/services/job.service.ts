@@ -195,6 +195,10 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 fraudService.analyzeJobCompletion(job.id);
 
                 userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
+
+                // Referral Processing (End-to-End Implementation)
+                const referralService = require('./referral.service');
+                referralService.handleJobCompletion(job);
             } catch (postCommitErr) {
                 logger.warn(`JOB_COMPLETION | Post-Commit Error: ${postCommitErr}`);
             }

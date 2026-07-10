@@ -11,6 +11,13 @@ export interface IReferralCampaign extends Document {
     countryCode: string;
     bannerUrl?: string;
     termsUrl?: string;
+
+    // Admin Controls
+    maxRewardsPerReferral: number; // Max jobs to reward from same referral (Default 5)
+    minCompletedJobs: number;      // Jobs needed before qualifying (Default 1)
+    rewardDelayDays: number;       // Delay in days before payout (Default 0)
+    rewardExpiryDays?: number;     // Days until unused reward expires (Optional)
+
     createdAt: Date;
     updatedAt: Date;
 }
@@ -25,7 +32,12 @@ const ReferralCampaignSchema: Schema = new Schema({
     isActive: { type: Boolean, default: true },
     countryCode: { type: String, required: true },
     bannerUrl: { type: String },
-    termsUrl: { type: String }
+    termsUrl: { type: String },
+
+    maxRewardsPerReferral: { type: Number, default: 5 },
+    minCompletedJobs: { type: Number, default: 1 },
+    rewardDelayDays: { type: Number, default: 0 },
+    rewardExpiryDays: { type: Number }
 }, { timestamps: true });
 
 ReferralCampaignSchema.index({ countryCode: 1, isActive: 1, startDate: 1, endDate: 1 });

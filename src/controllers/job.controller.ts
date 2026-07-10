@@ -2,17 +2,20 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
+import Wallet from '../models/Wallet';
 import Service from '../models/Service';
 import PriceProposal from '../models/PriceProposal';
 import * as jobService from '../services/job.service';
 import * as pricingService from '../services/pricing.service';
 import * as financialService from '../services/financial.service';
+import * as walletService from '../services/wallet.service';
 import * as storageService from '../services/storage.service';
 import Provider from '../models/Provider';
 import Country from '../models/Country';
 import ChatMessage from '../models/Chat';
 import AuditLog from '../models/AuditLog';
 import mongoose from 'mongoose';
+import { TransactionType } from '../models/Ledger';
 import { emitAdminUpdate, emitJobUpdate, emitToUser, emitToWorkspace, syncJobStatus } from '../socket/socket.service';
 
 import * as performanceService from '../services/provider-performance.service';
@@ -383,6 +386,62 @@ export const payBookingFee = async (req: AuthRequest, res: Response) => {
 
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    // --- REFERRAL BALANCE INTEGRATION ---
+    const wallet = await Wallet.findOne({ userId: user.id });
+    if (wallet && wallet.balanceReferral >= job.bookingFee) {
+        // Full payment using Referral Balance
+        const session = await mongoose.startSession();
+        session.startTransaction();
+        try {
+            await walletService.mutateWallet({
+                userId: user.id,
+                amount: -job.bookingFee,
+                type: TransactionType.BOOKING_FEE,
+                balanceType: 'balanceReferral',
+                description: `Booking Fee paid via Referral Balance (Job #${job.id.slice(-6)})`,
+                jobId: job.id,
+                countryCode: job.countryCode,
+                currency: job.pricingSnapshot?.currencyCode || 'USD',
+                session
+            });
+
+            await financialService.handleBookingFee(
+                job.id,
+                user.id,
+                job.bookingFee,
+                job.pricingSnapshot?.currencyCode || 'USD',
+                job.countryCode
+            );
+
+            job.paymentStatus = 'PAID';
+            job.status = JobStatus.BROADCASTED;
+            job.paymentReference = 'REFERRAL_PAYMENT_' + Date.now();
+            await job.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+
+            await jobService.broadcastJob(job.id);
+            emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Booking fee paid using referral balance',
+                data: {
+                    paymentUrl: null,
+                    reference: job.paymentReference,
+                    job: await sanitizeJobForMobile(job)
+                }
+            });
+        } catch (error: any) {
+            await session.abortTransaction();
+            session.endSession();
+            logger.error(`REFERRAL_PAYMENT_FAILED | Job: ${job.id} | Error: ${error.message}`);
+            // Fallback to Paystack
+        }
+    }
+    // --- END REFERRAL BALANCE INTEGRATION ---
 
     // Initialize Paystack Transaction
     const metadata = {

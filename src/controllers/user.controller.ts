@@ -446,24 +446,16 @@ export const updateFcmToken = async (req: AuthRequest, res: Response) => {
   }
 };
 
+import * as referralService from '../services/referral.service';
+
 export const getReferralStats = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
-        const user = await User.findById(userId);
+        if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-        const referrals = await User.find({ referredBy: userId }).select('firstName lastName createdAt isVerified');
-
-        res.status(200).json({
-            success: true,
-            data: {
-                referralCode: user?.referralCode,
-                totalReferrals: referrals.length,
-                pendingRewards: 0, // Logic for pending
-                paidRewards: 0, // Logic for paid
-                history: referrals
-            }
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Failed to fetch referral stats', error });
+        const stats = await referralService.getReferralStats(userId);
+        res.status(200).json({ success: true, data: stats });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: 'Failed to fetch referral stats', error: error.message });
     }
 };

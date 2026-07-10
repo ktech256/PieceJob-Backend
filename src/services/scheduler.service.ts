@@ -1,5 +1,6 @@
 import * as performanceService from './provider-performance.service';
 import * as financialService from './financial.service';
+import * as referralService from './referral.service';
 import * as corporateSchedulingService from './corporate-scheduling.service';
 import { logger } from '../utils/logger';
 
@@ -27,6 +28,12 @@ export const initSchedulers = () => {
         const { runFullEcosystemCheck } = require('./health-monitor.service');
         await runFullEcosystemCheck();
     }, 5 * 60 * 1000);
+
+    // 5. Referral Reward Payouts (Every 30 minutes)
+    setInterval(async () => {
+        logger.debug('Processing pending referral rewards...');
+        await referralService.processScheduledRewards();
+    }, 30 * 60 * 1000);
 
     logger.info('System Schedulers Initialized');
 };
