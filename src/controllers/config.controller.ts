@@ -50,7 +50,8 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
             currencyCode: country.currency,
             currencySymbol: country.currencySymbol || country.currency,
             nightFeeEnabled: settings?.nightFeeEnabled || false,
-            weekendFeeEnabled: settings?.weekendFeeEnabled || false
+            weekendFeeEnabled: settings?.weekendFeeEnabled || false,
+            isEscrowEnabled: settings?.isEscrowEnabled || false
         }
       }
     });

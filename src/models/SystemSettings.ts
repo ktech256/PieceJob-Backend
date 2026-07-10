@@ -46,6 +46,8 @@ export interface ISystemSettings extends Document {
   // PAGE 12: Fraud & Security
   deviceLockEnabled: boolean;
 
+  isEscrowEnabled: boolean;
+
   integrations: {
       paymentGateway?: string;
       paymentPublicKey?: string;
@@ -111,6 +113,8 @@ const SystemSettingsSchema: Schema = new Schema({
 
   // PAGE 12: Fraud & Security
   deviceLockEnabled: { type: Boolean, default: true },
+
+  isEscrowEnabled: { type: Boolean, default: false },
 
   integrations: {
       paymentGateway: { type: String },

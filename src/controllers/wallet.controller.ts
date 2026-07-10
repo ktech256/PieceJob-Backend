@@ -190,29 +190,87 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
         const providerId = req.user?.userId;
         const countryCode = req.user?.countryCode;
 
-        if (!vendor || !voucherNumber) {
-            return res.status(400).json({ success: false, message: 'Vendor and voucher number required' });
-        }
+        let paymentAmount = 0;
 
-        const alreadyUsed = await UsedVoucher.findOne({ voucherNumber, vendor }).session(session);
-        if (alreadyUsed) {
-            return res.status(400).json({ success: false, message: 'This voucher has already been redeemed' });
-        }
+        if (vendor === 'CREDIT') {
+            const wallet = await Wallet.findOne({ userId: providerId }).session(session);
+            if (!wallet) throw new Error('Wallet not found');
 
-        const verification = await voucherService.validateVoucher(vendor, voucherNumber, countryCode as string);
-        if (!verification.isValid) {
-            return res.status(400).json({ success: false, message: 'Invalid or expired voucher' });
-        }
+            const debt = Math.abs(Math.min(0, wallet.serviceFeeBalance));
+            if (debt <= 0) {
+                return res.status(400).json({ success: false, message: 'No outstanding service fee to pay' });
+            }
 
-        // If user provided an amount, ensure it matches the voucher's value (within tolerance)
-        if (amount && Math.abs(amount - verification.amount) > 0.01) {
-             return res.status(400).json({
-                 success: false,
-                 message: `Voucher value mismatch. Entered: ${amount}, Actual: ${verification.amount}`
-             });
-        }
+            const maxPayable = Math.min(wallet.balanceCredit, debt);
+            paymentAmount = amount || maxPayable;
 
-        const paymentAmount = verification.amount;
+            if (paymentAmount <= 0) {
+                return res.status(400).json({ success: false, message: 'Invalid payment amount' });
+            }
+
+            if (paymentAmount > wallet.balanceCredit) {
+                return res.status(400).json({ success: false, message: 'Insufficient credit balance' });
+            }
+
+            if (paymentAmount > debt + 0.01) {
+                return res.status(400).json({ success: false, message: 'Payment amount exceeds outstanding service fee' });
+            }
+
+            // Deduct from Credit Balance
+            wallet.balanceCredit -= paymentAmount;
+
+            // Record Ledger entry for the Credit Deduction
+            await new Ledger({
+                transactionId: `SF-CR-${Date.now()}`,
+                fromUserId: providerId,
+                amount: paymentAmount,
+                currency: wallet.currency,
+                countryCode: wallet.countryCode,
+                type: TransactionType.SERVICE_FEE,
+                status: 'COMPLETED',
+                description: `Service Fee Payment from Credit Balance`,
+                metadata: {
+                    balanceAffected: 'balanceCredit',
+                    previousBalance: wallet.balanceCredit + paymentAmount,
+                    newBalance: wallet.balanceCredit
+                }
+            }).save({ session });
+
+        } else {
+            if (!vendor || !voucherNumber) {
+                return res.status(400).json({ success: false, message: 'Vendor and voucher number required' });
+            }
+
+            const alreadyUsed = await UsedVoucher.findOne({ voucherNumber, vendor }).session(session);
+            if (alreadyUsed) {
+                return res.status(400).json({ success: false, message: 'This voucher has already been redeemed' });
+            }
+
+            const verification = await voucherService.validateVoucher(vendor, voucherNumber, countryCode as string);
+            if (!verification.isValid) {
+                return res.status(400).json({ success: false, message: 'Invalid or expired voucher' });
+            }
+
+            // If user provided an amount, ensure it matches the voucher's value (within tolerance)
+            if (amount && Math.abs(amount - verification.amount) > 0.01) {
+                 return res.status(400).json({
+                     success: false,
+                     message: `Voucher value mismatch. Entered: ${amount}, Actual: ${verification.amount}`
+                 });
+            }
+
+            paymentAmount = verification.amount;
+
+            // Mark Voucher as Used
+            await new UsedVoucher({
+                voucherNumber,
+                vendor,
+                amount: paymentAmount,
+                countryCode: countryCode as string,
+                redeemedBy: providerId,
+                ledgerReference: `VCH-${vendor}-${Date.now()}`
+            }).save({ session });
+        }
 
         const wallet = await Wallet.findOne({ userId: providerId }).session(session);
         if (!wallet) throw new Error('Wallet not found');
@@ -224,20 +282,22 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
         const serviceFeeRecords = await CommissionRecord.find({
             providerId,
             status: { $in: ['OUTSTANDING', 'PARTIAL'] }
-        }).session(session);
+        }).sort({ createdAt: 1 }).session(session);
 
+        let remainingPayment = paymentAmount;
         for (const record of serviceFeeRecords) {
+            if (remainingPayment <= 0) break;
+            const toPay = Math.min(record.outstandingBalance, remainingPayment);
+            record.outstandingBalance -= toPay;
+            remainingPayment -= toPay;
+            record.status = record.outstandingBalance <= 0 ? 'PAID' : 'PARTIAL';
             record.timeline.push({
-                event: 'VOUCHER_PAYMENT_REDEEMED',
+                event: vendor === 'CREDIT' ? 'CREDIT_PAYMENT_REDEEMED' : 'VOUCHER_PAYMENT_REDEEMED',
                 timestamp: new Date(),
-                metadata: { vendor, amount: paymentAmount, voucherNumber }
+                metadata: { vendor, amount: toPay, voucherNumber: vendor === 'CREDIT' ? 'INTERNAL' : voucherNumber }
             });
-            // Update status if balance for this record is paid (though total wallet balance is different)
-            // For now, keeping it simple as per instructions.
             await record.save({ session });
         }
-
-        // Overpayment logic removed as it's now stored as negative serviceFeeBalance (Credit)
 
         // Automatic Unsuspension
         const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
@@ -252,32 +312,22 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
 
         await wallet.save({ session });
 
-        // Record in Ledger
+        // Record in Ledger for the Service Fee Credit
         const ledger = await new Ledger({
-            transactionId: `VCH-${vendor}-${Date.now()}`,
+            transactionId: vendor === 'CREDIT' ? `SF-PAY-${Date.now()}` : `VCH-${vendor}-${Date.now()}`,
             toUserId: providerId,
             amount: paymentAmount,
             currency: wallet.currency,
             countryCode: wallet.countryCode,
-            type: TransactionType.CREDIT_TOPUP,
+            type: vendor === 'CREDIT' ? TransactionType.SERVICE_FEE : TransactionType.CREDIT_TOPUP,
             status: 'COMPLETED',
-            description: `Voucher Payment: ${vendor}`,
+            description: vendor === 'CREDIT' ? `Service Fee Payment from Credit` : `Voucher Payment: ${vendor}`,
             metadata: {
                 vendor,
-                voucherNumber,
-                previousServiceFeeBalance: wallet.serviceFeeBalance + paymentAmount,
+                voucherNumber: vendor === 'CREDIT' ? 'N/A' : voucherNumber,
+                previousServiceFeeBalance: wallet.serviceFeeBalance - paymentAmount,
                 currentServiceFeeBalance: wallet.serviceFeeBalance
             }
-        }).save({ session });
-
-        // Mark Voucher as Used
-        await new UsedVoucher({
-            voucherNumber,
-            vendor,
-            amount: paymentAmount,
-            countryCode: wallet.countryCode,
-            redeemedBy: providerId,
-            ledgerReference: ledger.transactionId
         }).save({ session });
 
         await auditService.logAdminAction({
@@ -287,7 +337,7 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
             action: 'SERVICE_FEE_PAYMENT',
             entityType: 'Wallet',
             entityId: wallet._id.toString(),
-            afterState: { serviceFeeBalance: wallet.serviceFeeBalance, balanceMain: wallet.balanceMain },
+            afterState: { serviceFeeBalance: wallet.serviceFeeBalance, balanceMain: wallet.balanceMain, balanceCredit: wallet.balanceCredit },
             ipAddress: req.ip,
             systemSource: 'MOBILE_APP'
         });
@@ -310,3 +360,4 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
         session.endSession();
     }
 };
+
