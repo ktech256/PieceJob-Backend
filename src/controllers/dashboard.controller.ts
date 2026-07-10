@@ -53,6 +53,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         // 3. Active Jobs (Multiple support)
         const activeJobsRaw = await Job.find({
             customerId: userId,
+            countryCode,
             status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('providerId', 'firstName lastName profilePhoto');
 
@@ -106,6 +107,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         // 5. Latest Activity (Limited to 5 records sorted by activity time to match Job History)
         const latestActivityJobs = await Job.find({
             customerId: userId,
+            countryCode,
             status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.CLOSED] }
         })
         .sort({ updatedAt: -1 })
@@ -114,15 +116,21 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         const latestActivity = await Promise.all(latestActivityJobs.map(async (jobRaw) => {
             const j = await enrichWithNegotiation(await sanitizeJobForMobile(jobRaw));
             const isNegotiated = j.priceNegotiationRequired === true;
+
+            // Map terminal statuses to COMPLETED for UI consistency
+            const displayStatus = [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status as JobStatus)
+                ? JobStatus.COMPLETED
+                : j.status;
+
             return {
                 _id: j.id,
                 id: j.id,
                 type: 'JOB',
-                status: j.status,
+                status: displayStatus,
                 serviceCode: j.serviceCode,
                 serviceName: j.serviceName,
                 address: j.location?.address,
-                amount: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status)
+                amount: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status as JobStatus)
                     ? (isNegotiated ? (j.agreedPrice || (j.serviceFee + j.bookingFee)) : j.bookingFee)
                     : (j.bookingFee || null),
                 isNegotiated: isNegotiated,
@@ -330,6 +338,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         // 2. Active Job
         const activeJobRaw = await Job.findOne({
             providerId: userId,
+            countryCode,
             status: { $in: [JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.STARTED, JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED] }
         }).sort({ updatedAt: -1 }).populate('customerId', 'firstName lastName profilePhoto');
 
@@ -358,6 +367,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         // 3. Recent Activity (Latest 5 records sorted by activity time to match Job History)
         const recentJobs = await Job.find({
             providerId: userId,
+            countryCode,
             status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.CLOSED] }
         })
         .sort({ updatedAt: -1 })
@@ -365,11 +375,17 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
 
         const activities = await Promise.all(recentJobs.map(async (jobRaw) => {
             const j = await enrichWithNegotiation(await sanitizeJobForMobile(jobRaw));
+
+            // Map terminal statuses to COMPLETED for UI consistency
+            const displayStatus = [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status as JobStatus)
+                ? JobStatus.COMPLETED
+                : j.status;
+
             return {
                 id: j.id,
                 type: 'JOB',
-                status: j.status,
-                title: `${j.status.replace('_', ' ')}: ${j.serviceName}`,
+                status: displayStatus,
+                title: `${displayStatus.replace('_', ' ')}: ${j.serviceName}`,
                 serviceName: j.serviceName,
                 address: j.location?.address,
                 amount: j.providerEarnings,
