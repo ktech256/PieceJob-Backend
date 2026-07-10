@@ -526,6 +526,16 @@ export const issueManualCredit = async (req: AuthRequest, res: Response) => {
             }
         });
 
+        // 3. Reconcile with Service Fee Records
+        // This ensures the Manual Credit immediately reduces outstanding job debts.
+        await financialService.reconcileProviderCredit(providerId, amount, session, {
+            source: 'MANUAL_CREDIT',
+            description: reason,
+            adminId,
+            currency,
+            countryCode: providerUser.countryCode
+        });
+
         // 2. Log Admin Action for Audit
         await auditService.logAdminAction({
             countryCode: providerUser.countryCode,

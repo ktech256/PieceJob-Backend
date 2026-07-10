@@ -6,6 +6,7 @@ import Provider from '../models/Provider';
 import Country from '../models/Country';
 import * as pricingService from '../services/pricing.service';
 import * as walletService from '../services/wallet.service';
+import * as financialService from '../services/financial.service';
 import { formatToWorkspaceTime } from '../utils/date';
 
 export const getWalletBalance = async (req: AuthRequest, res: Response) => {
@@ -288,37 +289,16 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
         // Legacy sync: serviceFeeBalance tracks debt only (always <= 0)
         wallet.serviceFeeBalance = Math.min(0, wallet.balanceCredit);
 
-        // Record Timeline in all associated outstanding ServiceFeeRecords
-        const serviceFeeRecords = await CommissionRecord.find({
-            providerId,
-            status: { $in: ['OUTSTANDING', 'PARTIAL'] }
-        }).sort({ createdAt: 1 }).session(session);
-
-        let remainingPayment = paymentAmount;
-        for (const record of serviceFeeRecords) {
-            if (remainingPayment <= 0) break;
-            const toPay = Math.min(record.outstandingBalance, remainingPayment);
-            record.outstandingBalance -= toPay;
-            remainingPayment -= toPay;
-            record.status = record.outstandingBalance <= 0 ? 'PAID' : 'PARTIAL';
-            record.timeline.push({
-                event: vendor === 'CREDIT' ? 'CREDIT_PAYMENT_REDEEMED' : 'VOUCHER_PAYMENT_REDEEMED',
-                timestamp: new Date(),
-                metadata: { vendor, amount: toPay, voucherNumber: vendor === 'CREDIT' ? 'INTERNAL' : voucherNumber }
-            });
-            await record.save({ session });
-        }
-
-        // Automatic Unsuspension
-        const settings = await SystemSettings.findOne({ countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
-        if (settings?.autoUnsuspendEnabled && wallet.isSuspended) {
-            const threshold = settings?.serviceFeeSuspensionThreshold || 100;
-            if (wallet.serviceFeeBalance >= -threshold) {
-                wallet.status = 'ACTIVE';
-                wallet.isSuspended = false;
-                wallet.suspendReason = undefined;
-            }
-        }
+        // Record Timeline in all associated outstanding ServiceFeeRecords (Automatic Reconciliation)
+        // This ensures that Voucher payments or Internal Credit settlements immediately reduce outstanding job debts.
+        await financialService.reconcileProviderCredit(providerId as string, paymentAmount, session, {
+            source: vendor === 'CREDIT' ? 'INTERNAL_CREDIT' : 'VOUCHER_PAYMENT',
+            description: vendor === 'CREDIT' ? 'Internal Credit applied to Outstanding Fees' : `Voucher Payment (${vendor}) applied to Outstanding Fees`,
+            vendor,
+            voucherNumber,
+            currency: wallet.currency,
+            countryCode: wallet.countryCode
+        });
 
         await wallet.save({ session });
 

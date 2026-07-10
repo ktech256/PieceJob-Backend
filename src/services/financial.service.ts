@@ -408,3 +408,85 @@ export const releaseEscrowFunds = async () => {
     session.endSession();
   }
 };
+
+/**
+ * Automatically reconciles any credit amount against outstanding service fee records.
+ * This implements the single running account logic where credits must first settle existing debt.
+ */
+export const reconcileProviderCredit = async (providerId: string, amountToApply: number, session: mongoose.ClientSession, metadata: any = {}) => {
+    if (amountToApply <= 0) return;
+
+    const records = await CommissionRecord.find({
+        providerId: new mongoose.Types.ObjectId(providerId),
+        status: { $in: ['OUTSTANDING', 'PARTIAL'] }
+    }).sort({ createdAt: 1 }).session(session);
+
+    let remaining = amountToApply;
+    for (const record of records) {
+        if (remaining <= 0) break;
+
+        const toPay = Math.min(record.outstandingBalance, remaining);
+        record.outstandingBalance -= toPay;
+        remaining -= toPay;
+        record.status = record.outstandingBalance <= 0 ? 'PAID' : 'PARTIAL';
+
+        record.timeline.push({
+            event: 'CREDIT_AUTO_APPLIED',
+            timestamp: new Date(),
+            metadata: {
+                amount: toPay,
+                remaining: record.outstandingBalance,
+                source: metadata.source || 'MANUAL_ADJUSTMENT'
+            }
+        });
+
+        await record.save({ session });
+
+        // Ledger for Automatic Credit Consumption (Auditable)
+        await new Ledger({
+            transactionId: `AC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+            jobId: record.jobId,
+            fromUserId: providerId,
+            amount: toPay,
+            currency: record.currency || metadata.currency || 'USD',
+            countryCode: record.countryCode || metadata.countryCode || 'GLOBAL',
+            type: TransactionType.SERVICE_FEE,
+            status: 'COMPLETED',
+            description: `Automatic Credit Application (${metadata.description || 'Credit applied to Job'} #${record.jobId.toString().slice(-6)})`,
+            metadata: {
+                ...metadata,
+                applied: toPay,
+                remainingRecordDebt: record.outstandingBalance
+            }
+        }).save({ session });
+    }
+
+    // After reconciliation, check if the provider can be unsuspended
+    const wallet = await Wallet.findOne({ userId: new mongoose.Types.ObjectId(providerId) }).session(session);
+    if (wallet && wallet.isSuspended) {
+        const settings = await SystemSettings.findOne({ countryCode: wallet.countryCode }).session(session) || await SystemSettings.findOne({ countryCode: 'GLOBAL' }).session(session);
+        if (settings?.autoUnsuspendEnabled) {
+            const threshold = settings?.serviceFeeSuspensionThreshold || 100;
+            if (wallet.serviceFeeBalance >= -threshold) {
+                wallet.status = 'ACTIVE';
+                wallet.isSuspended = false;
+                wallet.suspendReason = undefined;
+                await wallet.save({ session });
+
+                await auditService.logAdminAction({
+                    countryCode: wallet.countryCode,
+                    adminId: 'SYSTEM',
+                    adminRole: 'SYSTEM',
+                    action: 'PROVIDER_AUTO_UNSUSPEND',
+                    entityType: 'Provider',
+                    entityId: providerId,
+                    afterState: { status: 'ACTIVE', serviceFeeBalance: wallet.serviceFeeBalance },
+                    ipAddress: 'System',
+                    systemSource: 'CORE_ENGINE'
+                }, session);
+            }
+        }
+    }
+
+    return remaining;
+}
