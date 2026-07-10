@@ -11,6 +11,7 @@ import * as auditService from '../../services/audit.service';
 import { StatementType } from '../../models/Statement';
 import Job from '../../models/Job';
 import mongoose from 'mongoose';
+import { logger } from '../../utils/logger';
 
 import ServiceFeeRecord from '../../models/ServiceFeeRecord';
 import SystemSettings from '../../models/SystemSettings';
