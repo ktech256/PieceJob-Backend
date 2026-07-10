@@ -48,10 +48,18 @@ export const analyzeJobCompletion = async (jobId: string) => {
         });
         await alert.save();
 
-        // Put escrow on hold
-        job.escrowStatus = 'ESCROW_HOLD_REVIEW';
-        job.fraudFlag = 'FAKE_COMPLETION';
-        await job.save();
+        // Put escrow on hold (Atomic update, only if not already set)
+        if (job.escrowStatus !== 'ESCROW_HOLD_REVIEW') {
+            await Job.updateOne(
+                { _id: jobId },
+                {
+                    $set: {
+                        escrowStatus: 'ESCROW_HOLD_REVIEW',
+                        fraudFlag: 'FAKE_COMPLETION'
+                    }
+                }
+            );
+        }
 
         emitAdminUpdate('fraud_alert', {
             alertId: alert.id,

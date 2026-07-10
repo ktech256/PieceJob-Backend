@@ -2,6 +2,7 @@ import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
 import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
+import ServiceExpectedDuration from '../models/ServiceExpectedDuration';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
 import { emitToUser, emitJobUpdate, emitAdminUpdate, emitToWorkspace, isUserConnected } from '../socket/socket.service';
@@ -86,41 +87,75 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
         const session = await mongoose.startSession();
         session.startTransaction();
         try {
-            // 1. Atomic Status Update to 'Lock' the completion process
+            // 1. Preliminary Read (In session) to prepare the single atomic write
+            const jobData = await Job.findById(jobId).session(session);
+
+            if (!jobData) {
+                throw new Error('Job not found');
+            }
+
+            // Idempotency: If already completed, just return success
+            if ([JobStatus.COMPLETED, JobStatus.CLOSED, JobStatus.RATED].includes(jobData.status)) {
+                await session.commitTransaction();
+                session.endSession();
+                return jobData;
+            }
+
+            if (jobData.status === JobStatus.CANCELLED) {
+                throw new Error('Cannot complete a cancelled job');
+            }
+
+            if (!jobData.providerId) {
+                throw new Error('Cannot complete a job without an assigned provider');
+            }
+
+            // 2. Metadata Recovery & Fraud Check (In-Memory / Read-Only)
+            const metadata = await recoverJobMetadata(jobData, session);
+
+            const completedAt = new Date();
+            const startTime = jobData.startedAt || jobData.acceptedAt;
+            let fraudUpdate: any = {};
+
+            if (startTime) {
+                const actualDurationMin = (completedAt.getTime() - startTime.getTime()) / (1000 * 60);
+                const expected = await ServiceExpectedDuration.findOne({
+                    serviceCode: jobData.serviceCode,
+                    countryCode: jobData.countryCode || metadata.countryCode
+                }).session(session);
+
+                const expectedDurationMin = expected?.expectedDurationMinutes || 60;
+                if (actualDurationMin < 0.5 * expectedDurationMin) {
+                   fraudUpdate = {
+                       escrowStatus: 'ESCROW_HOLD_REVIEW',
+                       fraudFlag: 'FAKE_COMPLETION'
+                   };
+                }
+            }
+
+            // 3. THE SINGLE ATOMIC WRITE to the Job document
+            // We consolidate status change, metadata repair, and fraud flagging into one operation.
             const job = await Job.findOneAndUpdate(
                 {
                     _id: jobId,
-                    status: { $nin: [JobStatus.COMPLETED, JobStatus.CLOSED, JobStatus.RATED, JobStatus.CANCELLED] }
+                    status: jobData.status // Ensure no status change happened since pre-read
                 },
                 {
                     $set: {
                         status: JobStatus.COMPLETED,
-                        completedAt: new Date(),
-                        updatedAt: new Date()
+                        completedAt: completedAt,
+                        updatedAt: completedAt,
+                        countryCode: jobData.countryCode || metadata.countryCode,
+                        ...fraudUpdate
                     }
                 },
                 { session, new: true }
             );
 
             if (!job) {
-                // Already completed or cancelled - Idempotent success
-                const doubleCheck = await Job.findById(jobId).session(session);
-                if (doubleCheck && [JobStatus.COMPLETED, JobStatus.CLOSED, JobStatus.RATED].includes(doubleCheck.status)) {
-                    await session.commitTransaction();
-                    session.endSession();
-                    return doubleCheck;
-                }
-                throw new Error('Job not found or in an invalid state for completion');
+                throw new Error('Concurrent status update detected during completion');
             }
 
-            if (!job.providerId) {
-                throw new Error('Cannot complete a job without an assigned provider');
-            }
-
-            // 2. Metadata Recovery
-            const metadata = await recoverJobMetadata(job, session);
-
-            // 3. Financials (Uses internal idempotency check on CommissionRecord)
+            // 4. Financials (Includes Wallet update in transaction)
             const totalAmount = (job.serviceFee || 0) + job.bookingFee;
             const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
 
@@ -134,27 +169,30 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 session
             );
 
-            // 4. Provider Stats Update (Atomic $inc to prevent conflicts)
-            await Provider.findOneAndUpdate(
-                { userId: job.providerId },
-                {
-                    $inc: {
-                        jobsCompleted: 1,
-                        'performance.completedJobs': 1
-                    }
-                },
-                { session }
-            );
-
+            // 5. COMMIT TRANSACTION
+            // Note: Provider stats update is MOVED outside to avoid Heartbeat write conflicts.
             await session.commitTransaction();
             session.endSession();
 
-            // FOLLOW UP (Async / Non-critical)
+            // 6. Secondary Operations (Outside Transaction / Non-blocking)
             try {
+                // Provider Stats Update (Atomic $inc - safe outside transaction)
+                await Provider.findOneAndUpdate(
+                    { userId: job.providerId },
+                    {
+                        $inc: {
+                            jobsCompleted: 1,
+                            'performance.completedJobs': 1
+                        }
+                    }
+                );
+
+                // Fraud Alert and Stats Update
                 fraudService.analyzeJobCompletion(job.id);
+
                 userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
-            } catch (followUpErr) {
-                logger.warn(`JOB_COMPLETION | Follow-up Error: ${followUpErr}`);
+            } catch (postCommitErr) {
+                logger.warn(`JOB_COMPLETION | Post-Commit Error: ${postCommitErr}`);
             }
 
             // Real-Time Sync
