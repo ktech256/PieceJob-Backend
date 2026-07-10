@@ -155,6 +155,10 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 throw new Error('Concurrent status update detected during completion');
             }
 
+            if (!job.providerId) {
+                throw new Error('Job document is missing providerId during completion');
+            }
+
             // 4. Financials (Includes Wallet update in transaction)
             const totalAmount = (job.serviceFee || 0) + job.bookingFee;
             const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
