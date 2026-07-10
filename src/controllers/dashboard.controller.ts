@@ -397,6 +397,14 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             };
         }));
 
+        // 4. Referral Campaign
+        const referralCampaign = await ReferralCampaign.findOne({
+            isActive: true,
+            startDate: { $lte: now },
+            endDate: { $gte: now },
+            countryCode
+        }).sort({ createdAt: -1 });
+
         res.status(200).json({
             success: true,
             data: {
@@ -410,6 +418,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                 stats,
                 activeJob,
                 recentActivity: activities,
+                referralCampaign,
                 currency: currencySymbol
             }
         });

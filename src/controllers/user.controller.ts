@@ -4,7 +4,9 @@ import User from '../models/User';
 import Job, { JobStatus } from '../models/Job';
 import * as auditService from '../services/audit.service';
 import * as storageService from '../services/storage.service';
+import * as notificationService from '../services/notification.service';
 import { logger } from '../utils/logger';
+import mongoose from 'mongoose';
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -457,5 +459,68 @@ export const getReferralStats = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, data: stats });
     } catch (error: any) {
         res.status(500).json({ success: false, message: 'Failed to fetch referral stats', error: error.message });
+    }
+};
+
+export const attachReferral = async (req: AuthRequest, res: Response) => {
+    try {
+        const { referralCode } = req.body;
+        const userId = req.user?.userId;
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Forensically verify if referral can be attached
+        if (user.referredBy) {
+            return res.status(400).json({ success: false, message: 'Referral is already locked for this account.' });
+        }
+
+        // Check if user has already started a job
+        const jobCount = await Job.countDocuments({ customerId: userId });
+        const providerJobCount = await Job.countDocuments({ providerId: userId });
+
+        if (jobCount > 0 || providerJobCount > 0) {
+             return res.status(400).json({ success: false, message: 'Referrals can only be attached before your first job.' });
+        }
+
+        const referrer = await User.findOne({ referralCode });
+        if (!referrer) {
+            return res.status(404).json({ success: false, message: 'Invalid referral code.' });
+        }
+
+        if (referrer._id.toString() === userId) {
+            return res.status(400).json({ success: false, message: 'You cannot refer yourself.' });
+        }
+
+        user.referredBy = referrer._id as any;
+        await user.save();
+
+        // Create Referral Record
+        const campaign = await mongoose.model('ReferralCampaign').findOne({
+            countryCode: user.countryCode,
+            isActive: true,
+            startDate: { $lte: new Date() },
+            endDate: { $gte: new Date() }
+        });
+
+        if (campaign) {
+            await mongoose.model('ReferralRecord').create({
+                referrerId: referrer._id,
+                referredId: user._id,
+                campaignId: campaign._id,
+                countryCode: user.countryCode
+            });
+
+            // Notification: Referral Registered
+            await notificationService.notifyUser(
+                referrer._id.toString(),
+                'New Referral Joined!',
+                `${user.firstName} has linked their account to your referral code.`
+            );
+        }
+
+        res.status(200).json({ success: true, message: 'Referral code attached successfully.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
     }
 };

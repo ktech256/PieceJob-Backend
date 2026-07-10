@@ -150,14 +150,15 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         if (campaign.rewardDelayDays === 0) {
             await executeRewardPayout(reward, session);
         } else {
+            reward.status = ReferralStatus.QUALIFIED; // Mark as qualified but pending delay
             await reward.save({ session });
-            logger.info(`Referral reward scheduled for ${reward.scheduledAt}`);
+            logger.info(`Referral reward qualified for ${reward.referredId}. Scheduled payout at ${reward.scheduledAt}`);
 
             // Notification: Referral Qualified
             await notificationService.notifyUser(
                 user.referredBy.toString(),
                 'Referral Qualified!',
-                `Good news! ${user.firstName} has completed their first job. Your reward of ${campaign.rewardAmount} ${campaign.currency} is pending approval.`
+                `Good news! ${user.firstName} has completed a qualifying job. Your reward of ${campaign.rewardAmount} ${campaign.currency} is being processed.`
             );
         }
 
@@ -181,6 +182,21 @@ export const executeRewardPayout = async (reward: any, session?: mongoose.Client
         const referrer = await User.findById(reward.referrerId).session(session as any);
         const referred = await User.findById(reward.referredId).session(session as any);
         if (!referrer || !referred) throw new Error('Referrer or Referred user not found');
+
+        // Check if referral privileges are still active
+        if (referrer.isReferralDisabled) {
+            reward.status = ReferralStatus.DISABLED;
+            reward.rejectionReason = 'Referrer privileges are disabled.';
+            await reward.save({ session });
+            return;
+        }
+
+        if (referrer.isBanned) {
+            reward.status = ReferralStatus.REJECTED;
+            reward.rejectionReason = 'Referrer is banned.';
+            await reward.save({ session });
+            return;
+        }
 
         await walletService.mutateWallet({
             userId: reward.referrerId.toString(),
@@ -229,7 +245,7 @@ export const executeRewardPayout = async (reward: any, session?: mongoose.Client
 export const processScheduledRewards = async () => {
     try {
         const rewards = await ReferralReward.find({
-            status: ReferralStatus.PENDING,
+            status: { $in: [ReferralStatus.PENDING, ReferralStatus.QUALIFIED] },
             scheduledAt: { $lte: new Date() }
         });
 

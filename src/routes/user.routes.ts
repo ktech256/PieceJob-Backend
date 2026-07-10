@@ -7,6 +7,7 @@ const router = Router();
 router.get('/profile', authenticate, userController.getProfile);
 router.put('/profile', authenticate, userController.updateProfile);
 router.get('/referrals', authenticate, userController.getReferralStats);
+router.post('/referrals/attach', authenticate, userController.attachReferral);
 router.patch('/fcm-token', authenticate, userController.updateFcmToken);
 
 // Addresses
