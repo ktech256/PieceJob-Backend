@@ -165,55 +165,99 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
     });
     await serviceFeeRecord.save({ session });
 
-    // 4. Update Provider Wallet Service Fee Balance
-    // Debt is stored as negative per user requirement
-    // ALWAYS update wallet to ensure countryCode/currency are set if it was upserted or missing
-    const walletUpdate: any = {
-        $setOnInsert: { countryCode: finalCountryCode, currency: finalCurrency }
-    };
-
-    if (outstandingServiceFee > 0) {
-        walletUpdate.$inc = { serviceFeeBalance: -outstandingServiceFee };
+    // 4. Update Provider Wallet (Running Account Logic)
+    let wallet = await Wallet.findOne({ userId: providerId }).session(session);
+    if (!wallet) {
+        wallet = new Wallet({
+            userId: providerId,
+            countryCode: finalCountryCode,
+            currency: finalCurrency,
+            balanceMain: 0,
+            balanceEscrow: 0,
+            balanceCredit: 0,
+            balanceReferral: 0,
+            balanceBonus: 0,
+            serviceFeeBalance: 0
+        });
     }
 
-    const wallet = await Wallet.findOneAndUpdate(
-        { userId: providerId },
-        walletUpdate,
-        { session, new: true, upsert: true, runValidators: false }
-    );
+    const initialCredit = wallet.balanceCredit;
+    let appliedFromCredit = 0;
 
-    // SELF-HEALING: If existing wallet is missing countryCode or currency, repair it on the object before .save()
-    if (!wallet.countryCode || wallet.countryCode === "") {
-        logger.info(`FINANCIALS | Repairing missing countryCode on Wallet for User: ${providerId}`);
-        wallet.countryCode = finalCountryCode;
-    }
-    if (!wallet.currency) {
-        wallet.currency = finalCurrency;
-    }
+    // Automatic Credit Application: If Credit is positive, deduct it before increasing debt
+    if (initialCredit > 0 && outstandingServiceFee > 0) {
+        appliedFromCredit = Math.min(initialCredit, outstandingServiceFee);
 
-    // 5. Suspension Logic (only if debt increased)
-    if (outstandingServiceFee > 0) {
-        const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
-        if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance < -suspensionThreshold) {
-            wallet.status = 'SUSPENDED';
-            wallet.isSuspended = true;
-            wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
-            // Validation is now safe because we repaired countryCode above if it was missing
-            await wallet.save({ session });
+        // Record Ledger for Automatic Consumption
+        await new Ledger({
+            transactionId: `AC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+            jobId: job._id,
+            fromUserId: providerId,
+            amount: appliedFromCredit,
+            currency: finalCurrency,
+            countryCode: finalCountryCode,
+            type: TransactionType.SERVICE_FEE,
+            status: 'COMPLETED',
+            isTestTransaction: isTest,
+            description: `Automatic Credit Application (Job #${job._id.toString().slice(-6)})`,
+            metadata: {
+                previousCredit: initialCredit,
+                applied: appliedFromCredit,
+                remainingDebt: outstandingServiceFee - appliedFromCredit
+            }
+        }).save({ session });
 
-            await auditService.logAdminAction({
-                countryCode: finalCountryCode,
-                adminId: 'SYSTEM',
-                adminRole: 'SYSTEM',
-                action: 'PROVIDER_AUTO_SUSPEND',
-                entityType: 'Provider',
-                entityId: providerId,
-                afterState: { status: 'SUSPENDED', serviceFeeBalance: wallet.serviceFeeBalance },
-                ipAddress: 'System',
-                systemSource: 'CORE_ENGINE'
-            }, session);
+        wallet.balanceCredit -= appliedFromCredit;
+
+        // Update the Service Fee Record to reflect the partial/full payment from existing credit
+        serviceFeeRecord.outstandingBalance = Math.max(0, outstandingServiceFee - appliedFromCredit);
+        if (serviceFeeRecord.outstandingBalance <= 0) {
+            serviceFeeRecord.status = 'PAID';
         }
+        serviceFeeRecord.timeline.push({
+            event: 'CREDIT_AUTO_APPLIED',
+            timestamp: new Date(),
+            metadata: { amount: appliedFromCredit, remaining: serviceFeeRecord.outstandingBalance }
+        });
+        await serviceFeeRecord.save({ session });
     }
+
+    // Now apply the remaining debt (if any) to the running account
+    const debtToApply = outstandingServiceFee - appliedFromCredit;
+    if (debtToApply > 0) {
+        wallet.balanceCredit -= debtToApply;
+    }
+
+    // Legacy sync: serviceFeeBalance tracks debt (negative)
+    wallet.serviceFeeBalance = Math.min(0, wallet.balanceCredit);
+
+    // SELF-HEALING: Repair missing config
+    if (!wallet.countryCode || wallet.countryCode === "") wallet.countryCode = finalCountryCode;
+    if (!wallet.currency) wallet.currency = finalCurrency;
+
+    await wallet.save({ session });
+
+    // 5. Suspension Logic (using legacy field for consistency)
+    const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;
+    if (settings?.autoSuspendEnabled && wallet.serviceFeeBalance < -suspensionThreshold) {
+        wallet.status = 'SUSPENDED';
+        wallet.isSuspended = true;
+        wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
+        await wallet.save({ session });
+
+        await auditService.logAdminAction({
+            countryCode: finalCountryCode,
+            adminId: 'SYSTEM',
+            adminRole: 'SYSTEM',
+            action: 'PROVIDER_AUTO_SUSPEND',
+            entityType: 'Provider',
+            entityId: providerId,
+            afterState: { status: 'SUSPENDED', serviceFeeBalance: wallet.serviceFeeBalance },
+            ipAddress: 'System',
+            systemSource: 'CORE_ENGINE'
+        }, session);
+    }
+
 
     if (!existingSession) await session.commitTransaction();
     logger.info(`FINANCIALS | COMPLETED | Job: ${job._id} | Negotiated: ${isNegotiated} | Outstanding: ${outstandingServiceFee}`);

@@ -136,12 +136,23 @@ export const waiveServiceFee = async (req: AuthRequest, res: Response) => {
 
         await record.save({ session });
 
-        // Update Wallet
-        await Wallet.findOneAndUpdate(
-            { userId: record.providerId },
-            { $inc: { serviceFeeBalance: waiveAmount } },
-            { session }
-        );
+        // Update Wallet via mutateWallet to ensure Running Account (balanceCredit) is updated and audited
+        await walletService.mutateWallet({
+            userId: record.providerId.toString(),
+            amount: waiveAmount,
+            type: TransactionType.SERVICE_FEE,
+            balanceType: 'balanceCredit',
+            description: `Service Fee Waived (Job #${record.jobId.toString().slice(-6)})`,
+            jobId: record.jobId.toString(),
+            countryCode: record.countryCode,
+            currency: record.currency,
+            session,
+            metadata: {
+                action: 'WAIVE',
+                adminId: req.user?.userId,
+                reason
+            }
+        });
 
         await auditService.logAdminAction({
             countryCode: record.countryCode,

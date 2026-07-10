@@ -46,6 +46,17 @@ export const mutateWallet = async (options: WalletMutationOptions) => {
         { session, upsert: true, new: true }
     );
 
+    // Sync serviceFeeBalance if balanceCredit was mutated to maintain legacy debt tracking
+    if (balanceType === 'balanceCredit') {
+        await Wallet.updateOne(
+            { _id: wallet._id },
+            { $set: { serviceFeeBalance: Math.min(0, wallet.balanceCredit) } },
+            { session }
+        );
+        // Update local object for subsequent logic in this function
+        wallet.serviceFeeBalance = Math.min(0, wallet.balanceCredit);
+    }
+
     // 2. Create Ledger Entry
     const ledger = new Ledger({
         transactionId: `TX-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-6)}`,
