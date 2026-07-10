@@ -126,6 +126,7 @@ export const getWalletBalance = async (userId: string): Promise<any> => {
             date: r.createdAt,
             acceptedPrice: r.acceptedPrice,
             serviceFeeAmount: r.serviceFeeAmount,
+            originalFee: r.serviceFeeAmount - r.bookingFeePaid,
             outstandingBalance: r.outstandingBalance,
             status: r.status
         }))
