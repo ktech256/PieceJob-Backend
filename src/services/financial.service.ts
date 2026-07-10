@@ -181,51 +181,54 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         });
     }
 
-    const initialCredit = wallet.balanceCredit;
-    let appliedFromCredit = 0;
+    // All Service Fee debt is immediately transferred to the running balance (balanceCredit)
+    // This maintains the single running account where the Wallet reflects the final balance.
+    if (outstandingServiceFee > 0) {
+        const initialCredit = wallet.balanceCredit;
 
-    // Automatic Credit Application: If Credit is positive, deduct it before increasing debt
-    if (initialCredit > 0 && outstandingServiceFee > 0) {
-        appliedFromCredit = Math.min(initialCredit, outstandingServiceFee);
+        // Transfer the fee to the running account balance
+        wallet.balanceCredit -= outstandingServiceFee;
 
-        // Record Ledger for Automatic Consumption
-        await new Ledger({
-            transactionId: `AC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-            jobId: job._id,
-            fromUserId: providerId,
-            amount: appliedFromCredit,
-            currency: finalCurrency,
-            countryCode: finalCountryCode,
-            type: TransactionType.SERVICE_FEE,
-            status: 'COMPLETED',
-            isTestTransaction: isTest,
-            description: `Automatic Credit Application (Job #${job._id.toString().slice(-6)})`,
-            metadata: {
-                previousCredit: initialCredit,
-                applied: appliedFromCredit,
-                remainingDebt: outstandingServiceFee - appliedFromCredit
-            }
-        }).save({ session });
+        // Determine how much of this was settled by existing positive credit vs increasing debt
+        const appliedFromCredit = Math.min(Math.max(0, initialCredit), outstandingServiceFee);
+        const debtTransferred = outstandingServiceFee - appliedFromCredit;
 
-        wallet.balanceCredit -= appliedFromCredit;
-
-        // Update the Service Fee Record to reflect the partial/full payment from existing credit
-        serviceFeeRecord.outstandingBalance = Math.max(0, outstandingServiceFee - appliedFromCredit);
-        if (serviceFeeRecord.outstandingBalance <= 0) {
-            serviceFeeRecord.status = 'PAID';
+        if (appliedFromCredit > 0) {
+            // Record Ledger for Automatic Consumption (Auditable)
+            await new Ledger({
+                transactionId: `AC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                jobId: job._id,
+                fromUserId: providerId,
+                amount: appliedFromCredit,
+                currency: finalCurrency,
+                countryCode: finalCountryCode,
+                type: TransactionType.SERVICE_FEE,
+                status: 'COMPLETED',
+                isTestTransaction: isTest,
+                description: `Automatic Credit Application (Job #${job._id.toString().slice(-6)})`,
+                metadata: {
+                    previousCredit: initialCredit,
+                    applied: appliedFromCredit,
+                    remainingJobDebt: 0 // Job debt is now 0 as it's transferred
+                }
+            }).save({ session });
         }
+
+        // Mark the Job Record as PAID immediately because it's been transferred to the running account
+        // This satisfies the requirement that historical records shouldn't represent active debt.
+        serviceFeeRecord.outstandingBalance = 0;
+        serviceFeeRecord.status = 'PAID';
         serviceFeeRecord.timeline.push({
-            event: 'CREDIT_AUTO_APPLIED',
+            event: 'TRANSFERRED_TO_RUNNING_ACCOUNT',
             timestamp: new Date(),
-            metadata: { amount: appliedFromCredit, remaining: serviceFeeRecord.outstandingBalance }
+            metadata: {
+                amount: outstandingServiceFee,
+                appliedFromCredit,
+                debtTransferred,
+                newWalletCredit: wallet.balanceCredit
+            }
         });
         await serviceFeeRecord.save({ session });
-    }
-
-    // Now apply the remaining debt (if any) to the running account
-    const debtToApply = outstandingServiceFee - appliedFromCredit;
-    if (debtToApply > 0) {
-        wallet.balanceCredit -= debtToApply;
     }
 
     // Legacy sync: serviceFeeBalance tracks debt (negative)
