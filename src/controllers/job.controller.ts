@@ -608,7 +608,7 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
 
         // 3. EXECUTION & POPULATION
         const jobs = await Job.find(query)
-            .sort({ createdAt: -1 })
+            .sort({ updatedAt: -1 })
             .populate('customerId', 'firstName lastName profilePhoto phoneNumber')
             .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
             .limit(100);

@@ -103,38 +103,37 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
             countryCode
         }).sort({ createdAt: -1 });
 
-        // 5. Latest Activity (Limited to 5 records sorted by request time to match Job History)
+        // 5. Latest Activity (Limited to 5 records sorted by activity time to match Job History)
         const latestActivityJobs = await Job.find({
             customerId: userId,
             status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.CLOSED] }
         })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean();
+        .sort({ updatedAt: -1 })
+        .limit(5);
 
-        const tz = country?.timezone || 'UTC';
-        const latestActivity = latestActivityJobs.map((j: any) => {
+        const latestActivity = await Promise.all(latestActivityJobs.map(async (jobRaw) => {
+            const j = await enrichWithNegotiation(await sanitizeJobForMobile(jobRaw));
             const isNegotiated = j.priceNegotiationRequired === true;
             return {
-                _id: j._id,
-                id: j._id,
+                _id: j.id,
+                id: j.id,
                 type: 'JOB',
                 status: j.status,
                 serviceCode: j.serviceCode,
-                serviceName: j.serviceName || j.serviceCode,
+                serviceName: j.serviceName,
                 address: j.location?.address,
                 amount: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status)
                     ? (isNegotiated ? (j.agreedPrice || (j.serviceFee + j.bookingFee)) : j.bookingFee)
                     : (j.bookingFee || null),
                 isNegotiated: isNegotiated,
-                startedAt: formatToWorkspaceTime(j.startedAt, tz),
-                completedAt: formatToWorkspaceTime(j.completedAt, tz),
-                cancelledAt: formatToWorkspaceTime(j.cancelledAt, tz),
+                startedAt: j.startedAt,
+                completedAt: j.completedAt,
+                cancelledAt: j.cancelledAt,
                 cancelledBy: j.cancelledBy,
-                createdAt: formatToWorkspaceTime(j.createdAt, tz),
-                currency: walletData.currency
+                createdAt: j.createdAt,
+                currency: j.currency || walletData.currency
             };
-        });
+        }));
 
         // 6. Top Rated Providers Nearby
         const lat = parseFloat(req.query.lat as string);
@@ -356,44 +355,29 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        // 3. Recent Activity (Latest 5 records sorted by request time to match Job History)
+        // 3. Recent Activity (Latest 5 records sorted by activity time to match Job History)
         const recentJobs = await Job.find({
             providerId: userId,
             status: { $in: [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.CLOSED] }
         })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean();
+        .sort({ updatedAt: -1 })
+        .limit(5);
 
-        const tz = country?.timezone || 'UTC';
-        const activities = await Promise.all(recentJobs.map(async (j: any) => {
-            let amount: any = 0;
-            const isFinished = [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED].includes(j.status);
-            if (isFinished) {
-                if (j.priceNegotiationRequired === true) {
-                    // Formula: Provider Earnings = Negotiated Total - Platform Service Fee
-                    const commissionLedger = await Ledger.findOne({ jobId: j._id, type: TransactionType.COMMISSION, status: 'COMPLETED' });
-                    const grossLedger = await Ledger.findOne({ jobId: j._id, type: TransactionType.SERVICE_FEE, status: 'COMPLETED' });
-                    amount = (grossLedger?.amount || 0) - (commissionLedger?.amount || 0);
-                } else {
-                    // Fixed Price: Provider Earnings = Service Fee (already excludes Booking Fee)
-                    amount = null; // Display as N/A
-                }
-            }
-
+        const activities = await Promise.all(recentJobs.map(async (jobRaw) => {
+            const j = await enrichWithNegotiation(await sanitizeJobForMobile(jobRaw));
             return {
-                id: j._id,
+                id: j.id,
                 type: 'JOB',
                 status: j.status,
-                title: `${j.status.replace('_', ' ')}: ${j.serviceName || j.serviceCode}`,
-                serviceName: j.serviceName || j.serviceCode,
+                title: `${j.status.replace('_', ' ')}: ${j.serviceName}`,
+                serviceName: j.serviceName,
                 address: j.location?.address,
-                amount: amount,
-                startedAt: formatToWorkspaceTime(j.startedAt, tz),
-                completedAt: formatToWorkspaceTime(j.completedAt, tz),
-                cancelledAt: formatToWorkspaceTime(j.cancelledAt, tz),
+                amount: j.providerEarnings,
+                startedAt: j.startedAt,
+                completedAt: j.completedAt,
+                cancelledAt: j.cancelledAt,
                 cancelledBy: j.cancelledBy,
-                createdAt: formatToWorkspaceTime(j.createdAt, tz)
+                createdAt: j.createdAt
             };
         }));
 
