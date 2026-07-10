@@ -14,6 +14,7 @@ import * as notificationQueue from '../services/notification.queue';
 import * as fraudService from '../services/fraud.service';
 import * as testUserService from '../services/test-user.service';
 import * as settingsService from '../services/settings.service';
+import * as notificationService from '../services/notification.service';
 
 export const requestOtp = async (req: Request, res: Response) => {
   try {

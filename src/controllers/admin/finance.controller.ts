@@ -439,7 +439,9 @@ export const listReferrals = async (req: AuthRequest, res: Response) => {
 
 export const getReferralAnalytics = async (req: AuthRequest, res: Response) => {
     try {
-        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const countryCode = (req.query.countryCode as string) || req.user?.countryCode;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'Country code required' });
+
         const analytics = await referralService.getReferralAnalytics(countryCode);
         res.status(200).json({ success: true, data: analytics });
     } catch (error: any) {
