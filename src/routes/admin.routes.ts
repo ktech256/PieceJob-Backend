@@ -195,6 +195,7 @@ router.get('/finance/commissions/timeline/:jobId', hasPermission('MANAGE_FINANCE
 
 router.post('/finance/reconciliation/run', hasPermission('MANAGE_FINANCE'), financeController.runReconciliation);
 router.post('/finance/statements/provider/generate', hasPermission('MANAGE_FINANCE'), financeController.generateProviderStatement);
+router.post('/finance/manual-credit', hasPermission('MANAGE_FINANCE'), financeController.issueManualCredit);
 
 // Pricing & Rules (PAGE 4)
 router.get('/pricing/rules', hasPermission('MANAGE_PRICING'), pricingAdminController.listPricingRules);

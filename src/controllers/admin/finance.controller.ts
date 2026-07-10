@@ -3,8 +3,10 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 import Ledger, { TransactionType } from '../../models/Ledger';
 import Wallet from '../../models/Wallet';
 import Provider from '../../models/Provider';
+import User from '../../models/User';
 import * as reconciliationService from '../../services/reconciliation.service';
 import * as statementService from '../../services/statement.service';
+import * as walletService from '../../services/wallet.service';
 import * as auditService from '../../services/audit.service';
 import { StatementType } from '../../models/Statement';
 import Job from '../../models/Job';
@@ -467,5 +469,85 @@ export const generateProviderStatement = async (req: AuthRequest, res: Response)
         res.status(200).json({ success: true, statement });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Manually credit a provider's wallet balance (specifically balanceCredit).
+ * This is used for adjustments, bonuses, goodwill, etc.
+ */
+export const issueManualCredit = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { providerId, amount, reason, notes } = req.body;
+        const adminId = req.user?.userId;
+
+        if (!providerId || !amount || amount <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid providerId or amount' });
+        }
+
+        const providerUser = await User.findById(providerId).session(session);
+        if (!providerUser) {
+            return res.status(404).json({ success: false, message: 'Provider user not found' });
+        }
+
+        const country = await Country.findOne({ code: providerUser.countryCode }).session(session);
+        const currency = country?.currency || 'USD';
+
+        // 1. Mutate Wallet balanceCredit
+        const result = await walletService.mutateWallet({
+            userId: providerId,
+            amount,
+            type: TransactionType.MANUAL_CREDIT,
+            balanceType: 'balanceCredit',
+            description: reason || 'Manual Admin Credit',
+            countryCode: providerUser.countryCode,
+            currency,
+            session,
+            metadata: {
+                manual: true,
+                adminId,
+                notes,
+                reason,
+                workspace: providerUser.countryCode
+            }
+        });
+
+        // 2. Log Admin Action for Audit
+        await auditService.logAdminAction({
+            countryCode: providerUser.countryCode,
+            adminId: adminId as string,
+            adminRole: req.user?.role as string,
+            action: 'MANUAL_CREDIT_ISSUED',
+            entityType: 'Wallet',
+            entityId: result?.wallet?._id?.toString() || 'unknown',
+            afterState: {
+                providerId,
+                amount,
+                reason,
+                notes,
+                newBalance: result?.wallet?.balanceCredit
+            },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        }, session);
+
+        await session.commitTransaction();
+
+        res.status(200).json({
+            success: true,
+            message: 'Manual credit issued successfully',
+            data: {
+                transactionId: result?.ledger?.transactionId,
+                newBalance: result?.wallet?.balanceCredit
+            }
+        });
+    } catch (error: any) {
+        await session.abortTransaction();
+        logger.error(`FINANCE | MANUAL_CREDIT_FAILED | Provider: ${req.body.providerId} | Error: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
     }
 };
