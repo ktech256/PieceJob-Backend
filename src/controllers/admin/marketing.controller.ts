@@ -126,7 +126,14 @@ export const listReferralCampaigns = async (req: AuthRequest, res: Response) => 
         }
 
         const campaigns = await ReferralCampaign.find(query).sort({ createdAt: -1 });
-        res.status(200).json({ success: true, data: campaigns });
+
+        const data = await Promise.all(campaigns.map(async (c) => {
+            const obj = c.toObject();
+            if (obj.bannerUrl) obj.bannerUrl = await storageService.getSignedUrl(obj.bannerUrl);
+            return obj;
+        }));
+
+        res.status(200).json({ success: true, data });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

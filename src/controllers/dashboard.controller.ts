@@ -97,12 +97,20 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         }));
 
         // 4b. Referral Campaign (Isolated by Country)
-        const referralCampaign = await ReferralCampaign.findOne({
+        const rawReferralCampaign = await ReferralCampaign.findOne({
             isActive: true,
             startDate: { $lte: now },
             endDate: { $gte: now },
             countryCode
         }).sort({ createdAt: -1 });
+
+        let referralCampaign = null;
+        if (rawReferralCampaign) {
+            referralCampaign = rawReferralCampaign.toObject();
+            if (referralCampaign.bannerUrl) {
+                referralCampaign.bannerUrl = await storageService.getSignedUrl(referralCampaign.bannerUrl);
+            }
+        }
 
         // 5. Latest Activity (Limited to 5 records sorted by activity time to match Job History)
         const latestActivityJobs = await Job.find({
@@ -398,12 +406,20 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         }));
 
         // 4. Referral Campaign
-        const referralCampaign = await ReferralCampaign.findOne({
+        const rawReferralCampaign = await ReferralCampaign.findOne({
             isActive: true,
             startDate: { $lte: now },
             endDate: { $gte: now },
             countryCode
         }).sort({ createdAt: -1 });
+
+        let referralCampaign = null;
+        if (rawReferralCampaign) {
+            referralCampaign = rawReferralCampaign.toObject();
+            if (referralCampaign.bannerUrl) {
+                referralCampaign.bannerUrl = await storageService.getSignedUrl(referralCampaign.bannerUrl);
+            }
+        }
 
         res.status(200).json({
             success: true,

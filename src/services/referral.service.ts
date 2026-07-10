@@ -3,6 +3,7 @@ import User, { UserRole } from '../models/User';
 import ReferralCampaign from '../models/ReferralCampaign';
 import ReferralRecord from '../models/ReferralRecord';
 import ReferralReward, { ReferralStatus } from '../models/ReferralReward';
+import Country from '../models/Country';
 import * as walletService from './wallet.service';
 import * as financialService from './financial.service';
 import * as notificationService from './notification.service';
@@ -292,11 +293,16 @@ export const getReferralStats = async (userId: string) => {
         { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
 
+    // Forensic Fix: Resolve Workspace Currency
+    const country = await Country.findOne({ code: user.countryCode });
+    const currency = country?.currencySymbol || country?.currency || 'R';
+
     return {
         referralCode: user.referralCode,
         totalReferrals,
         paidRewards: paidRewards[0]?.total || 0,
         pendingRewards: pendingRewards[0]?.total || 0,
+        currency,
         history: rewardHistory.map((r: any) => ({
             id: r._id,
             referredUser: `${r.referredId?.firstName || 'User'} ${r.referredId?.lastName || ''}`.trim(),
@@ -304,6 +310,7 @@ export const getReferralStats = async (userId: string) => {
             completionDate: r.processedAt || r.scheduledAt,
             rewardAmount: r.amount,
             status: r.status,
+            currency: r.currency || currency,
             workspace: r.countryCode,
             createdAt: r.createdAt
         }))
