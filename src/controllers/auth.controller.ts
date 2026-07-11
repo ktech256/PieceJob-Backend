@@ -15,6 +15,7 @@ import * as fraudService from '../services/fraud.service';
 import * as testUserService from '../services/test-user.service';
 import * as settingsService from '../services/settings.service';
 import * as notificationService from '../services/notification.service';
+import SystemSettings from '../models/SystemSettings';
 
 export const requestOtp = async (req: Request, res: Response) => {
   try {
@@ -144,9 +145,23 @@ export const registerCustomer = async (req: Request, res: Response) => {
     }
 
     let referredBy: any = null;
+    let referrerType: 'USER' | 'PARTNER' = 'USER';
+
     if (referralCode) {
-      const referrer = await User.findOne({ referralCode });
-      if (referrer) referredBy = referrer._id;
+      const referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
+      if (referrer) {
+          referredBy = referrer._id;
+          referrerType = 'USER';
+      } else {
+          const partner = await AffiliatePartner.findOne({ referralCode: referralCode.toUpperCase() });
+          if (partner) {
+              referredBy = partner._id;
+              referrerType = 'PARTNER';
+              // Track registration
+              partner.stats.registrations += 1;
+              await partner.save({ session });
+          }
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -183,17 +198,20 @@ export const registerCustomer = async (req: Request, res: Response) => {
         if (campaign) {
             await mongoose.model('ReferralRecord').create([{
                 referrerId: referredBy,
+                referrerType: referrerType,
                 referredId: user._id,
                 campaignId: campaign._id,
                 countryCode
             }], { session });
 
-            // Notification: Referral Registered
-            await notificationService.notifyUser(
-                referredBy.toString(),
-                'New Referral Joined!',
-                `${user.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
-            );
+            if (referrerType === 'USER') {
+                // Notification: Referral Registered
+                await notificationService.notifyUser(
+                    referredBy.toString(),
+                    'New Referral Joined!',
+                    `${user.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
+                );
+            }
         }
     }
 
@@ -277,12 +295,24 @@ export const registerProvider = async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     let referredBy: any = null;
+    let referrerType: 'USER' | 'PARTNER' = 'USER';
+
     if (referralCode) {
-      const referrer = await User.findOne({ referralCode });
+      const referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
       if (referrer) {
           referredBy = referrer._id;
+          referrerType = 'USER';
           // Fraud Protection: Circular Referral or same device check could be here
           await fraudService.checkReferralAbuse(referrer._id.toString(), uuidv4()); // Temporary ID as user not saved yet
+      } else {
+          const partner = await AffiliatePartner.findOne({ referralCode: referralCode.toUpperCase() });
+          if (partner) {
+              referredBy = partner._id;
+              referrerType = 'PARTNER';
+              // Track registration
+              partner.stats.registrations += 1;
+              await partner.save({ session });
+          }
       }
     }
 
@@ -319,17 +349,20 @@ export const registerProvider = async (req: Request, res: Response) => {
         if (campaign) {
             await mongoose.model('ReferralRecord').create([{
                 referrerId: referredBy,
+                referrerType: referrerType,
                 referredId: savedUser._id,
                 campaignId: campaign._id,
                 countryCode
             }], { session });
 
-            // Notification: Referral Registered
-            await notificationService.notifyUser(
-                referredBy.toString(),
-                'New Referral Joined!',
-                `${savedUser.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
-            );
+            if (referrerType === 'USER') {
+                // Notification: Referral Registered
+                await notificationService.notifyUser(
+                    referredBy.toString(),
+                    'New Referral Joined!',
+                    `${savedUser.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
+                );
+            }
         }
     }
 
@@ -549,6 +582,55 @@ export const changePassword = async (req: Request, res: Response) => {
         res.status(200).json({ success: true, message: 'Password changed successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to change password', error });
+    }
+};
+
+import AffiliatePartner from '../models/AffiliatePartner';
+
+export const validateReferralCode = async (req: Request, res: Response) => {
+    try {
+        const { code } = req.params;
+        const normalizedCode = code.toUpperCase();
+
+        // 1. Check Standard Users
+        const referrer = await User.findOne({ referralCode: normalizedCode });
+        if (referrer) {
+            const settings = await SystemSettings.findOne({ countryCode: referrer.countryCode });
+            if (settings && !settings.referralProgramEnabled) {
+                return res.status(403).json({ success: false, message: 'Referral program is currently disabled in this region.' });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: 'Referral code is valid.',
+                data: {
+                    referrerName: `${referrer.firstName} ${referrer.lastName.charAt(0)}.`,
+                    referrerType: 'USER',
+                    countryCode: referrer.countryCode
+                }
+            });
+        }
+
+        // 2. Check Affiliate Partners
+        const partner = await AffiliatePartner.findOne({ referralCode: normalizedCode });
+        if (partner) {
+            // Track Click
+            partner.stats.clicks += 1;
+            await partner.save();
+
+            return res.status(200).json({
+                success: true,
+                message: 'Partner referral code is valid.',
+                data: {
+                    referrerName: partner.name,
+                    referrerType: 'PARTNER'
+                }
+            });
+        }
+
+        res.status(404).json({ success: false, message: 'Invalid referral code.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: 'Server error during validation' });
     }
 };
 

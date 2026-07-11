@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IReferralRecord extends Document {
     referrerId: mongoose.Types.ObjectId;
+    referrerType: 'USER' | 'PARTNER';
     referredId: mongoose.Types.ObjectId;
     campaignId: mongoose.Types.ObjectId;
     countryCode: string;
@@ -14,7 +15,8 @@ export interface IReferralRecord extends Document {
 }
 
 const ReferralRecordSchema: Schema = new Schema({
-    referrerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    referrerId: { type: Schema.Types.ObjectId, required: true },
+    referrerType: { type: String, enum: ['USER', 'PARTNER'], default: 'USER', required: true },
     referredId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     campaignId: { type: Schema.Types.ObjectId, ref: 'ReferralCampaign', required: true },
     countryCode: { type: String, required: true },

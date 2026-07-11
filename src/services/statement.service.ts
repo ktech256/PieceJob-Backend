@@ -2,6 +2,7 @@ import Statement, { StatementType } from '../models/Statement';
 import Job, { JobStatus } from '../models/Job';
 import Ledger, { TransactionType } from '../models/Ledger';
 import mongoose from 'mongoose';
+import { CDN_URL } from '../config/constants';
 
 export const generateStatement = async (userId: string, userType: 'CUSTOMER' | 'PROVIDER', type: StatementType, start: Date, end: Date, countryCode: string) => {
     // 1. Fetch relevant ledger entries
@@ -55,7 +56,7 @@ export const generateStatement = async (userId: string, userType: 'CUSTOMER' | '
 
     // 4. PDF Generation Logic (Stub for production wiring)
     // In a real production environment, we'd use 'pdfmake' or 'puppeteer'
-    statement.pdfUrl = `https://cdn.piecejob.com/statements/${statement._id}.pdf`;
+    statement.pdfUrl = `${CDN_URL}/statements/${statement._id}.pdf`;
 
     await statement.save();
     return statement;

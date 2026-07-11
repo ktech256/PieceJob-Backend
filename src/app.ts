@@ -22,6 +22,7 @@ import negotiationRoutes from './routes/negotiation.routes';
 import analyticsRoutes from './routes/v1/analytics.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import marketingRoutes from './routes/marketing.routes';
+import affiliateRoutes from './routes/affiliate.routes';
 import testRoutes from './routes/test.routes';
 import admin from 'firebase-admin';
 import { logger } from './utils/logger';
@@ -81,6 +82,7 @@ app.use('/api/v1/support', supportRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/marketing', marketingRoutes);
+app.use('/api/v1/affiliate', affiliateRoutes);
 app.use('/api/test', testRoutes);
 
 // Cron simulation for Negotiation Expiry (Phase 4)

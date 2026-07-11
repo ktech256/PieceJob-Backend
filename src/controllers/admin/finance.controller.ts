@@ -8,10 +8,13 @@ import * as reconciliationService from '../../services/reconciliation.service';
 import * as statementService from '../../services/statement.service';
 import * as walletService from '../../services/wallet.service';
 import * as auditService from '../../services/audit.service';
+import * as notificationService from '../../services/notification.service';
 import { StatementType } from '../../models/Statement';
-import Job from '../../models/Job';
+import Job, { JobStatus, IJob } from '../../models/Job';
 import mongoose from 'mongoose';
 import * as referralService from '../../services/referral.service';
+import ReferralReward, { ReferralStatus } from '../../models/ReferralReward';
+import ReferralRecord from '../../models/ReferralRecord';
 import { logger } from '../../utils/logger';
 
 import ServiceFeeRecord from '../../models/ServiceFeeRecord';
@@ -427,11 +430,87 @@ export const listRefunds = async (req: AuthRequest, res: Response) => {
 export const listReferrals = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
-        const referrals = await mongoose.model('ReferralReward').find({ countryCode })
+        const { status, role, search, startDate, endDate, fraud } = req.query;
+
+        const query: any = { countryCode };
+
+        if (status) query.status = status;
+
+        if (fraud === 'true') {
+            const suspiciousRecords = await ReferralRecord.find({ countryCode, isFraudSuspicious: true }).select('referredId');
+            const suspiciousUserIds = suspiciousRecords.map(r => r.referredId);
+            query.referredId = { $in: suspiciousUserIds };
+        }
+
+        let userIds: any[] = [];
+        if (search) {
+            const users = await User.find({
+                $or: [
+                    { firstName: { $regex: search, $options: 'i' } },
+                    { lastName: { $regex: search, $options: 'i' } },
+                    { email: { $regex: search, $options: 'i' } },
+                    { referralCode: { $regex: search, $options: 'i' } }
+                ]
+            }).select('_id');
+            userIds = users.map(u => u._id);
+            query.$or = [{ referrerId: { $in: userIds } }, { referredId: { $in: userIds } }];
+        }
+
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate as string);
+            if (endDate) query.createdAt.$lte = new Date(endDate as string);
+        }
+
+        const referrals = await ReferralReward.find(query)
             .sort({ createdAt: -1 })
-            .populate('toUserId', 'firstName lastName')
-            .populate('referredId', 'firstName lastName');
+            .populate('referrerId', 'firstName lastName email role countryCode referralCode')
+            .populate('referredId', 'firstName lastName email role countryCode createdAt')
+            .populate('jobId', 'serviceName status totalAmount');
+
         res.status(200).json({ success: true, data: referrals });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getReferralDetails = async (req: AuthRequest, res: Response) => {
+    try {
+        const { rewardId } = req.params;
+        const reward = await ReferralReward.findById(rewardId)
+            .populate('referrerId')
+            .populate('referredId')
+            .populate('jobId')
+            .lean();
+
+        if (!reward) return res.status(404).json({ success: false, message: 'Reward not found' });
+
+        const referrer = reward.referrerId as any;
+        const referred = reward.referredId as any;
+
+        const [walletEntries, ledgerEntries, notifications] = await Promise.all([
+            Wallet.findOne({ userId: referrer._id }),
+            Ledger.find({
+                $or: [
+                    { transactionId: reward._id.toString() },
+                    { "metadata.referredUserId": referred._id.toString() }
+                ]
+            }).sort({ createdAt: -1 }),
+            mongoose.model('Notification').find({ userId: referrer._id, "payload.rewardId": reward._id.toString() }).sort({ createdAt: -1 })
+        ]);
+
+        const record = await ReferralRecord.findOne({ referrerId: referrer._id, referredId: referred._id });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                reward,
+                record,
+                walletEntries,
+                ledgerEntries,
+                notifications
+            }
+        });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -454,7 +533,367 @@ export const toggleReferralPrivileges = async (req: AuthRequest, res: Response) 
         const { userId, isDisabled } = req.body;
         const adminId = req.user?.userId || 'SYSTEM';
         const user = await referralService.toggleUserReferralPrivileges(userId, isDisabled, adminId);
+
+        await auditService.logAdminAction({
+            countryCode: user.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: isDisabled ? 'REFERRAL_PRIVILEGES_SUSPEND' : 'REFERRAL_PRIVILEGES_RESTORE',
+            entityType: 'User',
+            entityId: userId,
+            afterState: { isReferralDisabled: isDisabled },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
         res.status(200).json({ success: true, data: user });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * RECALCULATE REFERRAL REWARD
+ * Forensic audit of a job to see if a reward should have been triggered.
+ */
+export const recalculateReferralReward = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.body;
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+        if (job.status !== JobStatus.COMPLETED && job.status !== JobStatus.CLOSED) return res.status(400).json({ success: false, message: 'Only completed jobs can be recalculated.' });
+
+        await referralService.handleJobCompletion(job);
+
+        await auditService.logAdminAction({
+            countryCode: job.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_RECALCULATE',
+            entityType: 'Job',
+            entityId: jobId,
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, message: 'Referral recalculation complete.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * APPROVE PENDING REWARD
+ * Force payout of a QUALIFIED or PENDING reward.
+ */
+export const approveReferralReward = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { rewardId, note } = req.body;
+        const reward = await ReferralReward.findById(rewardId).session(session);
+        if (!reward) return res.status(404).json({ success: false, message: 'Reward not found' });
+
+        if (reward.status === ReferralStatus.REWARDED) {
+            return res.status(400).json({ success: false, message: 'Reward already paid.' });
+        }
+
+        await referralService.executeRewardPayout(reward, session);
+
+        reward.manualAudit = reward.manualAudit || [];
+        reward.manualAudit.push({
+            action: 'APPROVE',
+            adminId: new mongoose.Types.ObjectId(req.user?.userId),
+            timestamp: new Date(),
+            note
+        });
+
+        await reward.save({ session });
+
+        await auditService.logAdminAction({
+            countryCode: reward.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_REWARD_APPROVE',
+            entityType: 'ReferralReward',
+            entityId: rewardId,
+            afterState: { status: 'REWARDED', note },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        }, session);
+
+        await session.commitTransaction();
+
+        res.status(200).json({ success: true, message: 'Referral reward approved manually.' });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
+    }
+};
+
+/**
+ * REJECT REFERRAL REWARD
+ */
+export const rejectReferralReward = async (req: AuthRequest, res: Response) => {
+    try {
+        const { rewardId, reason } = req.body;
+        const reward = await ReferralReward.findById(rewardId);
+        if (!reward) return res.status(404).json({ success: false, message: 'Reward not found' });
+
+        reward.status = ReferralStatus.REJECTED;
+        reward.rejectionReason = reason;
+        reward.manualAudit = reward.manualAudit || [];
+        reward.manualAudit.push({
+            action: 'REJECT',
+            adminId: new mongoose.Types.ObjectId(req.user?.userId),
+            timestamp: new Date(),
+            note: reason
+        });
+
+        await reward.save();
+
+        await auditService.logAdminAction({
+            countryCode: reward.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_REWARD_REJECT',
+            entityType: 'ReferralReward',
+            entityId: rewardId,
+            afterState: { status: 'REJECTED', reason },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, message: 'Referral reward rejected.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * REVERSE REFERRAL REWARD
+ * Deducts the reward from the user's wallet.
+ */
+export const reverseReferralReward = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { rewardId, reason } = req.body;
+        const reward = await ReferralReward.findById(rewardId).session(session);
+        if (!reward) return res.status(404).json({ success: false, message: 'Reward not found' });
+
+        if (reward.status !== ReferralStatus.REWARDED) {
+            return res.status(400).json({ success: false, message: 'Only rewarded items can be reversed.' });
+        }
+
+        const referrer = await User.findById(reward.referrerId).session(session);
+        if (!referrer) return res.status(404).json({ success: false, message: 'Referrer not found' });
+
+        const balanceType = reward.rewardType === 'REFERRAL_BALANCE' ? 'balanceReferral' :
+                           reward.rewardType === 'WALLET_CREDIT' ? 'balanceCredit' : 'balanceMain';
+
+        // Reverse wallet mutation
+        await walletService.mutateWallet({
+            userId: reward.referrerId.toString(),
+            amount: -reward.amount,
+            type: TransactionType.REFERRAL_REVERSAL,
+            balanceType: balanceType,
+            description: `Referral Reversal: ${reason} (Original Reward ID: ${reward._id})`,
+            countryCode: reward.countryCode,
+            currency: reward.currency,
+            session,
+            metadata: {
+                originalRewardId: reward._id,
+                adminId: req.user?.userId,
+                reason
+            }
+        });
+
+        reward.status = ReferralStatus.REVERSED;
+        reward.manualAudit = reward.manualAudit || [];
+        reward.manualAudit.push({
+            action: 'REVERSE',
+            adminId: new mongoose.Types.ObjectId(req.user?.userId),
+            timestamp: new Date(),
+            note: reason
+        });
+
+        await reward.save({ session });
+
+        await auditService.logAdminAction({
+            countryCode: reward.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_REWARD_REVERSE',
+            entityType: 'ReferralReward',
+            entityId: rewardId,
+            afterState: { status: 'REVERSED', reason },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        }, session);
+
+        await session.commitTransaction();
+
+        res.status(200).json({ success: true, message: 'Referral reward reversed successfully.' });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
+    }
+};
+
+/**
+ * GENERATE NEW REFERRAL CODE
+ */
+export const generateNewReferralCode = async (req: AuthRequest, res: Response) => {
+    try {
+        const { userId } = req.body;
+        const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        const user = await User.findByIdAndUpdate(userId, { referralCode: newCode }, { new: true });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        await auditService.logAdminAction({
+            countryCode: user.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_CODE_GENERATE',
+            entityType: 'User',
+            entityId: userId,
+            afterState: { newCode },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, data: { referralCode: newCode } });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * DEACTIVATE REFERRAL CODE
+ * Just sets isReferralDisabled to true.
+ */
+export const deactivateReferralCode = async (req: AuthRequest, res: Response) => {
+    try {
+        const { userId } = req.body;
+        const user = await User.findByIdAndUpdate(userId, { isReferralDisabled: true }, { new: true });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        await auditService.logAdminAction({
+            countryCode: user.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_CODE_DEACTIVATE',
+            entityType: 'User',
+            entityId: userId,
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, message: 'Referral code deactivated.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * RESEND REFERRAL NOTIFICATION
+ */
+export const resendReferralNotification = async (req: AuthRequest, res: Response) => {
+    try {
+        const { rewardId } = req.body;
+        const reward = await ReferralReward.findById(rewardId).populate('referrerId referredId');
+        if (!reward) return res.status(404).json({ success: false, message: 'Reward not found' });
+
+        const referrer: any = reward.referrerId;
+        const referred: any = reward.referredId;
+
+        let title = "Referral Reward Update";
+        let message = `Regarding your referral of ${referred.firstName}.`;
+
+        if (reward.status === ReferralStatus.REWARDED) {
+            title = 'Referral Reward Credited!';
+            message = `Congratulations! You have earned ${reward.amount} ${reward.currency} from ${referred.firstName}'s qualifying job.`;
+        } else if (reward.status === ReferralStatus.QUALIFIED) {
+            title = 'Referral Qualified!';
+            message = `Good news! ${referred.firstName} has completed a qualifying job. Your reward of ${reward.amount} ${reward.currency} is being processed.`;
+        }
+
+        await notificationService.notifyUser(referrer._id.toString(), title, message);
+
+        await auditService.logAdminAction({
+            countryCode: reward.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'REFERRAL_NOTIFICATION_RESEND',
+            entityType: 'ReferralReward',
+            entityId: rewardId,
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, message: 'Notification resent.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * REFERRAL TEST CENTRE
+ * Simulation of the referral flow.
+ */
+export const simulateReferralFlow = async (req: AuthRequest, res: Response) => {
+    try {
+        const { referrerId, referredId, stage } = req.body; // stage: 'REGISTRATION' | 'JOB_COMPLETION'
+
+        const referrer = await User.findById(referrerId);
+        const referred = await User.findById(referredId);
+
+        if (!referrer || !referred) return res.status(404).json({ success: false, message: 'Users not found' });
+
+        const settings = await SystemSettings.findOne({ countryCode: referrer.countryCode });
+
+        if (stage === 'REGISTRATION') {
+            const countryMismatch = referrer.countryCode !== referred.countryCode;
+            const alreadyReferred = referred.referredBy && referred.referredBy.toString() !== referrer._id.toString();
+
+            res.status(200).json({
+                success: !countryMismatch && !alreadyReferred,
+                message: countryMismatch ? 'FAILED: Workspace Node Mismatch' : (alreadyReferred ? 'FAILED: Target already referred by another node' : 'SUCCESS: Registration would link these nodes permanently.'),
+                qualificationCheck: !countryMismatch && !alreadyReferred
+            });
+        } else if (stage === 'JOB_COMPLETION') {
+             const isReferredByTarget = referred.referredBy?.toString() === referrer._id.toString();
+             const isProgramEnabled = settings?.referralProgramEnabled ?? true;
+             const isUserDisabled = referrer.isReferralDisabled;
+
+             let message = 'Simulation verified.';
+             let success = true;
+
+             if (!isReferredByTarget) {
+                 message = 'FAILED: Target node is not referred by simulation source.';
+                 success = false;
+             } else if (!isProgramEnabled) {
+                 message = 'FAILED: Referral program is disabled in this workspace node.';
+                 success = false;
+             } else if (isUserDisabled) {
+                 message = 'FAILED: Referrer privileges are suspended.';
+                 success = false;
+             } else {
+                 message = `SUCCESS: Logic verified. Reward of ${settings?.referralRewardAmount || 10} ${referrer.countryCode} would be triggered. Payout delay: ${settings?.referralRewardDelayDays || 0} days.`;
+             }
+
+             res.status(200).json({
+                 success,
+                 message,
+                 qualificationCheck: success
+             });
+        }
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }

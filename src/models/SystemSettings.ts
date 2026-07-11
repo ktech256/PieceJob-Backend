@@ -13,6 +13,22 @@ export interface ISystemSettings extends Document {
   sosAlertRadiusKm: number;
   referralRewardAmount: number;
 
+  // PAGE 15: REFERRAL MANAGEMENT CENTRE
+  referralProgramEnabled: boolean;
+  referralRewardType: 'CASH' | 'WALLET_CREDIT' | 'REFERRAL_BALANCE';
+  referralMinCompletedJobs: number;
+  referralMaxRewardsPerUser: number;
+  referralRewardDelayDays: number;
+  referralExpiryDays: number; // 0 = Never
+  referralBaseUrl: string;
+  referralQrBranding: 'PIECEJOB' | 'WORKSPACE' | 'NONE';
+
+  // Fraud Protection Settings
+  referralFraudDuplicatePhoneEnabled: boolean;
+  referralFraudDuplicateEmailEnabled: boolean;
+  referralFraudHardwareDetectionEnabled: boolean;
+  referralFraudCircularDetectionEnabled: boolean;
+
   // Structured Negotiation & Service Fee
   maxNegotiationRounds: number;
   serviceFeeSuspensionThreshold: number;
@@ -81,6 +97,21 @@ const SystemSettingsSchema: Schema = new Schema({
   maintenanceMode: { type: Boolean, default: false },
   sosAlertRadiusKm: { type: Number, default: 5 },
   referralRewardAmount: { type: Number, default: 10 },
+
+  // PAGE 15: REFERRAL MANAGEMENT CENTRE
+  referralProgramEnabled: { type: Boolean, default: true },
+  referralRewardType: { type: String, enum: ['CASH', 'WALLET_CREDIT', 'REFERRAL_BALANCE'], default: 'REFERRAL_BALANCE' },
+  referralMinCompletedJobs: { type: Number, default: 1 },
+  referralMaxRewardsPerUser: { type: Number, default: 5 },
+  referralRewardDelayDays: { type: Number, default: 0 },
+  referralExpiryDays: { type: Number, default: 0 }, // 0 = Never
+  referralBaseUrl: { type: String, default: 'https://piecejob.co' },
+  referralQrBranding: { type: String, enum: ['PIECEJOB', 'WORKSPACE', 'NONE'], default: 'PIECEJOB' },
+
+  referralFraudDuplicatePhoneEnabled: { type: Boolean, default: true },
+  referralFraudDuplicateEmailEnabled: { type: Boolean, default: true },
+  referralFraudHardwareDetectionEnabled: { type: Boolean, default: true },
+  referralFraudCircularDetectionEnabled: { type: Boolean, default: true },
 
   // Structured Negotiation & Service Fee
   maxNegotiationRounds: { type: Number, default: 4 },

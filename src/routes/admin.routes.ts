@@ -177,7 +177,16 @@ router.get('/finance/wallets', hasPermission('MANAGE_FINANCE'), financeControlle
 router.get('/finance/refunds', hasPermission('MANAGE_FINANCE'), financeController.listRefunds);
 router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeController.listReferrals);
 router.get('/finance/referrals/analytics', hasPermission('MANAGE_FINANCE'), financeController.getReferralAnalytics);
+router.get('/finance/referrals/:rewardId', hasPermission('MANAGE_FINANCE'), financeController.getReferralDetails);
 router.post('/finance/referrals/toggle-privileges', hasPermission('MANAGE_FINANCE'), financeController.toggleReferralPrivileges);
+router.post('/finance/referrals/recalculate', hasPermission('MANAGE_FINANCE'), financeController.recalculateReferralReward);
+router.post('/finance/referrals/approve', hasPermission('MANAGE_FINANCE'), financeController.approveReferralReward);
+router.post('/finance/referrals/reject', hasPermission('MANAGE_FINANCE'), financeController.rejectReferralReward);
+router.post('/finance/referrals/reverse', hasPermission('MANAGE_FINANCE'), financeController.reverseReferralReward);
+router.post('/finance/referrals/resend-notification', hasPermission('MANAGE_FINANCE'), financeController.resendReferralNotification);
+router.post('/finance/referrals/generate-code', hasPermission('MANAGE_FINANCE'), financeController.generateNewReferralCode);
+router.post('/finance/referrals/deactivate-code', hasPermission('MANAGE_FINANCE'), financeController.deactivateReferralCode);
+router.post('/finance/referrals/simulate', hasPermission('MANAGE_FINANCE'), financeController.simulateReferralFlow);
 
 // NEW SERVICE FEE ROUTES
 router.get('/finance/service-fees/overview', hasPermission('MANAGE_FINANCE'), financeController.getServiceFeeOverview);

@@ -11,6 +11,7 @@ router.post('/register/provider', authController.registerProvider);
 router.post('/login', authController.login);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/change-password', authenticate, authController.changePassword);
+router.get('/referrals/validate/:code', authController.validateReferralCode);
 router.post('/logout-all', authenticate, authController.logoutAllDevices);
 router.post('/request-phone-change', authenticate, authController.requestPhoneChange);
 router.post('/verify-phone-change', authenticate, authController.verifyPhoneChange);

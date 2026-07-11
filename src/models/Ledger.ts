@@ -14,7 +14,8 @@ export enum TransactionType {
   PROMO_CREDIT = 'PROMO_CREDIT',
   MANUAL_CREDIT = 'MANUAL_CREDIT',
   MANUAL_DEBIT = 'MANUAL_DEBIT',
-  WITHDRAWAL = 'WITHDRAWAL'
+  WITHDRAWAL = 'WITHDRAWAL',
+  REFERRAL_REVERSAL = 'REFERRAL_REVERSAL'
 }
 
 export interface ILedger extends Document {
