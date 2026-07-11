@@ -105,7 +105,11 @@ const SystemSettingsSchema: Schema = new Schema({
   referralMaxRewardsPerUser: { type: Number, default: 5 },
   referralRewardDelayDays: { type: Number, default: 0 },
   referralExpiryDays: { type: Number, default: 0 }, // 0 = Never
-  referralBaseUrl: { type: String, default: 'https://piecejob.co' },
+  referralBaseUrl: {
+      type: String,
+      default: 'https://piecejob.co/r/',
+      set: (v: string) => v.endsWith('/') ? v : `${v}/`
+  },
   referralQrBranding: { type: String, enum: ['PIECEJOB', 'WORKSPACE', 'NONE'], default: 'PIECEJOB' },
 
   referralFraudDuplicatePhoneEnabled: { type: Boolean, default: true },
