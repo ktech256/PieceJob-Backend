@@ -5,6 +5,7 @@ import Service, { ServiceCategory, VerificationLevel } from '../models/Service';
 import ServiceCategoryModel from '../models/ServiceCategory';
 import Provider from '../models/Provider';
 import * as pricingService from '../services/pricing.service';
+import * as settingsService from '../services/settings.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 import { logger } from '../utils/logger';
 
