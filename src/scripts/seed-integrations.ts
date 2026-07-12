@@ -63,7 +63,7 @@ async function seed() {
                 secretKey: 'sk_test_PLACEHOLDER', // USER MUST REPLACE IN DASHBOARD
                 publicKey: 'pk_test_PLACEHOLDER', // USER MUST REPLACE IN DASHBOARD
                 webhookSecret: 'pj_whsec_8FvK29LmQx7PzR4NsY8aWdJ2HcE91MrTb6XpQ5LzUv7',
-                callbackUrl: 'https://piecejob-website.onrender.com/payments/callback'
+                callbackUrl: process.env.PAYSTACK_CALLBACK_URL || 'https://piecejob.co/payments/callback'
             },
             {
                 name: 'Paystack (NG)',

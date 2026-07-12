@@ -51,7 +51,7 @@ export const initializeTransaction = async (
           amount: amountInBaseUnit,
           currency: provider.currency || currency,
           metadata,
-          callback_url: provider.callbackUrl || 'https://piecejob-website.onrender.com/payments/callback'
+          callback_url: provider.callbackUrl || process.env.PAYSTACK_CALLBACK_URL
         },
         {
           headers: {
