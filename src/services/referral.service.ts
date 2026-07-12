@@ -19,18 +19,27 @@ import { v4 as uuidv4 } from 'uuid';
  * Checks if the customer or provider was referred and issues rewards if applicable.
  */
 export const handleJobCompletion = async (job: IJob, session?: mongoose.ClientSession) => {
+    const internalSession = !session ? await mongoose.startSession() : null;
+    if (internalSession) internalSession.startTransaction();
+
     try {
+        const activeSession = session || internalSession;
         logger.info(`Processing referrals for completed job ${job._id}`);
 
         // 1. Check if Customer was referred
-        await processReferralForUser(job.customerId.toString(), job, 'CUSTOMER', session);
+        await processReferralForUser(job.customerId.toString(), job, 'CUSTOMER', activeSession as any);
 
         // 2. Check if Provider was referred
         if (job.providerId) {
-            await processReferralForUser(job.providerId.toString(), job, 'PROVIDER', session);
+            await processReferralForUser(job.providerId.toString(), job, 'PROVIDER', activeSession as any);
         }
+
+        if (internalSession) await internalSession.commitTransaction();
     } catch (error: any) {
+        if (internalSession) await internalSession.abortTransaction();
         logger.error(`Referral handleJobCompletion failed: ${error.message}`);
+    } finally {
+        if (internalSession) internalSession.endSession();
     }
 };
 
@@ -153,7 +162,6 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
 
     // Increment completed jobs count
     record.jobsCompletedCount += 1;
-    await record.save({ session });
 
     // Check eligibility
     if (record.jobsCompletedCount >= minJobs && (record.referrerType === 'PARTNER' || record.rewardsIssuedCount < maxRewards)) {
@@ -202,7 +210,6 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         }
 
         record.rewardsIssuedCount += 1;
-        await record.save({ session });
 
         if (record.referrerType === 'PARTNER') {
             const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
@@ -213,6 +220,8 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
             }
         }
     }
+
+    await record.save({ session });
 };
 
 export const executeRewardPayout = async (reward: any, session?: mongoose.ClientSession) => {

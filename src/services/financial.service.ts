@@ -213,39 +213,6 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
             }).save({ session });
         }
 
-    // All Service Fee debt is immediately transferred to the running balance (balanceCredit)
-    // This maintains the single running account where the Wallet reflects the final balance.
-    if (outstandingServiceFee > 0) {
-        const initialCredit = wallet.balanceCredit;
-
-        // Transfer the fee to the running account balance
-        wallet.balanceCredit -= outstandingServiceFee;
-
-        // Determine how much of this was settled by existing positive credit vs increasing debt
-        const appliedFromCredit = Math.min(Math.max(0, initialCredit), outstandingServiceFee);
-        const debtTransferred = outstandingServiceFee - appliedFromCredit;
-
-        if (appliedFromCredit > 0) {
-            // Record Ledger for Automatic Consumption (Auditable)
-            await new Ledger({
-                transactionId: `AC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-                jobId: job._id,
-                fromUserId: providerId,
-                amount: appliedFromCredit,
-                currency: finalCurrency,
-                countryCode: finalCountryCode,
-                type: TransactionType.SERVICE_FEE,
-                status: 'COMPLETED',
-                isTestTransaction: isTest,
-                description: `Automatic Credit Application (Job #${job._id.toString().slice(-6)})`,
-                metadata: {
-                    previousCredit: initialCredit,
-                    applied: appliedFromCredit,
-                    remainingJobDebt: 0 // Job debt is now 0 as it's transferred
-                }
-            }).save({ session });
-        }
-
         // Mark the Job Record as PAID immediately because it's been transferred to the running account
         // This satisfies the requirement that historical records shouldn't represent active debt.
         serviceFeeRecord.outstandingBalance = 0;
