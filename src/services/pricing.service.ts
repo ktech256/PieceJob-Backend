@@ -32,7 +32,7 @@ export const calculateJobPrice = async (
 ): Promise<PricingBreakdown> => {
     const [settings, country] = await Promise.all([
         settingsService.getSettings(countryCode),
-        Country.findOne({ code: countryCode })
+        Country.findOne({ code: countryCode }).lean() as any
     ]);
 
     if (!country) {

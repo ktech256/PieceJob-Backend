@@ -27,11 +27,11 @@ export const getSettings = async (countryCode: string = 'GLOBAL'): Promise<ISyst
         platformServiceFeePercent: 15,
         referralProgramEnabled: true,
         // ... include other critical defaults
-    } as ISystemSettings;
+    } as any as ISystemSettings;
   }
 
-  settingsCache.set(countryCode, { data: settings as ISystemSettings, expiry: now + CACHE_TTL });
-  return settings as ISystemSettings;
+  settingsCache.set(countryCode, { data: settings as any as ISystemSettings, expiry: now + CACHE_TTL });
+  return settings as any as ISystemSettings;
 };
 
 export const updateSettings = async (countryCode: string, data: Partial<ISystemSettings>): Promise<ISystemSettings> => {

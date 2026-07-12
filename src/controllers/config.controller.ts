@@ -17,8 +17,8 @@ export const getWorkspaceConfig = async (req: Request, res: Response) => {
     }
 
     const [country, settings] = await Promise.all([
-        Country.findOne({ code: countryCode }),
-        SystemSettings.findOne({ countryCode })
+        Country.findOne({ code: countryCode }).lean() as any,
+        settingsService.getSettings(countryCode)
     ]);
 
     if (!country) {
