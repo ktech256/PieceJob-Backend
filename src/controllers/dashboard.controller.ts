@@ -68,9 +68,8 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 const completionTime = jobRaw.completedAt || jobRaw.updatedAt;
                 const hoursSinceCompletion = (Date.now() - completionTime.getTime()) / (1000 * 60 * 60);
                 if (hoursSinceCompletion > RATING_WINDOW_HOURS) {
-                    // Silently mark as dismissed to prevent it appearing in the list again
-                    jobRaw.customerRatingDismissed = true;
-                    await jobRaw.save();
+                    // READ-ONLY FIX: Do not write during GET.
+                    // Just skip it in the response.
                     continue;
                 }
             }
@@ -359,11 +358,10 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                 else {
                     const completionTime = activeJobRaw.completedAt || activeJobRaw.updatedAt;
                     const hoursSinceCompletion = (Date.now() - completionTime.getTime()) / (1000 * 60 * 60);
-                    if (hoursSinceCompletion > 24) {
-                        activeJobRaw.providerRatingDismissed = true;
-                        await activeJobRaw.save();
-                        skip = true;
-                    }
+                if (hoursSinceCompletion > 24) {
+                    // READ-ONLY FIX: Skip in response instead of writing to DB.
+                    skip = true;
+                }
                 }
             }
 

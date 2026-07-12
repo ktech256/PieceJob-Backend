@@ -163,7 +163,6 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
             { event: 'SERVICE_FEE_CALCULATED', timestamp: new Date(), metadata: { serviceFeeAmount: totalServiceFee, bookingFeePaid, isNegotiated } }
         ]
     });
-    await serviceFeeRecord.save({ session });
 
     // 4. Update Provider Wallet (Running Account Logic)
     let wallet = await Wallet.findOne({ userId: providerId }).session(session);
@@ -228,7 +227,6 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
                 newWalletCredit: wallet.balanceCredit
             }
         });
-        await serviceFeeRecord.save({ session });
     }
 
     // --- REFERRAL BALANCE AUTO-CONSUMPTION (FOR PROVIDERS) ---
@@ -266,6 +264,7 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
     if (!wallet.currency) wallet.currency = finalCurrency;
 
     await wallet.save({ session });
+    await serviceFeeRecord.save({ session });
 
     // 5. Suspension Logic (using legacy field for consistency)
     const suspensionThreshold = settings?.serviceFeeSuspensionThreshold || 100;

@@ -562,10 +562,8 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
 
             if (hoursSinceCompletion > RATING_WINDOW_HOURS) {
                 logger.info(`[FORENSIC] RATING_EXPIRED | Job: ${job._id} | Hours: ${hoursSinceCompletion.toFixed(1)}`);
-                // Silently dismiss for the requesting user
-                if (isCustomer) job.customerRatingDismissed = true;
-                else job.providerRatingDismissed = true;
-                await job.save();
+                // READ-ONLY FIX: Do not write to DB during a GET request.
+                // Just pretend it doesn't exist for the active list.
                 return res.status(200).json({ success: true, data: null });
             }
         }

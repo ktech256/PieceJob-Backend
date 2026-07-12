@@ -152,6 +152,14 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             );
 
             if (!job) {
+                // If Request 1 committed while Request 2 was blocked on the lock,
+                // the findOneAndUpdate will return null. We check if Request 1 succeeded.
+                const committedJob = await Job.findById(jobId).session(session);
+                if (committedJob && [JobStatus.COMPLETED, JobStatus.CLOSED, JobStatus.RATED].includes(committedJob.status)) {
+                    await session.commitTransaction();
+                    session.endSession();
+                    return committedJob;
+                }
                 throw new Error('Concurrent status update detected during completion');
             }
 

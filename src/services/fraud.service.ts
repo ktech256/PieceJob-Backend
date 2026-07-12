@@ -48,10 +48,10 @@ export const analyzeJobCompletion = async (jobId: string) => {
         });
         await alert.save();
 
-        // Put escrow on hold (Atomic update, only if not already set)
-        if (job.escrowStatus !== 'ESCROW_HOLD_REVIEW') {
+        // Put escrow on hold (Atomic update, only if not already set and not part of consolidated write)
+        if (job.escrowStatus !== 'ESCROW_HOLD_REVIEW' && job.fraudFlag !== 'FAKE_COMPLETION') {
             await Job.updateOne(
-                { _id: jobId },
+                { _id: jobId, escrowStatus: { $ne: 'ESCROW_HOLD_REVIEW' } },
                 {
                     $set: {
                         escrowStatus: 'ESCROW_HOLD_REVIEW',
