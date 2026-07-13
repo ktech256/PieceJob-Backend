@@ -85,13 +85,23 @@ export const sendEmail = async (options: EmailOptions) => {
     `;
 
     // 5. Setup Transporter
+    // SMARTER TRANSPORT: Auto-resolve secure flag based on port to prevent handshake timeouts
+    const isSecurePort = config.smtpPort === 465;
+
     const transporter = nodemailer.createTransport({
       host: config.smtpHost,
       port: config.smtpPort,
-      secure: config.smtpSecure,
+      secure: isSecurePort, // true for 465, false for 587/others
       auth: {
         user: config.smtpUser,
         pass: config.smtpPass
+      },
+      connectionTimeout: 20000, // 20s for production stability
+      greetingTimeout: 10000,
+      socketTimeout: 30000,
+      tls: {
+          // Do not fail on invalid certificates (Common in relay nodes)
+          rejectUnauthorized: false
       }
     });
 
@@ -158,15 +168,21 @@ export const testSmtpConnection = async (countryCode: string): Promise<SMTPDiagn
 
     if (!config) throw new Error('NO_CONFIG_FOUND');
 
+    const isSecurePort = config.smtpPort === 465;
+
     const transporter = nodemailer.createTransport({
       host: config.smtpHost,
       port: config.smtpPort,
-      secure: config.smtpSecure,
+      secure: isSecurePort,
       auth: {
         user: config.smtpUser,
         pass: config.smtpPass
       },
-      connectionTimeout: 10000, // 10s timeout for tests
+      connectionTimeout: 20000,
+      greetingTimeout: 10000,
+      tls: {
+          rejectUnauthorized: false
+      }
     });
 
     await transporter.verify();
