@@ -10,10 +10,11 @@ export interface EmailOptions {
   templateData: Record<string, string>;
   countryCode: string;
   attachments?: { filename: string; content: Buffer | string; contentType?: string }[];
+  plainText?: string;
 }
 
 export const sendEmail = async (options: EmailOptions) => {
-  const { to, templateCode, templateData, countryCode, attachments = [] } = options;
+  const { to, templateCode, templateData, countryCode, attachments = [], plainText } = options;
 
   try {
     // 1. Fetch Config
@@ -36,7 +37,8 @@ export const sendEmail = async (options: EmailOptions) => {
     }
 
     // 3. Check if specific email category/code is enabled
-    if (!config.enabledCategories[template.category]) {
+    const categoryKey = template.category as keyof typeof config.enabledCategories;
+    if (config.enabledCategories[categoryKey] === false) {
       logger.warn(`EMAIL | SKIPPED | Category ${template.category} disabled for ${countryCode}`);
       return { success: false, reason: 'CATEGORY_DISABLED' };
     }
@@ -49,27 +51,29 @@ export const sendEmail = async (options: EmailOptions) => {
     // 4. Resolve Template
     let subject = template.subject || 'PieceJob Notification';
     let body = template.body;
+    let text = plainText || template.plainTextBody || '';
 
     Object.entries(templateData).forEach(([key, value]) => {
       const placeholder = `{{${key}}}`;
       const regex = new RegExp(placeholder, 'g');
       subject = subject.replace(regex, value);
       body = body.replace(regex, value);
+      if (text) text = text.replace(regex, value);
     });
 
     // Add Branding / Footer
     const footer = config.emailSignature || '';
-    body = `
+    const html = `
       <html>
-        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-          <div style="max-width: 600px; margin: 0 auto; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
-            ${config.branding.logoUrl ? `<div style="text-align: center; margin-bottom: 20px;"><img src="${config.branding.logoUrl}" alt="Logo" style="max-height: 50px;"></div>` : ''}
-            <div style="margin-bottom: 30px;">
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; margin: 0; padding: 0;">
+          <div style="max-width: 600px; margin: 20px auto; border: 1px solid #eee; padding: 40px; border-radius: 20px; background-color: #fff;">
+            ${config.branding.logoUrl ? `<div style="text-align: center; margin-bottom: 30px;"><img src="${config.branding.logoUrl}" alt="Logo" style="max-height: 60px;"></div>` : ''}
+            <div style="margin-bottom: 40px; font-size: 16px; color: #444;">
               ${body}
             </div>
-            <div style="border-top: 1px solid #eee; padding-top: 20px; font-size: 12px; color: #777;">
-              ${footer}
-              <p style="margin-top: 10px;">
+            <div style="border-top: 1px solid #f0f0f0; padding-top: 30px; font-size: 12px; color: #999; text-align: center;">
+              <p style="margin-bottom: 10px;">${footer}</p>
+              <p style="margin-top: 10px; font-weight: bold;">
                 ${config.branding.companyName || 'PieceJob'}<br>
                 ${config.branding.companyAddress || ''}
               </p>
@@ -96,7 +100,8 @@ export const sendEmail = async (options: EmailOptions) => {
       from: `"${config.fromName}" <${config.fromEmail}>`,
       to,
       subject,
-      html: body,
+      html,
+      text,
       attachments
     });
 

@@ -104,16 +104,52 @@ export const previewTemplate = async (req: AuthRequest, res: Response) => {
     // We can't easily preview HTML here without a full render,
     // so we'll just return the resolved body
     let body = template.body;
+    let text = template.plainTextBody || '';
+    let subject = template.subject || '';
+
     Object.entries(mockData).forEach(([key, value]) => {
       const placeholder = `{{${key}}}`;
       const regex = new RegExp(placeholder, 'g');
       body = body.replace(regex, value);
+      if (text) text = text.replace(regex, value);
+      subject = subject.replace(regex, value);
     });
 
-    res.status(200).json({ success: true, preview: body });
+    res.status(200).json({ success: true, preview: { html: body, text, subject } });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
+};
+
+export const duplicateTemplate = async (req: AuthRequest, res: Response) => {
+    try {
+        const original = await NotificationTemplate.findById(req.params.id);
+        if (!original) return res.status(404).json({ success: false, message: 'Original template not found' });
+
+        const copy = new NotificationTemplate({
+            ...original.toObject(),
+            _id: new mongoose.Types.ObjectId(),
+            templateCode: `${original.templateCode}_COPY`,
+            active: false,
+            version: 1,
+            createdBy: req.user?.userId,
+            updatedBy: req.user?.userId
+        });
+
+        await copy.save();
+        res.status(201).json({ success: true, data: copy });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const archiveTemplate = async (req: AuthRequest, res: Response) => {
+    try {
+        const template = await NotificationTemplate.findByIdAndUpdate(req.params.id, { active: false }, { new: true });
+        res.status(200).json({ success: true, data: template });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
 
 export const getEmailLogs = async (req: AuthRequest, res: Response) => {

@@ -17,7 +17,9 @@ router.post('/config/send-category-test', emailController.sendCategoryTest);
 router.get('/templates', emailController.listTemplates);
 router.get('/templates/:id', emailController.getTemplateDetails);
 router.post('/templates', emailController.createTemplate);
+router.post('/templates/:id/duplicate', emailController.duplicateTemplate);
 router.patch('/templates/:id', emailController.updateTemplate);
+router.delete('/templates/:id', emailController.archiveTemplate);
 router.get('/templates/:id/preview', emailController.previewTemplate);
 router.post('/templates/:id/send-test', emailController.sendTemplateTest);
 

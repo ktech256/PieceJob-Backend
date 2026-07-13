@@ -15,17 +15,28 @@ export const getTemplate = async (code: string, channel: 'PUSH' | 'SMS' | 'EMAIL
 export const resolveTemplate = (template: INotificationTemplate, data: Record<string, string>) => {
     let title = template.title || '';
     let body = template.body;
+    let plainTextBody = template.plainTextBody || '';
     let subject = template.subject || '';
+
+    // Validate incoming data against allowed placeholders if they exist
+    if (template.placeholders && template.placeholders.length > 0) {
+        const incomingKeys = Object.keys(data);
+        const invalidKeys = incomingKeys.filter(k => !template.placeholders.includes(k));
+        if (invalidKeys.length > 0) {
+            console.warn(`[TEMPLATE_RESOLUTION] Warning: Unknown placeholders provided: ${invalidKeys.join(', ')} for template ${template.templateCode}`);
+        }
+    }
 
     Object.entries(data).forEach(([key, value]) => {
         const placeholder = `{{${key}}}`;
         const regex = new RegExp(placeholder, 'g');
         title = title.replace(regex, value);
         body = body.replace(regex, value);
+        if (plainTextBody) plainTextBody = plainTextBody.replace(regex, value);
         subject = subject.replace(regex, value);
     });
 
-    return { title, body, subject };
+    return { title, body, plainTextBody, subject };
 };
 
 export const listTemplates = async (query: any) => {

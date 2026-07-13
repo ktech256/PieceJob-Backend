@@ -31,6 +31,7 @@ export interface IEmailConfig extends Document {
     MARKETING: boolean;
     LEGAL: boolean;
     ADMIN: boolean;
+    SECURITY: boolean;
   };
   enabledEmails: string[]; // List of templateCodes that are enabled
 }
@@ -65,7 +66,8 @@ const EmailConfigSchema: Schema = new Schema({
     AFFILIATE: { type: Boolean, default: true },
     MARKETING: { type: Boolean, default: false },
     LEGAL: { type: Boolean, default: true },
-    ADMIN: { type: Boolean, default: true }
+    ADMIN: { type: Boolean, default: true },
+    SECURITY: { type: Boolean, default: true }
   },
   enabledEmails: [{ type: String }] // e.g. ["WELCOME_EMAIL", "PASSWORD_RESET"]
 }, { timestamps: true });
