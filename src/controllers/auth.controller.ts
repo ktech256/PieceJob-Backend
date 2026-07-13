@@ -218,6 +218,15 @@ export const registerCustomer = async (req: Request, res: Response) => {
     // Fulfill Welcome Bonus
     await promotionService.fulfillSignupBonus(user._id.toString(), countryCode);
 
+    // Dispatch Welcome Email
+    await notificationQueue.addNotificationToQueue({
+        type: 'EMAIL',
+        email: user.email,
+        templateCode: 'WELCOME_EMAIL',
+        templateData: { firstName: user.firstName },
+        countryCode
+    });
+
     await session.commitTransaction();
     session.endSession();
 
@@ -383,6 +392,15 @@ export const registerProvider = async (req: Request, res: Response) => {
     // Fulfill Welcome Bonus
     await promotionService.fulfillSignupBonus(savedUser._id.toString(), countryCode);
 
+    // Dispatch Welcome Email
+    await notificationQueue.addNotificationToQueue({
+        type: 'EMAIL',
+        email: savedUser.email,
+        templateCode: 'WELCOME_EMAIL',
+        templateData: { firstName: savedUser.firstName },
+        countryCode
+    });
+
     await session.commitTransaction();
     session.endSession();
 
@@ -480,6 +498,19 @@ export const login = async (req: Request, res: Response) => {
     // VERIFY SAVE
     const checkUser = await User.findById(user._id);
     console.log(`[FCM_DB_VERIFY] Post-login check for User ${user._id}: Token is ${checkUser?.fcmToken ? 'PRESENT' : 'MISSING'}`);
+
+    // Dispatch Login Alert Email
+    await notificationQueue.addNotificationToQueue({
+        type: 'EMAIL',
+        email: user.email,
+        templateCode: 'LOGIN_ALERT',
+        templateData: {
+            firstName: user.firstName,
+            time: new Date().toLocaleString(),
+            ip: req.ip || '0.0.0.0'
+        },
+        countryCode: user.countryCode
+    });
 
     const token = jwt.sign(
       { userId: user._id, role: user.role, countryCode: user.countryCode },

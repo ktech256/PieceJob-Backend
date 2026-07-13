@@ -2,6 +2,8 @@ import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { sendPushNotification } from './notification.service';
 import { sendSms } from './sms.service';
+import { sendEmail } from './email.service';
+import { getAttachmentsForEmail } from './email-attachment.service';
 import * as templateService from './notification-template.service';
 
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
@@ -85,8 +87,14 @@ const worker = new Worker('notifications', async (job: Job<NotificationJobData>)
         } else if (type === 'SMS' && phoneNumber) {
             await sendSms(phoneNumber, body);
         } else if (type === 'EMAIL' && email) {
-            // await sendEmail(email, title || 'PieceJob', body);
-            console.log(`[EMAIL_SIMULATION] to ${email}: ${title} - ${body}`);
+            const attachments = await getAttachmentsForEmail(templateCode || '', templateData || {});
+            await sendEmail({
+                to: email,
+                templateCode: templateCode || 'GENERIC',
+                templateData: templateData || { body },
+                countryCode: countryCode || 'GLOBAL',
+                attachments
+            });
         }
     } catch (error) {
         console.error(`Error in notification worker for job ${job.id}:`, error);

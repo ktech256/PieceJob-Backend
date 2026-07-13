@@ -1,6 +1,8 @@
 import Statement, { StatementType } from '../models/Statement';
 import Job, { JobStatus } from '../models/Job';
 import Ledger, { TransactionType } from '../models/Ledger';
+import User from '../models/User';
+import * as notificationQueue from './notification.queue';
 import mongoose from 'mongoose';
 import { CDN_URL } from '../config/constants';
 
@@ -59,6 +61,23 @@ export const generateStatement = async (userId: string, userType: 'CUSTOMER' | '
     statement.pdfUrl = `${CDN_URL}/statements/${statement._id}.pdf`;
 
     await statement.save();
+
+    // Send Statement Email
+    const user = await User.findById(userId);
+    if (user?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: user.email,
+            templateCode: 'MONTHLY_STATEMENT',
+            templateData: {
+                firstName: user.firstName,
+                period: `${start.toDateString()} - ${end.toDateString()}`,
+                statementId: statement._id.toString()
+            },
+            countryCode
+        });
+    }
+
     return statement;
 };
 

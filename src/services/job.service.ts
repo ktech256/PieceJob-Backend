@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 import { emitToUser, emitJobUpdate, emitAdminUpdate, emitToWorkspace, isUserConnected } from '../socket/socket.service';
 import { addJobToBroadcastQueue } from './job-broadcast.queue';
 import * as notificationService from './notification.service';
+import * as notificationQueue from './notification.queue';
 import * as performanceService from './provider-performance.service';
 import * as fraudService from './fraud.service';
 import * as userContextService from './user-context.service';
@@ -214,6 +215,22 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             // Real-Time Sync
             const socketService = require('../socket/socket.service');
             socketService.syncJobStatus(job, 'status_updated', { adminOverride });
+
+            // Fetch customer email for receipt
+            const customer = await User.findById(job.customerId);
+            if (customer?.email) {
+                await notificationQueue.addNotificationToQueue({
+                    type: 'EMAIL',
+                    email: customer.email,
+                    templateCode: 'JOB_COMPLETED_RECEIPT',
+                    templateData: {
+                        firstName: customer.firstName,
+                        serviceName: job.serviceName || job.serviceCode,
+                        jobId: job._id.toString()
+                    },
+                    countryCode: job.countryCode
+                });
+            }
 
             notificationService.notifyUser(
                 job.customerId.toString(),

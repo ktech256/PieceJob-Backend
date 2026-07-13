@@ -6,6 +6,7 @@ import Ledger, { TransactionType } from '../models/Ledger';
 import Notification from '../models/Notification';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import * as notificationQueue from '../services/notification.queue';
 import { logger } from '../utils/logger';
 import mongoose from 'mongoose';
 
@@ -159,6 +160,20 @@ export const createPartner = async (req: Request, res: Response) => {
         });
 
         await partner.save();
+
+        // Dispatch Welcome Partner Email
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: partner.email,
+            templateCode: 'WELCOME_PARTNER',
+            templateData: {
+                name: partner.name,
+                referralCode: partner.referralCode,
+                password: password || 'PJPartner2024!'
+            },
+            countryCode: partner.countryCode
+        });
+
         res.status(201).json({ success: true, data: partner });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });

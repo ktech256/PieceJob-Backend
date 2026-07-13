@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Provider, { VerificationStatus } from '../models/Provider';
+import User from '../models/User';
+import * as notificationQueue from '../services/notification.queue';
 import PanicAlert from '../models/PanicAlert';
 import Job from '../models/Job';
 import AuditLog from '../models/AuditLog';
@@ -69,6 +71,21 @@ export const verifyProvider = async (req: AuthRequest, res: Response) => {
     }
 
     await provider.save();
+
+    // Send Verification Email
+    const user = await User.findById(provider.userId);
+    if (user?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: user.email,
+            templateCode: status === VerificationStatus.APPROVED ? 'PROVIDER_VERIFICATION_APPROVED' : 'PROVIDER_VERIFICATION_REJECTED',
+            templateData: {
+                firstName: user.firstName,
+                reason: reason || 'N/A'
+            },
+            countryCode: provider.countryCode
+        });
+    }
 
     // SECTION 13: System Ledger Record (Audit Log)
     await auditService.logAdminAction({

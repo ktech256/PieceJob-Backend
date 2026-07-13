@@ -1,5 +1,7 @@
 import Invoice, { InvoiceStatus } from '../models/Invoice';
 import Counter from '../models/Counter';
+import User from '../models/User';
+import * as notificationQueue from './notification.queue';
 import mongoose from 'mongoose';
 
 const getNextSequence = async (countryCode: string) => {
@@ -28,6 +30,24 @@ export const createInvoice = async (jobId: string, customerId: string, providerI
     });
 
     await invoice.save();
+
+    // Send Invoice Email
+    const customer = await User.findById(customerId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'TAX_INVOICE',
+            templateData: {
+                firstName: customer.firstName,
+                invoiceNumber: invoice.invoiceNumber,
+                amount: invoice.amount.toString(),
+                invoiceId: invoice._id.toString()
+            },
+            countryCode
+        });
+    }
+
     return invoice;
 };
 
@@ -38,6 +58,25 @@ export const voidInvoice = async (invoiceId: string, adminId: string) => {
     invoice.status = InvoiceStatus.VOIDED;
     invoice.metadata = { ...invoice.metadata, voidedBy: adminId, voidedAt: new Date() };
     await invoice.save();
+
+    // Send Invoice Email (VOIDED status)
+    const customer = await User.findById(invoice.customerId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'TAX_INVOICE',
+            templateData: {
+                firstName: customer.firstName,
+                invoiceNumber: invoice.invoiceNumber,
+                amount: invoice.amount.toString(),
+                invoiceId: invoice._id.toString(),
+                status: 'VOIDED'
+            },
+            countryCode: invoice.countryCode
+        });
+    }
+
     return invoice;
 };
 
@@ -67,6 +106,24 @@ export const reissueInvoice = async (invoiceId: string, adminId: string) => {
     original.reissuedAsId = reissued._id as any;
     await original.save();
 
+    // Send Invoice Email
+    const customer = await User.findById(reissued.customerId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'TAX_INVOICE',
+            templateData: {
+                firstName: customer.firstName,
+                invoiceNumber: reissued.invoiceNumber,
+                amount: reissued.amount.toString(),
+                invoiceId: reissued._id.toString(),
+                status: 'REISSUED'
+            },
+            countryCode: reissued.countryCode
+        });
+    }
+
     return reissued;
 };
 
@@ -89,6 +146,25 @@ export const createCreditNote = async (originalInvoiceId: string, amount: number
     });
 
     await creditNote.save();
+
+    // Send Credit Note Email
+    const customer = await User.findById(creditNote.customerId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'TAX_INVOICE',
+            templateData: {
+                firstName: customer.firstName,
+                invoiceNumber: creditNote.invoiceNumber,
+                amount: creditNote.amount.toString(),
+                invoiceId: creditNote._id.toString(),
+                status: 'CREDIT_NOTE'
+            },
+            countryCode: creditNote.countryCode
+        });
+    }
+
     return creditNote;
 };
 
@@ -111,5 +187,24 @@ export const createDebitNote = async (originalInvoiceId: string, amount: number,
     });
 
     await debitNote.save();
+
+    // Send Debit Note Email
+    const customer = await User.findById(debitNote.customerId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'TAX_INVOICE',
+            templateData: {
+                firstName: customer.firstName,
+                invoiceNumber: debitNote.invoiceNumber,
+                amount: debitNote.amount.toString(),
+                invoiceId: debitNote._id.toString(),
+                status: 'DEBIT_NOTE'
+            },
+            countryCode: debitNote.countryCode
+        });
+    }
+
     return debitNote;
 };

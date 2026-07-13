@@ -2,6 +2,7 @@ import * as performanceService from './provider-performance.service';
 import * as financialService from './financial.service';
 import * as referralService from './referral.service';
 import * as corporateSchedulingService from './corporate-scheduling.service';
+import * as adminReportService from './admin-report.service';
 import { logger } from '../utils/logger';
 
 export const initSchedulers = () => {
@@ -34,6 +35,12 @@ export const initSchedulers = () => {
         logger.debug('Processing pending referral rewards...');
         await referralService.processScheduledRewards();
     }, 30 * 60 * 1000);
+
+    // 6. Admin Daily Summary (Every 24 hours)
+    setInterval(async () => {
+        logger.debug('Generating daily platform summary...');
+        await adminReportService.sendDailyPlatformSummary();
+    }, 24 * 60 * 60 * 1000);
 
     logger.info('System Schedulers Initialized');
 };

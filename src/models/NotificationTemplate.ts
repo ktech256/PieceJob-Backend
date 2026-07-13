@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface INotificationTemplate extends Document {
   templateCode: string; // e.g. "AUTH_OTP"
   channel: 'PUSH' | 'SMS' | 'EMAIL';
+  category: 'ACCOUNT' | 'CUSTOMER' | 'PROVIDER' | 'WALLET' | 'REFERRAL' | 'AFFILIATE' | 'MARKETING' | 'LEGAL' | 'ADMIN';
   language: string; // e.g. "EN"
   subject?: string; // For EMAIL
   title?: string; // For PUSH
@@ -18,6 +19,7 @@ export interface INotificationTemplate extends Document {
 const NotificationTemplateSchema: Schema = new Schema({
   templateCode: { type: String, required: true },
   channel: { type: String, enum: ['PUSH', 'SMS', 'EMAIL'], required: true },
+  category: { type: String, enum: ['ACCOUNT', 'CUSTOMER', 'PROVIDER', 'WALLET', 'REFERRAL', 'AFFILIATE', 'MARKETING', 'LEGAL', 'ADMIN'], default: 'ACCOUNT' },
   language: { type: String, default: 'EN' },
   subject: { type: String },
   title: { type: String },

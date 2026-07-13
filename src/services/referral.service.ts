@@ -10,6 +10,7 @@ import Ledger, { TransactionType } from '../models/Ledger';
 import * as walletService from './wallet.service';
 import * as financialService from './financial.service';
 import * as notificationService from './notification.service';
+import * as notificationQueue from './notification.queue';
 import { logger } from '../utils/logger';
 import { IJob } from '../models/Job';
 import { v4 as uuidv4 } from 'uuid';
@@ -307,6 +308,22 @@ export const executeRewardPayout = async (reward: any, session?: mongoose.Client
                 'Referral Reward Credited!',
                 `Congratulations! You have earned a reward from ${referred.firstName}'s qualifying job.`
             );
+
+            // Dispatch Referral Reward Email
+            if (referrer.email) {
+                await notificationQueue.addNotificationToQueue({
+                    type: 'EMAIL',
+                    email: referrer.email,
+                    templateCode: 'REFERRAL_REWARD_EARNED',
+                    templateData: {
+                        firstName: referrer.firstName,
+                        referredName: referred.firstName,
+                        amount: reward.amount.toString(),
+                        currency: reward.currency
+                    },
+                    countryCode: reward.countryCode
+                });
+            }
         }
     } catch (error: any) {
         logger.error(`executeRewardPayout failed: ${error.message}`);

@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Payout, { PayoutStatus } from '../models/Payout';
 import Ledger, { TransactionType } from '../models/Ledger';
 import Wallet from '../models/Wallet';
+import User from '../models/User';
+import * as notificationQueue from './notification.queue';
 import { v4 as uuidv4 } from 'uuid';
 import AuditLog from '../models/AuditLog';
 
@@ -105,6 +107,23 @@ export const markPaid = async (payoutId: string, bankRef: string, adminId: strin
             { session }
         );
 
+        // Send Payout Completed Email
+        const provider = await User.findById(payout.providerId);
+        if (provider?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: provider.email,
+                templateCode: 'WITHDRAWAL_COMPLETED',
+                templateData: {
+                    firstName: provider.firstName,
+                    amount: payout.totalAmount.toString(),
+                    currency: payout.currency,
+                    reference: bankRef
+                },
+                countryCode: payout.countryCode
+            });
+        }
+
         await session.commitTransaction();
         return payout;
     } catch (error) {
@@ -145,6 +164,23 @@ export const reversePayout = async (payoutId: string, reason: string, adminId: s
             { status: 'CANCELLED', metadata: { reversalReason: reason } },
             { session }
         );
+
+        // Send Payout Failed Email
+        const provider = await User.findById(payout.providerId);
+        if (provider?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: provider.email,
+                templateCode: 'WITHDRAWAL_FAILED',
+                templateData: {
+                    firstName: provider.firstName,
+                    amount: payout.totalAmount.toString(),
+                    currency: payout.currency,
+                    reason: reason || 'N/A'
+                },
+                countryCode: payout.countryCode
+            });
+        }
 
         await session.commitTransaction();
         return payout;

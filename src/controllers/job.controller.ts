@@ -22,6 +22,7 @@ import * as performanceService from '../services/provider-performance.service';
 import * as zoneResolverService from '../services/zone-resolver.service';
 import * as fraudService from '../services/fraud.service';
 import * as notificationService from '../services/notification.service';
+import * as notificationQueue from '../services/notification.queue';
 import * as testUserService from '../services/test-user.service';
 import * as paymentGatewayService from '../services/payment-gateway.service';
 import * as userContextService from '../services/user-context.service';
@@ -334,6 +335,22 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
     });
 
     await job.save();
+
+    // Send Job Request Confirmation Email
+    const customer = await User.findById(req.user?.userId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'JOB_REQUEST_CONFIRMATION',
+            templateData: {
+                firstName: customer.firstName,
+                serviceName: service.name,
+                jobId: job._id.toString()
+            },
+            countryCode: job.countryCode
+        });
+    }
 
     // Auto-save location for reuse (Issue 3)
     await userContextService.autoSaveLocation(req.user!.userId, address, coordinates);
@@ -796,6 +813,23 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
         notificationMsg
     );
 
+    // Dispatch Provider Assigned Email
+    const customer = await User.findById(job.customerId);
+    if (customer?.email) {
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: customer.email,
+            templateCode: 'PROVIDER_ASSIGNED',
+            templateData: {
+                firstName: customer.firstName,
+                serviceName: job.serviceName || job.serviceCode,
+                providerName: providerData ? `${providerData.firstName} ${providerData.lastName}` : 'A professional',
+                jobId: job._id.toString()
+            },
+            countryCode: job.countryCode
+        });
+    }
+
     res.status(200).json({
         success: true,
         message: 'Job accepted',
@@ -1015,6 +1049,23 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
               `The job has been cancelled by the ${role?.toLowerCase()}.`
           );
           logger.info(`JOB_CANCEL_PROVIDER_NOTIFIED | Target: ${notifyTargetId}`);
+
+          // Dispatch Cancelled Email
+          const targetUser = await User.findById(notifyTargetId);
+          if (targetUser?.email) {
+              await notificationQueue.addNotificationToQueue({
+                  type: 'EMAIL',
+                  email: targetUser.email,
+                  templateCode: 'JOB_CANCELLED',
+                  templateData: {
+                      firstName: targetUser.firstName,
+                      serviceName: job.serviceName || job.serviceCode,
+                      cancelledBy: role === 'PROVIDER' ? 'Provider' : 'Customer',
+                      reason: reason || 'N/A'
+                  },
+                  countryCode: job.countryCode
+              });
+          }
       }
 
       emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });

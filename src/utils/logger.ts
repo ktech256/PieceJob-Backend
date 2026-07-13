@@ -53,6 +53,10 @@ class Logger {
         this.info(`MATCHING | Job: ${jobId} | Wave: ${wave} | ${summary}`);
     }
 
+    email(action: string, status: string, to: string, details?: string) {
+        this.info(`EMAIL | ${action} | ${status} | To: ${to} ${details ? '| ' + details : ''}`);
+    }
+
     fcm(action: string, status: string, userId: string, details?: string) {
         this.info(`FCM | ${action} | ${status} | User: ${userId} ${details ? '| ' + details : ''}`);
     }
