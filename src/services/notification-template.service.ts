@@ -36,6 +36,13 @@ export const resolveTemplate = (template: INotificationTemplate, data: Record<st
         subject = subject.replace(regex, value);
     });
 
+    // STRICT VALIDATION: Check for unresolved placeholders
+    const placeholderRegex = /{{[a-zA-Z0-9_]+}}/;
+    if (placeholderRegex.test(title) || placeholderRegex.test(body) || placeholderRegex.test(subject)) {
+        const missing = (body.match(/{{[a-zA-Z0-9_]+}}/g) || []).join(', ');
+        throw new Error(`UNRESOLVED_PLACEHOLDERS: ${missing}`);
+    }
+
     return { title, body, plainTextBody, subject };
 };
 

@@ -815,6 +815,8 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
 
     // Dispatch Provider Assigned Email
     const customer = await User.findById(job.customerId);
+    const providerUser = await User.findById(userId);
+
     if (customer?.email) {
         await notificationQueue.addNotificationToQueue({
             type: 'EMAIL',
@@ -945,6 +947,9 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
                 'Your provider has arrived at the location.'
             );
 
+            // Fetch Provider Info for email
+            const provider = await User.findById(updatedJob.providerId);
+
             // Dispatch Provider Arrived Email
             const customer = await User.findById(updatedJob.customerId);
             if (customer?.email) {
@@ -955,7 +960,8 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
                     templateData: {
                         firstName: customer.firstName,
                         serviceName: updatedJob.serviceName || updatedJob.serviceCode,
-                        jobId: updatedJob._id.toString()
+                        jobId: updatedJob._id.toString(),
+                        providerName: provider ? `${provider.firstName} ${provider.lastName}` : 'Your professional'
                     },
                     countryCode: updatedJob.countryCode
                 });

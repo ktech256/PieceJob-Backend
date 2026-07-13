@@ -61,66 +61,74 @@ export const sendEmail = async (options: EmailOptions) => {
       if (text) text = text.replace(regex, value);
     });
 
-    // Wrap in Global Branding
+    // STRICT VALIDATION: Ensure no unresolved placeholders remain
+    const unresolved = body.match(/{{[a-zA-Z0-9_]+}}/g);
+    if (unresolved) {
+      logger.error(`EMAIL | VALIDATION_FAILED | Template: ${templateCode} | Missing: ${unresolved.join(', ')}`);
+      return { success: false, reason: 'UNRESOLVED_PLACEHOLDERS', missing: unresolved };
+    }
+
+    // Wrap in Premium Enterprise Branding
     const footer = config.emailSignature || '';
-    const primaryColor = template.category === 'PROVIDER' ? '#2E7D32' : '#D32F2F'; // Green for Pro, Red for Customer
+    const isProvider = template.category === 'PROVIDER';
+    const primaryColor = isProvider ? '#1A56DB' : '#FF9900'; // Royal Blue for Pro, Orange for Customer
     const brandName = config.branding.companyName || 'PieceJob';
-    const logoUrl = config.branding.logoUrl || 'https://piecejob.co/assets/logos/piecejob-logo.png'; // Fallback to PieceJob Global Logo
+    const logoUrl = config.branding.logoUrl || 'https://piecejob.co/assets/logos/piecejob-logo.png';
 
     const html = `
       <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <style>
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color: #333333; }
-            .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
-            .header { padding: 40px 20px; text-align: center; background-color: #121212; }
-            .content { padding: 50px; line-height: 1.8; }
-            .footer { padding: 40px; background-color: #fafafa; text-align: center; font-size: 11px; color: #999999; border-top: 1px solid #eeeeee; }
-            .button { display: inline-block; padding: 18px 36px; background-color: ${primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 14px; font-weight: 800; margin-top: 30px; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
-            .card { background-color: #f9f9f9; border-radius: 20px; padding: 30px; margin: 30px 0; border: 1px solid #f0f0f0; }
-            .detail-row { display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px dashed #e0e0e0; padding-bottom: 12px; }
-            .detail-row:last-child { border-bottom: none; }
-            .detail-label { font-weight: 800; color: #888888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
-            .detail-value { font-weight: 700; color: #121212; text-align: right; font-size: 13px; }
-            h1 { font-size: 28px; font-weight: 900; color: #121212; margin-top: 0; margin-bottom: 20px; letter-spacing: -0.03em; line-height: 1.2; }
-            p { margin-bottom: 20px; font-size: 16px; color: #555555; }
-            .highlight { color: ${primaryColor}; font-weight: 900; }
-            @media (max-width: 600px) {
-              .container { margin: 0; border-radius: 0; width: 100%; }
-              .content { padding: 35px 25px; }
-              .h1 { font-size: 24px; }
-            }
-          </style>
-        </head>
-        <body>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { margin: 0; padding: 0; background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+          .wrapper { width: 100%; table-layout: fixed; background-color: #f8f9fa; padding-bottom: 60px; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; margin-top: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.05); }
+          .header { background-color: #121212; padding: 60px 40px; text-align: center; }
+          .logo { height: 100px; width: auto; }
+          .content { padding: 60px 50px; color: #1a1a1a; line-height: 1.7; }
+          .h1 { font-size: 32px; font-weight: 800; margin: 0 0 24px 0; letter-spacing: -0.04em; color: #121212; line-height: 1.1; }
+          .p { font-size: 16px; margin: 0 0 20px 0; color: #4a4a4a; }
+          .button { display: inline-block; padding: 20px 40px; background-color: ${primaryColor}; color: #ffffff !important; text-decoration: none; border-radius: 16px; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 20px; box-shadow: 0 8px 25px ${primaryColor}44; }
+          .card { background-color: #fcfcfc; border: 1px solid #f0f0f0; border-radius: 20px; padding: 32px; margin: 40px 0; }
+          .detail-row { display: table; width: 100%; margin-bottom: 12px; border-bottom: 1px solid #f5f5f5; padding-bottom: 12px; }
+          .detail-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+          .label { display: table-cell; font-size: 11px; font-weight: 800; color: #999; text-transform: uppercase; letter-spacing: 0.1em; width: 40%; }
+          .value { display: table-cell; font-size: 14px; font-weight: 700; color: #121212; text-align: right; }
+          .footer { padding: 50px 40px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #f5f5f5; }
+          .social-links { margin-top: 30px; }
+          .social-icon { display: inline-block; margin: 0 10px; opacity: 0.4; }
+          @media screen and (max-width: 600px) {
+            .container { margin-top: 0; border-radius: 0; width: 100% !important; }
+            .content { padding: 40px 30px; }
+            .h1 { font-size: 26px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="wrapper">
           <div class="container">
             <div class="header">
-              <img src="${logoUrl}" alt="${brandName}" style="max-height: 50px;">
+              <img src="${logoUrl}" alt="${brandName}" class="logo">
             </div>
             <div class="content">
               ${body}
             </div>
             <div class="footer">
-              <div style="margin-bottom: 25px;">
-                ${footer}
+              <div style="margin-bottom: 25px;">${footer}</div>
+              <p style="margin: 0; font-weight: 800; color: #121212; text-transform: uppercase; letter-spacing: 0.2em;">${brandName}</p>
+              <p style="margin: 6px 0;">${config.branding.companyAddress || ''}</p>
+              <div class="social-links">
+                <a href="#" class="social-icon"><img src="https://api.piecejob.co/assets/icons/social-fb.png" width="20"></a>
+                <a href="#" class="social-icon"><img src="https://api.piecejob.co/assets/icons/social-ig.png" width="20"></a>
+                <a href="#" class="social-icon"><img src="https://api.piecejob.co/assets/icons/social-tw.png" width="20"></a>
               </div>
-              <p style="margin: 0; font-weight: 900; color: #121212; text-transform: uppercase; letter-spacing: 0.2em; font-size: 10px;">${brandName}</p>
-              <p style="margin: 6px 0; font-size: 10px;">${config.branding.companyAddress || ''}</p>
-              <p style="margin: 15px 0;">
-                <a href="mailto:${config.branding.supportEmail}" style="color: ${primaryColor}; text-decoration: none; font-weight: 700;">Support Centre</a> &nbsp;•&nbsp;
-                <a href="https://piecejob.co/terms" style="color: #999; text-decoration: none;">Terms of Service</a> &nbsp;•&nbsp;
-                <a href="https://piecejob.co/privacy" style="color: #999; text-decoration: none;">Privacy Policy</a>
-              </p>
-              <div style="margin-top: 30px; opacity: 0.5;">
-                <img src="https://api.piecejob.co/assets/social-icons.png" alt="Social" style="max-height: 20px;">
-              </div>
-              <p style="margin-top: 25px; font-size: 9px; opacity: 0.4; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">© ${new Date().getFullYear()} PieceJob Global Oracle node. All rights reserved.</p>
+              <p style="margin-top: 30px; opacity: 0.5;">© ${new Date().getFullYear()} PieceJob Global Oracle node. All rights reserved.</p>
             </div>
           </div>
-        </body>
+        </div>
+      </body>
       </html>
     `;
 

@@ -216,8 +216,10 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             const socketService = require('../socket/socket.service');
             socketService.syncJobStatus(job, 'status_updated', { adminOverride });
 
-            // Fetch customer email for receipt
+            // Fetch customer and provider info for receipt
             const customer = await User.findById(job.customerId);
+            const provider = await User.findById(job.providerId);
+
             if (customer?.email) {
                 await notificationQueue.addNotificationToQueue({
                     type: 'EMAIL',
@@ -226,7 +228,13 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                     templateData: {
                         firstName: customer.firstName,
                         serviceName: job.serviceName || job.serviceCode,
-                        jobId: job._id.toString()
+                        jobId: job._id.toString(),
+                        providerName: provider ? `${provider.firstName} ${provider.lastName}` : 'PieceJob Pro',
+                        amount: (job.agreedPrice || (job.serviceFee || 0) + job.bookingFee).toString(),
+                        currency: job.pricingSnapshot?.currencyCode || 'R',
+                        time: new Date().toLocaleString(),
+                        address: job.location?.address || 'N/A',
+                        duration: job.startedAt && job.completedAt ? `${Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / (1000 * 60))} minutes` : 'N/A'
                     },
                     countryCode: job.countryCode
                 });

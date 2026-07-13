@@ -8,19 +8,25 @@ import { logger } from '../utils/logger';
 export const getAttachmentsForEmail = async (templateCode: string, templateData: any): Promise<any[]> => {
   try {
     const attachments: any[] = [];
-    logger.info(`EMAIL_ATTACHMENT | ANALYZING | Template: ${templateCode} | Data Keys: ${Object.keys(templateData)}`);
 
-    // Normalize keys (Job ID can come as jobId or id)
+    // Mission Critical logging for forensic verification
     const jobId = templateData.jobId || templateData.id;
-    const invoiceId = templateData.invoiceId || templateData.id;
+    logger.info(`EMAIL_ATTACHMENT | ANALYZING | Template: ${templateCode} | Target ID: ${jobId}`);
 
     if (templateCode === 'JOB_COMPLETED_RECEIPT' && jobId) {
+      logger.info(`EMAIL_ATTACHMENT | GENERATING_PDF | Job: ${jobId}`);
       const pdf = await generateJobReceiptPDF(jobId);
-      attachments.push({
-        filename: `PieceJob-Receipt-${jobId.slice(-6)}.pdf`,
-        content: pdf,
-        contentType: 'application/pdf'
-      });
+
+      if (pdf && pdf.length > 0) {
+        attachments.push({
+          filename: `PieceJob-Receipt-${jobId.toString().slice(-6)}.pdf`,
+          content: pdf,
+          contentType: 'application/pdf'
+        });
+        logger.info(`EMAIL_ATTACHMENT | SUCCESS | Attached PDF for Job: ${jobId}`);
+      } else {
+        logger.error(`EMAIL_ATTACHMENT | FAILED | PDF buffer empty for Job: ${jobId}`);
+      }
     }
 
     if (templateCode === 'TAX_INVOICE' && templateData.invoiceId) {
@@ -51,17 +57,19 @@ const generateJobReceiptPDF = async (jobId: string) => {
   if (!job) throw new Error('Job not found');
 
   return await generatePDF({
-    title: 'OFFICIAL RECEIPT',
+    title: 'OFFICIAL TAX RECEIPT',
     items: [
-      { label: 'Job ID', value: job._id.toString() },
+      { label: 'Receipt No.', value: `PJ-RC-${job._id.toString().toUpperCase()}` },
+      { label: 'Job Reference', value: `#${job._id.toString().slice(-6)}` },
       { label: 'Service', value: job.serviceName || job.serviceCode },
+      { label: 'Professional', value: job.providerId ? `${(job.providerId as any).firstName} ${(job.providerId as any).lastName}` : 'N/A' },
       { label: 'Date', value: job.createdAt.toDateString() },
-      { label: 'Amount', value: `${job.pricingSnapshot?.currencyCode || 'R'} ${job.bookingFee.toFixed(2)}` },
-      { label: 'Status', value: 'PAID' }
+      { label: 'Amount Paid', value: `${job.pricingSnapshot?.currencyCode || 'R'} ${job.bookingFee.toFixed(2)}` },
+      { label: 'Status', value: 'PAID / COMPLETED' }
     ],
     companyDetails: {
       name: 'PieceJob (Pty) Ltd',
-      address: 'Johannesburg, South Africa',
+      address: 'Oracle North, Johannesburg, South Africa',
       email: 'support@piecejob.co',
       phone: '+27 11 000 0000'
     }
