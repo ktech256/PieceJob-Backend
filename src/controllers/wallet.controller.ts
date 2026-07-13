@@ -3,10 +3,12 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import Wallet from '../models/Wallet';
 import Ledger from '../models/Ledger';
 import Provider from '../models/Provider';
+import User from '../models/User';
 import Country from '../models/Country';
 import * as pricingService from '../services/pricing.service';
 import * as walletService from '../services/wallet.service';
 import * as financialService from '../services/financial.service';
+import * as notificationQueue from '../services/notification.queue';
 import { formatToWorkspaceTime } from '../utils/date';
 
 export const getWalletBalance = async (req: AuthRequest, res: Response) => {
@@ -166,6 +168,22 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response) => {
             metadata: { requestType: 'MANUAL_WITHDRAWAL' }
         });
         await ledger.save({ session });
+
+        // Dispatch Withdrawal Requested Email
+        const user = await User.findById(req.user?.userId).session(session);
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: 'WITHDRAWAL_REQUESTED',
+                templateData: {
+                    firstName: user.firstName,
+                    amount: amount.toString(),
+                    currency: wallet.currency
+                },
+                countryCode: wallet.countryCode
+            });
+        }
 
         await session.commitTransaction();
         res.status(200).json({ success: true, message: 'Withdrawal request submitted successfully' });
@@ -333,6 +351,23 @@ export const payServiceFee = async (req: AuthRequest, res: Response) => {
             ipAddress: req.ip,
             systemSource: 'MOBILE_APP'
         }, session);
+
+        // Dispatch Service Fee Receipt Email
+        const user = await User.findById(providerId).session(session);
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: 'SERVICE_FEE_RECEIPT',
+                templateData: {
+                    firstName: user.firstName,
+                    amount: paymentAmount.toString(),
+                    currency: wallet.currency,
+                    vendor: vendor === 'CREDIT' ? 'Internal Credit' : vendor
+                },
+                countryCode: wallet.countryCode
+            });
+        }
 
         await session.commitTransaction();
         res.status(200).json({

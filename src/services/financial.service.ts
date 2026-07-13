@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as auditService from './audit.service';
 import * as testUserService from './test-user.service';
 import * as walletService from './wallet.service';
+import * as notificationQueue from './notification.queue';
 import { logger } from '../utils/logger';
 
 export const handleBookingFee = async (jobId: string, customerId: string, amount: number, currency: string, countryCode: string) => {
@@ -270,6 +271,21 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
         wallet.isSuspended = true;
         wallet.suspendReason = `Outstanding service fee (${Math.abs(wallet.serviceFeeBalance)}) exceeds threshold (${suspensionThreshold})`;
 
+        // Dispatch Auto-Suspension Email
+        const user = await User.findById(providerId).session(session);
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: 'ACCOUNT_SUSPENDED',
+                templateData: {
+                    firstName: user.firstName,
+                    reason: wallet.suspendReason
+                },
+                countryCode: finalCountryCode
+            });
+        }
+
         await auditService.logAdminAction({
             countryCode: finalCountryCode,
             adminId: 'SYSTEM',
@@ -420,6 +436,24 @@ export const releaseEscrowFunds = async () => {
                 session,
                 metadata: { settlement: 'ESCROW_RELEASE' }
             });
+
+            // Dispatch Provider Net Earnings Email
+            const providerUser = await User.findById(job.providerId).session(session);
+            if (providerUser?.email) {
+                await notificationQueue.addNotificationToQueue({
+                    type: 'EMAIL',
+                    email: providerUser.email,
+                    templateCode: 'PROVIDER_NET_EARNINGS',
+                    templateData: {
+                        firstName: providerUser.firstName,
+                        amount: netAmount.toString(),
+                        currency: ledgerEntry.currency,
+                        jobId: job._id.toString(),
+                        serviceName: job.serviceName || job.serviceCode
+                    },
+                    countryCode: job.countryCode
+                });
+            }
         }
 
         // REFERRAL REWARD - Still process this as it encourages growth
@@ -524,35 +558,40 @@ export const reconcileProviderCredit = async (providerId: string, amountToApply:
  * Specifically uses balanceReferral to clear outstanding service fees for providers.
  */
 export const applyReferralBalanceToServiceFees = async (providerId: string, amount: number, session: mongoose.ClientSession) => {
-    const wallet = await Wallet.findOne({ userId: new mongoose.Types.ObjectId(providerId) }).session(session);
-    if (!wallet || wallet.balanceReferral <= 0 || wallet.balanceCredit >= 0) return;
+// ...
+};
 
-    const amountToUse = Math.min(wallet.balanceReferral, Math.abs(wallet.balanceCredit), amount);
-    if (amountToUse <= 0) return;
+export const sendServiceFeeReminders = async (countryCode: string) => {
+    try {
+        const settings = await settingsService.getSettings(countryCode);
+        const threshold = settings?.serviceFeeSuspensionThreshold || 100;
 
-    // 1. Deduct from Referral Balance
-    wallet.balanceReferral -= amountToUse;
-    // 2. Add to Credit Balance (Reducing debt)
-    wallet.balanceCredit += amountToUse;
-    wallet.serviceFeeBalance = Math.min(0, wallet.balanceCredit);
-    await wallet.save({ session });
+        // Reminder at 50% of threshold
+        const reminderThreshold = threshold * 0.5;
 
-    // 3. Record Ledger for the internal transfer
-    await new Ledger({
-        transactionId: `RC-${uuidv4().split('-')[0].toUpperCase()}-${Date.now().toString().slice(-4)}`,
-        fromUserId: providerId,
-        toUserId: providerId,
-        amount: amountToUse,
-        currency: wallet.currency,
-        countryCode: wallet.countryCode,
-        type: TransactionType.SERVICE_FEE,
-        status: 'COMPLETED',
-        description: 'Referral Balance applied to Outstanding Service Fees'
-    }).save({ session });
+        const wallets = await Wallet.find({
+            countryCode,
+            serviceFeeBalance: { $lt: -reminderThreshold }
+        });
 
-    // 4. Reconcile historical records
-    await reconcileProviderCredit(providerId, amountToUse, session, {
-        source: 'REFERRAL_BALANCE_APPLIED',
-        description: 'Referral Balance Applied'
-    });
+        for (const wallet of wallets) {
+            const user = await User.findById(wallet.userId);
+            if (user?.email) {
+                await notificationQueue.addNotificationToQueue({
+                    type: 'EMAIL',
+                    email: user.email,
+                    templateCode: 'SERVICE_FEE_REMINDER',
+                    templateData: {
+                        firstName: user.firstName,
+                        balance: Math.abs(wallet.serviceFeeBalance).toString(),
+                        currency: wallet.currency,
+                        threshold: threshold.toString()
+                    },
+                    countryCode
+                });
+            }
+        }
+    } catch (error: any) {
+        logger.error(`FINANCIAL | REMINDER_FAILED | Error: ${error.message}`);
+    }
 };

@@ -4,7 +4,9 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import * as webhookService from '../services/webhook.service';
 import * as financialService from '../services/financial.service';
 import Job, { JobStatus } from '../models/Job';
+import User from '../models/User';
 import * as jobService from '../services/job.service';
+import * as notificationQueue from '../services/notification.queue';
 import { emitAdminUpdate, emitJobUpdate } from '../socket/socket.service';
 import { logger } from '../utils/logger';
 
@@ -87,6 +89,24 @@ export const handlePaystackWebhook = async (req: Request, res: Response) => {
 
                 // Signal customer app via Socket if connected
                 emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
+
+                // Dispatch Booking Fee Receipt Email
+                const customer = await User.findById(job.customerId);
+                if (customer?.email) {
+                    await notificationQueue.addNotificationToQueue({
+                        type: 'EMAIL',
+                        email: customer.email,
+                        templateCode: 'BOOKING_FEE_RECEIPT',
+                        templateData: {
+                            firstName: customer.firstName,
+                            amount: job.bookingFee.toString(),
+                            currency: data.currency,
+                            reference: data.reference,
+                            jobId: job._id.toString()
+                        },
+                        countryCode: job.countryCode
+                    });
+                }
             } else {
                 console.log(`[PAYMENT_WEBHOOK] Job ${jobId} already PAID or not found.`);
             }
@@ -146,6 +166,24 @@ export const verifyPayment = async (req: Request, res: Response) => {
 
                 // Signal customer app
                 emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.BROADCASTED });
+
+                // Dispatch Booking Fee Receipt Email
+                const customer = await User.findById(job.customerId);
+                if (customer?.email) {
+                    await notificationQueue.addNotificationToQueue({
+                        type: 'EMAIL',
+                        email: customer.email,
+                        templateCode: 'BOOKING_FEE_RECEIPT',
+                        templateData: {
+                            firstName: customer.firstName,
+                            amount: job.bookingFee.toString(),
+                            currency: verification.data.currency,
+                            reference: reference,
+                            jobId: job._id.toString()
+                        },
+                        countryCode: job.countryCode
+                    });
+                }
             }
 
             return res.status(200).json({
@@ -161,6 +199,28 @@ export const verifyPayment = async (req: Request, res: Response) => {
             });
         } else {
             console.warn(`[PAYMENT_VERIFY] Gateway reported non-success status for ${reference}: ${verification.data.status}`);
+
+            // Dispatch Failed Payment Email
+            const job = await Job.findOne({ paymentReference: reference });
+            if (job) {
+                const customer = await User.findById(job.customerId);
+                if (customer?.email) {
+                    await notificationQueue.addNotificationToQueue({
+                        type: 'EMAIL',
+                        email: customer.email,
+                        templateCode: 'FAILED_PAYMENT',
+                        templateData: {
+                            firstName: customer.firstName,
+                            amount: job.bookingFee.toString(),
+                            currency: verification.data.currency || 'USD',
+                            jobId: job._id.toString(),
+                            reason: verification.data.gateway_response || 'Declined'
+                        },
+                        countryCode: job.countryCode
+                    });
+                }
+            }
+
             return res.status(400).json({ success: false, message: 'Payment not successful' });
         }
     } catch (error: any) {

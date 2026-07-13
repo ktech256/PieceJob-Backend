@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import Wallet, { IWallet } from '../models/Wallet';
 import Ledger, { TransactionType } from '../models/Ledger';
+import User from '../models/User';
+import * as notificationQueue from './notification.queue';
 import { v4 as uuidv4 } from 'uuid';
 import * as auditService from './audit.service';
 
@@ -95,6 +97,36 @@ export const mutateWallet = async (options: WalletMutationOptions) => {
         },
         systemSource: 'API'
     }, session);
+
+    // 4. Dispatch Wallet Emails (Conditional on Transaction Type)
+    const emailTypes: any = {
+        [TransactionType.CREDIT_TOPUP]: 'WALLET_CREDITED',
+        [TransactionType.SERVICE_FEE]: 'WALLET_DEBITED',
+        [TransactionType.REFUND]: 'WALLET_CREDITED',
+        [TransactionType.REFERRAL_REWARD]: 'WALLET_CREDITED',
+        [TransactionType.BONUS]: 'WALLET_CREDITED',
+        [TransactionType.PROMO_CREDIT]: 'WALLET_CREDITED'
+    };
+
+    const templateCode = emailTypes[type];
+    if (templateCode) {
+        const user = await User.findById(userId);
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode,
+                templateData: {
+                    firstName: user.firstName,
+                    amount: Math.abs(amount).toString(),
+                    currency,
+                    description,
+                    balance: (wallet as any)[balanceType].toString()
+                },
+                countryCode
+            });
+        }
+    }
 
     return { wallet, ledger };
 };

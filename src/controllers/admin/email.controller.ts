@@ -118,15 +118,24 @@ export const previewTemplate = async (req: AuthRequest, res: Response) => {
 
 export const getEmailLogs = async (req: AuthRequest, res: Response) => {
   try {
-    const { countryCode, page = 1, limit = 50 } = req.query;
+    const { countryCode, page = 1, limit = 50, category } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const logs = await EmailLog.find({ countryCode: countryCode as string })
+    const query: any = { countryCode: countryCode as string };
+    if (category && category !== 'ALL') {
+        // We need to match template category. Since logs only have templateCode,
+        // we might need to join or find all templates in that category first.
+        const templates = await NotificationTemplate.find({ category, channel: 'EMAIL' }).select('templateCode');
+        const codes = templates.map(t => t.templateCode);
+        query.templateCode = { $in: codes };
+    }
+
+    const logs = await EmailLog.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
 
-    const total = await EmailLog.countDocuments({ countryCode: countryCode as string });
+    const total = await EmailLog.countDocuments(query);
 
     res.status(200).json({ success: true, data: logs, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
   } catch (error: any) {
@@ -182,6 +191,90 @@ export const getEmailAnalytics = async (req: AuthRequest, res: Response) => {
             dailyStats
         }
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const testSmtp = async (req: AuthRequest, res: Response) => {
+  try {
+    const { countryCode } = req.query;
+    const result = await emailService.testSmtpConnection(countryCode as string);
+    res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const sendTestEmail = async (req: AuthRequest, res: Response) => {
+  try {
+    const { countryCode } = req.query;
+    const { recipient } = req.body;
+
+    const result = await emailService.sendEmail({
+      to: recipient,
+      templateCode: 'TEST_EMAIL',
+      templateData: {
+        time: new Date().toLocaleString(),
+        recipient
+      },
+      countryCode: countryCode as string
+    });
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const sendTemplateTest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { countryCode } = req.query;
+    const { recipient, templateCode, mockData } = req.body;
+
+    const result = await emailService.sendEmail({
+      to: recipient,
+      templateCode,
+      templateData: mockData || {},
+      countryCode: countryCode as string
+    });
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const sendCategoryTest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { countryCode } = req.query;
+    const { recipient, category } = req.body;
+
+    const templates = await NotificationTemplate.find({
+      category,
+      channel: 'EMAIL',
+      active: true,
+      $or: [{ countryCode: countryCode as string }, { countryCode: 'GLOBAL' }]
+    });
+
+    const results = [];
+    for (const template of templates) {
+        // Generate mock data for all placeholders
+        const mockData: Record<string, string> = {};
+        template.placeholders.forEach(p => {
+            mockData[p] = `[TEST_${p}]`;
+        });
+
+        const res = await emailService.sendEmail({
+            to: recipient,
+            templateCode: template.templateCode,
+            templateData: mockData,
+            countryCode: countryCode as string
+        });
+        results.push({ template: template.templateCode, ...res });
+    }
+
+    res.status(200).json({ success: true, results });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

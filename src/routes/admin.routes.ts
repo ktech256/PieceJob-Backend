@@ -107,6 +107,7 @@ router.get('/providers/performance', providerAdminController.getProvidersPerform
 // Users
 router.get('/users', userAdminController.listUsers);
 router.get('/users/:id', userAdminController.getUserById);
+router.patch('/users/:id/status', userAdminController.updateUserStatus);
 
 // Job Overrides & Details
 router.get('/jobs/:jobId', hasPermission('VIEW_AUDIT'), jobAdminController.adminGetJobDetails);
@@ -255,6 +256,7 @@ router.post('/marketing/promotions', hasPermission('MANAGE_CUSTOMERS'), marketin
 router.patch('/marketing/promotions/:id', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.updatePromotion);
 router.delete('/marketing/promotions/:id', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.deletePromotion);
 router.post('/marketing/notifications/push', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.sendCustomPush);
+router.post('/marketing/notifications/email', hasPermission('MANAGE_CUSTOMERS'), marketingAdminController.sendCustomEmail);
 
 // Test Seeding & Cleanup
 router.delete('/maintenance/test-users', authorize([UserRole.SUPER_ADMIN]), adminController.cleanupTestUsers);

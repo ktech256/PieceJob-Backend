@@ -657,6 +657,22 @@ export const expireInactiveNegotiations = async () => {
             await notificationService.notifyUser(job.providerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
         }
 
+        // Dispatch Negotiation Expired Email
+        const customer = await User.findById(job.customerId);
+        if (customer?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: customer.email,
+                templateCode: 'NEGOTIATION_EXPIRED',
+                templateData: {
+                    firstName: customer.firstName,
+                    serviceName: job.serviceName || job.serviceCode,
+                    jobId: job._id.toString()
+                },
+                countryCode: job.countryCode
+            });
+        }
+
         emitJobUpdate(job.id, 'status_updated', { jobId: job.id, priceStatus: 'EXPIRED' });
     }
 };

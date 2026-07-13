@@ -79,6 +79,166 @@ const templates = [
     countryCode: 'GLOBAL'
   },
   {
+    templateCode: 'PASSWORD_CHANGED',
+    channel: 'EMAIL',
+    category: 'ACCOUNT',
+    language: 'EN',
+    subject: 'Security Notice: PieceJob Password Changed',
+    body: '<p>Hi {{firstName}},</p><p>This is a confirmation that your PieceJob password was successfully changed on <b>{{time}}</b>.</p><p>If you did not authorize this change, please contact support immediately.</p>',
+    placeholders: ['firstName', 'time'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'NEGOTIATION_ACCEPTED',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Negotiation Success! Price Agreed',
+    body: '<p>Hi {{firstName}},</p><p>A final price of <b>{{amount}}</b> has been agreed for job <b>{{serviceName}}</b>.</p><p>The provider is now authorized to proceed.</p>',
+    placeholders: ['firstName', 'amount', 'jobId', 'serviceName'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'NEGOTIATION_TERMINATED',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Negotiation Terminated',
+    body: '<p>Hi {{firstName}},</p><p>The negotiation for job <b>{{serviceName}}</b> has been terminated. The job has been re-broadcasted to other professionals.</p>',
+    placeholders: ['firstName', 'jobId', 'serviceName'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'PROVIDER_ARRIVED',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Pro Alert: Provider has Arrived!',
+    body: '<p>Hi {{firstName}},</p><p>Your professional for <b>{{serviceName}}</b> has arrived at the location.</p><p>Please meet them to start the work.</p>',
+    placeholders: ['firstName', 'serviceName', 'jobId'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'WALLET_CREDITED',
+    channel: 'EMAIL',
+    category: 'WALLET',
+    language: 'EN',
+    subject: 'Wallet Update: Funds Credited',
+    body: '<p>Hi {{firstName}},</p><p>Your PieceJob wallet has been credited with <b>{{currency}} {{amount}}</b>.</p><p>Description: {{description}}</p><p>New Balance: {{balance}}</p>',
+    placeholders: ['firstName', 'amount', 'currency', 'description', 'balance'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'WALLET_DEBITED',
+    channel: 'EMAIL',
+    category: 'WALLET',
+    language: 'EN',
+    subject: 'Wallet Update: Payment Processed',
+    body: '<p>Hi {{firstName}},</p><p>A payment of <b>{{currency}} {{amount}}</b> was processed from your wallet.</p><p>Description: {{description}}</p><p>Remaining Balance: {{balance}}</p>',
+    placeholders: ['firstName', 'amount', 'currency', 'description', 'balance'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'ACCOUNT_SUSPENDED',
+    channel: 'EMAIL',
+    category: 'ACCOUNT',
+    language: 'EN',
+    subject: 'Notice: Your PieceJob Account is Suspended',
+    body: '<p>Hi {{firstName}},</p><p>Your account has been suspended by the administration.</p><p>Reason: <b>{{reason}}</b></p><p>If you wish to appeal this decision, please reply to this email.</p>',
+    placeholders: ['firstName', 'reason'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'ACCOUNT_REACTIVATED',
+    channel: 'EMAIL',
+    category: 'ACCOUNT',
+    language: 'EN',
+    subject: 'Good News: Your Account is Active',
+    body: '<p>Hi {{firstName}},</p><p>Your PieceJob account has been reactivated. You can now login and continue using our platform.</p>',
+    placeholders: ['firstName'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'NEGOTIATION_EXPIRED',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Negotiation Expired - PieceJob',
+    body: '<p>Hi {{firstName}},</p><p>The price negotiation for job <b>{{serviceName}}</b> has expired due to inactivity.</p><p>Please restart the negotiation or re-post the job if you still need the service.</p>',
+    placeholders: ['firstName', 'serviceName', 'jobId'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'BOOKING_FEE_RECEIPT',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Booking Fee Receipt - {{jobId}}',
+    body: '<p>Hi {{firstName}},</p><p>Thank you for your booking! We have received your booking fee of <b>{{currency}} {{amount}}</b> for job ID <b>{{jobId}}</b>.</p><p>Reference: {{reference}}</p>',
+    placeholders: ['firstName', 'amount', 'currency', 'reference', 'jobId'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'PROVIDER_NET_EARNINGS',
+    channel: 'EMAIL',
+    category: 'PROVIDER',
+    language: 'EN',
+    subject: 'Earnings Credited! Job #{{jobId}}',
+    body: '<p>Hi {{firstName}},</p><p>Good news! Your net earnings of <b>{{currency}} {{amount}}</b> for job <b>{{serviceName}}</b> have been released to your main balance.</p>',
+    placeholders: ['firstName', 'amount', 'currency', 'jobId', 'serviceName'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'WITHDRAWAL_REQUESTED',
+    channel: 'EMAIL',
+    category: 'WALLET',
+    language: 'EN',
+    subject: 'Withdrawal Request Received',
+    body: '<p>Hi {{firstName}},</p><p>We have received your withdrawal request for <b>{{currency}} {{amount}}</b>. Our finance team will process it within the next business window.</p>',
+    placeholders: ['firstName', 'amount', 'currency'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'SERVICE_FEE_RECEIPT',
+    channel: 'EMAIL',
+    category: 'PROVIDER',
+    language: 'EN',
+    subject: 'Service Fee Payment Received',
+    body: '<p>Hi {{firstName}},</p><p>Thank you for your payment of <b>{{currency}} {{amount}}</b> toward your service fees.</p><p>Payment Method: {{vendor}}</p>',
+    placeholders: ['firstName', 'amount', 'currency', 'vendor'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'EMAIL_CHANGED',
+    channel: 'EMAIL',
+    category: 'ACCOUNT',
+    language: 'EN',
+    subject: 'Security: PieceJob Email Address Updated',
+    body: '<p>Hi {{firstName}},</p><p>Your PieceJob account email was successfully updated on <b>{{time}}</b>.</p><p>If you did not make this change, please contact support immediately.</p>',
+    placeholders: ['firstName', 'time'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'PHONE_CHANGED',
+    channel: 'EMAIL',
+    category: 'ACCOUNT',
+    language: 'EN',
+    subject: 'Security: PieceJob Phone Number Updated',
+    body: '<p>Hi {{firstName}},</p><p>Your PieceJob account phone number was successfully updated on <b>{{time}}</b>.</p><p>If you did not make this change, please contact support immediately.</p>',
+    placeholders: ['firstName', 'time'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'TEST_EMAIL',
+    channel: 'EMAIL',
+    category: 'ADMIN',
+    language: 'EN',
+    subject: 'SMTP Oracle Connectivity Test Signal',
+    body: '<h1>Oracle Signal Established</h1><p>Time: {{time}}</p><p>Recipient: {{recipient}}</p><p>This test signal confirms that your SMTP dispatch node is operational.</p>',
+    placeholders: ['time', 'recipient'],
+    countryCode: 'GLOBAL'
+  },
+  {
     templateCode: 'REFERRAL_REWARD_EARNED',
     channel: 'EMAIL',
     category: 'REFERRAL',
@@ -166,6 +326,56 @@ const templates = [
     subject: 'PieceJob Daily Platform Summary - {{date}}',
     body: '<h2>Platform Performance Summary</h2><p>Date: {{date}}</p><ul><li>New Users: {{newUsers}}</li><li>New Jobs: {{newJobs}}</li><li>Completed Jobs: {{completedJobs}}</li><li>Total Revenue: {{totalRevenue}}</li></ul><p>Workspace: {{countryCode}}</p>',
     placeholders: ['date', 'newUsers', 'newJobs', 'completedJobs', 'totalRevenue', 'countryCode'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'ADMIN_WEEKLY_SUMMARY',
+    channel: 'EMAIL',
+    category: 'ADMIN',
+    language: 'EN',
+    subject: 'PieceJob Weekly Workspace Performance Report - {{countryCode}}',
+    body: '<h2>Weekly Performance Scorecard</h2><p>Period: {{period}}</p><ul><li>Total New Users: {{totalUsers}}</li><li>Total Jobs Created: {{totalJobs}}</li><li>Total Revenue Generated: {{totalRevenue}}</li></ul><p>Workspace: {{countryCode}}</p>',
+    placeholders: ['period', 'totalUsers', 'totalJobs', 'totalRevenue', 'countryCode'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'MARKETING_ANNOUNCEMENT',
+    channel: 'EMAIL',
+    category: 'MARKETING',
+    language: 'EN',
+    subject: '{{subject}}',
+    body: '<p>Hi {{firstName}},</p><div>{{body}}</div>',
+    placeholders: ['firstName', 'subject', 'body'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'PROVIDER_UNABLE_TO_LOCATE',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Alert: Provider Unable to Locate You',
+    body: '<p>Hi {{firstName}},</p><p>Your professional for <b>{{serviceName}}</b> is at the location but is unable to find you.</p><p>Please contact them via chat or phone immediately to avoid job cancellation.</p>',
+    placeholders: ['firstName', 'serviceName', 'jobId'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'SERVICE_FEE_REMINDER',
+    channel: 'EMAIL',
+    category: 'PROVIDER',
+    language: 'EN',
+    subject: 'Action Required: Service Fee Balance Reminder',
+    body: '<p>Hi {{firstName}},</p><p>This is a reminder that you have an outstanding service fee balance of <b>{{currency}} {{balance}}</b>.</p><p>Please note that accounts with a balance exceeding <b>{{currency}} {{threshold}}</b> will be automatically suspended until settled.</p><p>You can pay your fees in the app using our voucher system.</p>',
+    placeholders: ['firstName', 'balance', 'currency', 'threshold'],
+    countryCode: 'GLOBAL'
+  },
+  {
+    templateCode: 'FAILED_PAYMENT',
+    channel: 'EMAIL',
+    category: 'CUSTOMER',
+    language: 'EN',
+    subject: 'Payment Failed - PieceJob',
+    body: '<p>Hi {{firstName}},</p><p>We were unable to process your payment of <b>{{currency}} {{amount}}</b> for job ID <b>{{jobId}}</b>.</p><p>Reason: <b>{{reason}}</b></p><p>Please try again with a different payment method.</p>',
+    placeholders: ['firstName', 'amount', 'currency', 'jobId', 'reason'],
     countryCode: 'GLOBAL'
   }
 ];

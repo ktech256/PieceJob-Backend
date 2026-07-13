@@ -132,3 +132,54 @@ export const sendEmail = async (options: EmailOptions) => {
     return { success: false, error: error.message };
   }
 };
+
+export interface SMTPDiagnosticResult {
+  success: boolean;
+  message: string;
+  banner?: string;
+  latency?: number;
+  provider?: string;
+  secure?: boolean;
+  error?: any;
+}
+
+export const testSmtpConnection = async (countryCode: string): Promise<SMTPDiagnosticResult> => {
+  const startTime = Date.now();
+  try {
+    let config = await EmailConfig.findOne({ countryCode });
+    if (!config && countryCode !== 'GLOBAL') {
+      config = await EmailConfig.findOne({ countryCode: 'GLOBAL' });
+    }
+
+    if (!config) throw new Error('NO_CONFIG_FOUND');
+
+    const transporter = nodemailer.createTransport({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpSecure,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPass
+      },
+      connectionTimeout: 10000, // 10s timeout for tests
+    });
+
+    await transporter.verify();
+    const latency = Date.now() - startTime;
+
+    return {
+      success: true,
+      message: 'SMTP Connection Successful',
+      latency,
+      secure: config.smtpSecure,
+      provider: config.smtpProvider
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: 'SMTP Connection Failed',
+      error: error.message,
+      latency: Date.now() - startTime
+    };
+  }
+};

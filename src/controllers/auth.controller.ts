@@ -610,6 +610,18 @@ export const changePassword = async (req: Request, res: Response) => {
         user.passwordHash = await bcrypt.hash(newPassword, 10);
         await user.save();
 
+        // Dispatch Password Changed Email
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: user.email,
+            templateCode: 'PASSWORD_CHANGED',
+            templateData: {
+                firstName: user.firstName,
+                time: new Date().toLocaleString()
+            },
+            countryCode: user.countryCode
+        });
+
         res.status(200).json({ success: true, message: 'Password changed successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Failed to change password', error });
@@ -727,7 +739,21 @@ export const verifyPhoneChange = async (req: Request, res: Response) => {
         otpRecord.isUsed = true;
         await otpRecord.save();
 
-        await User.findByIdAndUpdate(userId, { phoneNumber: newPhoneNumber });
+        const user = await User.findByIdAndUpdate(userId, { phoneNumber: newPhoneNumber }, { new: true });
+
+        // Dispatch Phone Number Changed Confirmation
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: 'PHONE_CHANGED',
+                templateData: {
+                    firstName: user.firstName,
+                    time: new Date().toLocaleString()
+                },
+                countryCode: user.countryCode
+            });
+        }
 
         res.status(200).json({ success: true, message: 'Phone number updated successfully' });
     } catch (error) {
@@ -778,7 +804,21 @@ export const verifyEmailChange = async (req: Request, res: Response) => {
         otpRecord.isUsed = true;
         await otpRecord.save();
 
-        await User.findByIdAndUpdate(userId, { email: newEmail.toLowerCase() });
+        const user = await User.findByIdAndUpdate(userId, { email: newEmail.toLowerCase() }, { new: true });
+
+        // Dispatch Email Changed Confirmation
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: 'EMAIL_CHANGED',
+                templateData: {
+                    firstName: user.firstName,
+                    time: new Date().toLocaleString()
+                },
+                countryCode: user.countryCode
+            });
+        }
 
         res.status(200).json({ success: true, message: 'Email updated successfully' });
     } catch (error) {

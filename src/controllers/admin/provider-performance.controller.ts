@@ -4,6 +4,8 @@ import Provider, { ProviderTier } from '../../models/Provider';
 import ProviderLifecycleLog, { ProviderLifecycleState } from '../../models/ProviderLifecycleLog';
 import ProviderTierHistory from '../../models/ProviderTierHistory';
 import ProviderPerformance from '../../models/ProviderPerformance';
+import User from '../../models/User';
+import * as notificationQueue from '../../services/notification.queue';
 import * as performanceService from '../../services/provider-performance.service';
 
 export const getProviderPerformanceDetail = async (req: AuthRequest, res: Response) => {
@@ -57,6 +59,21 @@ export const updateProviderLifecycle = async (req: AuthRequest, res: Response) =
             countryCode: provider.countryCode,
             timestamp: new Date()
         });
+
+        // Dispatch Suspension/Reinstated Email
+        const user = await User.findById(provider.userId);
+        if (user?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: status === ProviderLifecycleState.SUSPENDED ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_REACTIVATED',
+                templateData: {
+                    firstName: user.firstName,
+                    reason: reason || 'N/A'
+                },
+                countryCode: user.countryCode
+            });
+        }
 
         res.status(200).json({ success: true, provider });
     } catch (error) {

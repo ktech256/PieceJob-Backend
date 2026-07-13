@@ -6,6 +6,7 @@ import User, { UserRole } from '../../models/User';
 import * as storageService from '../../services/storage.service';
 import * as notificationService from '../../services/notification.service';
 import * as referralService from '../../services/referral.service';
+import * as notificationQueue from '../../services/notification.queue';
 import * as socketService from '../../socket/socket.service';
 import { logger } from '../../utils/logger';
 
@@ -243,6 +244,50 @@ export const sendCustomPush = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: `Notification sent to ${tokens.length} devices in workspace ${countryCode}.` });
     } catch (error: any) {
         logger.error(`ADMIN | SEND_CUSTOM_PUSH_FAILED | Error: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const sendCustomEmail = async (req: AuthRequest, res: Response) => {
+    try {
+        const { target, title, body, countryCode, userId } = req.body;
+
+        if (!countryCode || countryCode === 'GLOBAL') {
+            return res.status(400).json({ success: false, message: 'Explicit country code target is required.' });
+        }
+
+        logger.info(`ADMIN | SEND_CUSTOM_EMAIL | Target: ${target} | Workspace: ${countryCode} | Subject: ${title}`);
+
+        const query: any = { countryCode };
+
+        if (target === 'CUSTOMERS') query.role = UserRole.CUSTOMER;
+        else if (target === 'PROVIDERS') query.role = UserRole.PROVIDER;
+
+        if (userId) query._id = userId;
+
+        const users = await User.find(query).select('email firstName');
+
+        if (users.length === 0) {
+            return res.status(404).json({ success: false, message: `No users found in workspace '${countryCode}'.` });
+        }
+
+        for (const user of users) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: user.email,
+                templateCode: 'MARKETING_ANNOUNCEMENT',
+                templateData: {
+                    firstName: user.firstName,
+                    subject: title,
+                    body: body
+                },
+                countryCode
+            });
+        }
+
+        res.status(200).json({ success: true, message: `Email dispatch protocol initiated for ${users.length} users in ${countryCode}.` });
+    } catch (error: any) {
+        logger.error(`ADMIN | SEND_CUSTOM_EMAIL_FAILED | Error: ${error.message}`);
         res.status(500).json({ success: false, message: error.message });
     }
 };

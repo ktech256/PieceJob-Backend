@@ -944,6 +944,22 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
                 'Provider Arrived',
                 'Your provider has arrived at the location.'
             );
+
+            // Dispatch Provider Arrived Email
+            const customer = await User.findById(updatedJob.customerId);
+            if (customer?.email) {
+                await notificationQueue.addNotificationToQueue({
+                    type: 'EMAIL',
+                    email: customer.email,
+                    templateCode: 'PROVIDER_ARRIVED',
+                    templateData: {
+                        firstName: customer.firstName,
+                        serviceName: updatedJob.serviceName || updatedJob.serviceCode,
+                        jobId: updatedJob._id.toString()
+                    },
+                    countryCode: updatedJob.countryCode
+                });
+            }
         }
     }
 
@@ -1080,6 +1096,47 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       res.status(500).json({ success: false, message: 'Cancellation failed', error });
     }
   };
+
+export const reportUnableToLocate = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const providerId = req.user?.userId;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        if (job.providerId?.toString() !== providerId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized' });
+        }
+
+        // Notify Customer via Push
+        await notificationService.notifyUser(
+            job.customerId.toString(),
+            'Provider Alert',
+            'Your professional is at the location but cannot find you. Please check your phone.'
+        );
+
+        // Dispatch Email
+        const customer = await User.findById(job.customerId);
+        if (customer?.email) {
+            await notificationQueue.addNotificationToQueue({
+                type: 'EMAIL',
+                email: customer.email,
+                templateCode: 'PROVIDER_UNABLE_TO_LOCATE',
+                templateData: {
+                    firstName: customer.firstName,
+                    serviceName: job.serviceName || job.serviceCode,
+                    jobId: job._id.toString()
+                },
+                countryCode: job.countryCode
+            });
+        }
+
+        res.status(200).json({ success: true, message: 'Customer notified.' });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 import Review from '../models/Review';
 

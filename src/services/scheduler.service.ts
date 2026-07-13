@@ -4,6 +4,7 @@ import * as referralService from './referral.service';
 import * as corporateSchedulingService from './corporate-scheduling.service';
 import * as adminReportService from './admin-report.service';
 import { logger } from '../utils/logger';
+import mongoose from 'mongoose';
 
 export const initSchedulers = () => {
     // 1. Performance Recalculation (Every 24 hours)
@@ -40,6 +41,25 @@ export const initSchedulers = () => {
     setInterval(async () => {
         logger.debug('Generating daily platform summary...');
         await adminReportService.sendDailyPlatformSummary();
+    }, 24 * 60 * 60 * 1000);
+
+    // 7. Admin Weekly Summary (Every 7 days)
+    setInterval(async () => {
+        logger.debug('Generating weekly workspace summaries...');
+        // Fetch all active countries and send reports
+        const countries = await mongoose.model('Country').find({ isActive: true });
+        for (const country of countries) {
+            await adminReportService.sendWeeklyWorkspaceSummary(country.code);
+        }
+    }, 7 * 24 * 60 * 60 * 1000);
+
+    // 8. Service Fee Reminders (Every 24 hours)
+    setInterval(async () => {
+        logger.debug('Running service fee reminders...');
+        const countries = await mongoose.model('Country').find({ isActive: true });
+        for (const country of countries) {
+            await financialService.sendServiceFeeReminders(country.code);
+        }
     }, 24 * 60 * 60 * 1000);
 
     logger.info('System Schedulers Initialized');
