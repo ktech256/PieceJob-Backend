@@ -65,7 +65,7 @@ export const sendEmail = async (options: EmailOptions) => {
     const footer = config.emailSignature || '';
     const primaryColor = template.category === 'PROVIDER' ? '#2E7D32' : '#D32F2F'; // Green for Pro, Red for Customer
     const brandName = config.branding.companyName || 'PieceJob';
-    const logoUrl = config.branding.logoUrl || 'https://api.piecejob.co/assets/logo-primary.png'; // Fallback to PieceJob Global Logo
+    const logoUrl = config.branding.logoUrl || 'https://piecejob.co/assets/logos/piecejob-logo.png'; // Fallback to PieceJob Global Logo
 
     const html = `
       <!DOCTYPE html>
