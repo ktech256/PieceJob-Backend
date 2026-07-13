@@ -8,12 +8,18 @@ import { logger } from '../utils/logger';
 export const getAttachmentsForEmail = async (templateCode: string, templateData: any): Promise<any[]> => {
   try {
     const attachments: any[] = [];
+    logger.info(`EMAIL_ATTACHMENT | ANALYZING | Template: ${templateCode} | Data Keys: ${Object.keys(templateData)}`);
 
-    if (templateCode === 'JOB_COMPLETED_RECEIPT' && templateData.jobId) {
-      const pdf = await generateJobReceiptPDF(templateData.jobId);
+    // Normalize keys (Job ID can come as jobId or id)
+    const jobId = templateData.jobId || templateData.id;
+    const invoiceId = templateData.invoiceId || templateData.id;
+
+    if (templateCode === 'JOB_COMPLETED_RECEIPT' && jobId) {
+      const pdf = await generateJobReceiptPDF(jobId);
       attachments.push({
-        filename: `Receipt-${templateData.jobId.slice(-6)}.pdf`,
-        content: pdf
+        filename: `PieceJob-Receipt-${jobId.slice(-6)}.pdf`,
+        content: pdf,
+        contentType: 'application/pdf'
       });
     }
 
