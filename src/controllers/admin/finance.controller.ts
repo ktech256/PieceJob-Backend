@@ -902,10 +902,36 @@ export const simulateReferralFlow = async (req: AuthRequest, res: Response) => {
 export const getLedger = async (req: AuthRequest, res: Response) => {
     try {
         const countryCode = req.query.countryCode as string || req.user?.countryCode;
-        const logs = await Ledger.find({ countryCode }).sort({ createdAt: -1 }).limit(100);
+        const { type, providerId } = req.query;
+        const query: any = { countryCode };
+        if (type) query.type = type;
+        if (providerId) query.toUserId = providerId;
+
+        const logs = await Ledger.find(query).sort({ createdAt: -1 }).limit(200)
+            .populate('toUserId', 'firstName lastName')
+            .populate('fromUserId', 'firstName lastName')
+            .populate('jobId', 'serviceName');
+
         res.status(200).json({ success: true, logs });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Ledger failed', error });
+    }
+};
+
+export const getAuditTrail = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const { action, targetId } = req.query;
+        const query: any = { countryCode };
+        if (action) query.action = action;
+        if (targetId) query.entityId = targetId;
+
+        const logs = await mongoose.model('AuditLog').find(query).sort({ createdAt: -1 }).limit(200)
+            .populate('adminId', 'firstName lastName');
+
+        res.status(200).json({ success: true, logs });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Audit trail failed', error });
     }
 };
 

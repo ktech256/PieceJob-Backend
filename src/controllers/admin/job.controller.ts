@@ -191,7 +191,7 @@ export const adminResolveDispute = async (req: AuthRequest, res: Response) => {
                     metadata: { fault: 'PROVIDER', adminId: req.user?.userId }
                 });
 
-                await performanceService.recordPenalty(job.providerId.toString(), 'CANCELLATION');
+                await performanceService.recordPenalty(job.providerId.toString(), 'CANCELLATION', jobId);
             }
         } else {
             // Reject Refund - Keep job as CANCELLED but paymentStatus stays PAID (platform keeps booking fee)

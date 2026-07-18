@@ -552,6 +552,92 @@ export const getMyJobs = async (req: AuthRequest, res: Response) => {
     }
 };
 
+import * as performanceService from '../services/provider-performance.service';
+import PerformanceAdjustment from '../models/PerformanceAdjustment';
+import ProviderAppeal from '../models/ProviderAppeal';
+import ProviderBadge from '../models/ProviderBadge';
+
+export const getPerformanceHistory = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const { period } = req.query; // 7d, 30d, 90d, all
+
+        const provider = await Provider.findOne({ userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        let startDate = new Date(0);
+        if (period === '7d') startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        else if (period === '30d') startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        else if (period === '90d') startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+        const adjustments = await PerformanceAdjustment.find({
+            providerId: provider._id,
+            createdAt: { $gte: startDate }
+        }).sort({ createdAt: -1 }).populate('jobId', 'serviceName status');
+
+        res.status(200).json({ success: true, data: adjustments });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch performance history', error });
+    }
+};
+
+export const submitAppeal = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const { adjustmentId, ledgerId, reasonCode, description, evidence, gpsData } = req.body;
+
+        const provider = await Provider.findOne({ userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const appeal = new ProviderAppeal({
+            providerId: provider._id,
+            userId,
+            adjustmentId,
+            ledgerId,
+            reasonCode,
+            description,
+            evidence,
+            gpsData
+        });
+
+        await appeal.save();
+
+        // Emit to admin dashboard
+        emitAdminUpdate('new_appeal_submitted', { appealId: appeal._id, providerId: provider._id });
+
+        res.status(201).json({ success: true, message: 'Appeal submitted successfully', appeal });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: 'Appeal submission failed', error: error.message });
+    }
+};
+
+export const getMyBadges = async (req: AuthRequest, res: Response) => {
+    try {
+        const provider = await Provider.findOne({ userId: req.user?.userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const badges = await ProviderBadge.find({ providerId: provider._id }).sort({ earnedAt: -1 });
+        res.status(200).json({ success: true, data: badges });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch badges', error });
+    }
+};
+
+export const getAnalytics = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.userId;
+        const { period } = req.query;
+
+        const provider = await Provider.findOne({ userId });
+        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
+
+        const analytics = await performanceService.getProviderAnalytics(provider._id.toString(), period as any || '30d');
+        res.status(200).json({ success: true, data: analytics });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch analytics', error });
+    }
+};
+
 const getProviderNetEarnings = async (userId: string, startDate: Date) => {
     const results = await Ledger.aggregate([
         {

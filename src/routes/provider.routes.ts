@@ -39,4 +39,10 @@ router.post('/heartbeat', authenticate, authorize([UserRole.PROVIDER]), provider
 router.post('/documents', authenticate, authorize([UserRole.PROVIDER]), providerController.uploadDocument);
 router.post('/upload-file', authenticate, authorize([UserRole.PROVIDER, UserRole.CUSTOMER]), providerController.uploadFile);
 
+// PERFORMANCE & ANALYTICS
+router.get('/performance/history', authenticate, authorize([UserRole.PROVIDER]), providerController.getPerformanceHistory);
+router.post('/performance/appeal', authenticate, authorize([UserRole.PROVIDER]), providerController.submitAppeal);
+router.get('/performance/badges', authenticate, authorize([UserRole.PROVIDER]), providerController.getMyBadges);
+router.get('/performance/analytics', authenticate, authorize([UserRole.PROVIDER]), providerController.getAnalytics);
+
 export default router;

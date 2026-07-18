@@ -1012,7 +1012,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
           // Case 1 & 2: After acceptance / During negotiation
           else {
               // Apply penalty
-              await performanceService.recordPenalty(userId!, 'CANCELLATION');
+              await performanceService.recordPenalty(userId!, 'CANCELLATION', jobId);
 
               // Exclude provider and rebroadcast
               job.notifiedProviderIds = [...(job.notifiedProviderIds || []), new mongoose.Types.ObjectId(userId)];

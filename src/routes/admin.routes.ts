@@ -176,6 +176,7 @@ router.post('/finance/invoices/:id/debit-note', hasPermission('MANAGE_FINANCE'),
 // Reconciliation & Statements
 router.get('/finance/overview', hasPermission('MANAGE_FINANCE'), financeController.getOverview);
 router.get('/finance/ledger', hasPermission('MANAGE_FINANCE'), financeController.getLedger);
+router.get('/finance/audit-trail', hasPermission('MANAGE_FINANCE'), financeController.getAuditTrail);
 router.get('/finance/wallets', hasPermission('MANAGE_FINANCE'), financeController.listWallets);
 router.get('/finance/refunds', hasPermission('MANAGE_FINANCE'), financeController.listRefunds);
 router.get('/finance/referrals', hasPermission('MANAGE_FINANCE'), financeController.listReferrals);
@@ -242,6 +243,11 @@ router.patch('/verifications/:providerId', hasPermission('MANAGE_VERIFICATION'),
 
 // Provider Performance & Monitoring (PAGE 7)
 router.get('/performance/list', hasPermission('MANAGE_PROVIDERS'), performanceAdminController.listTopProviders);
+router.get('/performance/appeals', hasPermission('MANAGE_SUPPORT'), performanceAdminController.listAppeals);
+router.post('/performance/appeals/:appealId/review', hasPermission('MANAGE_SUPPORT'), performanceAdminController.reviewAppeal);
+router.get('/performance/global-overview', hasPermission('VIEW_REPORTS'), performanceAdminController.getGlobalPerformanceOverview);
+router.get('/performance/rankings', hasPermission('VIEW_REPORTS'), performanceAdminController.listProviderRankings);
+router.get('/performance/adjustments', hasPermission('VIEW_AUDIT'), performanceAdminController.listAdjustments);
 router.get('/performance/:providerId', hasPermission('MANAGE_PROVIDERS'), performanceAdminController.getProviderPerformanceDetail);
 router.patch('/performance/:providerId/lifecycle', hasPermission('MANAGE_PROVIDERS'), performanceAdminController.updateProviderLifecycle);
 router.get('/performance/analytics', hasPermission('VIEW_REPORTS'), performanceAdminController.getPerformanceAnalytics);

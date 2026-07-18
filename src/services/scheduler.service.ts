@@ -68,5 +68,11 @@ export const initSchedulers = () => {
         await monitorProviderReliability();
     }, 60 * 1000);
 
+    // 10. Performance Score Recovery (Every 24 hours)
+    setInterval(async () => {
+        logger.debug('Running provider score recovery...');
+        await performanceService.recoverScores();
+    }, 24 * 60 * 60 * 1000);
+
     logger.info('System Schedulers Initialized');
 };

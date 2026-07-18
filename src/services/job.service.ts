@@ -422,12 +422,21 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
                   $maxDistance: maxDistance
               }
           }
-      }).limit(10).populate('userId', 'fcmToken role firstName email');
+      }).limit(20).populate('userId', 'fcmToken role firstName email');
 
       if (providers.length > 0) {
+          // SORT BY QUALITY (Hybrid logic)
+          // 1. Reliability Score (High to low)
+          // 2. Customer Rating (High to low)
+          // 3. Distance (Already handled roughly by $near fetch)
+          const sortedByQuality = providers.sort((a, b) => {
+              const scoreA = (a.performance.reliabilityScore || 0) + (a.ratingAvg * 10);
+              const scoreB = (b.performance.reliabilityScore || 0) + (b.ratingAvg * 10);
+              return scoreB - scoreA;
+          });
+
           // FORENSIC REPAIR: Filter out providers who have NO fcmToken AND are NOT connected via Socket
-          // This prevents "Zombie Online" providers from hogging waves.
-          const reachableProviders = providers.filter(p => {
+          const reachableProviders = sortedByQuality.filter(p => {
               const user = p.userId as any;
               const hasToken = user && user.fcmToken;
               const hasSocket = isUserConnected(user?._id.toString());
@@ -437,7 +446,7 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
                   return false;
               }
               return true;
-          });
+          }).slice(0, 10); // Return top 10 after sorting and filtering
 
           if (reachableProviders.length > 0) {
               foundProviders = reachableProviders;
@@ -841,7 +850,7 @@ const executeReassignment = async (jobId: string, providerUserId: string, reason
     await presenceService.releaseProviderFromJob(providerUserId);
 
     // 2. Track penalty / Reliability impact
-    await performanceService.recordPenalty(providerUserId, reason);
+    await performanceService.recordPenalty(providerUserId, reason, jobId);
 
     // 3. Update Job for Re-broadcast
     job.notifiedProviderIds = [...(job.notifiedProviderIds || []), new mongoose.Types.ObjectId(providerUserId)];
