@@ -62,5 +62,11 @@ export const initSchedulers = () => {
         }
     }, 24 * 60 * 60 * 1000);
 
+    // 9. Provider Reliability Monitoring (Every 1 minute)
+    setInterval(async () => {
+        const { monitorProviderReliability } = require('./job.service');
+        await monitorProviderReliability();
+    }, 60 * 1000);
+
     logger.info('System Schedulers Initialized');
 };

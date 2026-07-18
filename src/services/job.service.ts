@@ -373,6 +373,17 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
     userId: { $nin: job.notifiedProviderIds || [] }
   };
 
+  // 2.1 RELIABILITY FILTERING (Influencing Job Matching)
+  // Higher waves are more lenient on reliability
+  let minReliability = 0;
+  if (wave === 1) minReliability = 85;
+  else if (wave === 2) minReliability = 70;
+  else if (wave === 3) minReliability = 50;
+
+  if (minReliability > 0) {
+      baseQuery['performance.reliabilityScore'] = { $gte: minReliability };
+  }
+
   if (service.genderRule === GenderRule.MEN_ONLY) baseQuery.gender = 'M';
   else if (service.genderRule === GenderRule.WOMEN_ONLY) baseQuery.gender = 'F';
 
@@ -572,6 +583,17 @@ export const executeBroadcastWave = async (jobId: string, wave: number): Promise
         return wave + 1;
     }
 
+    // PAGE 7: If no providers found after 4 waves
+    if (job.status === JobStatus.BROADCASTED) {
+        logger.info(`BROADCAST | FAILED | No providers matched after 4 waves for Job ${jobId}. Automatically refunding.`);
+
+        await financialService.refundJob(jobId, 'No available providers found after exhaustive search.');
+
+        await notificationService.notifyUser(job.customerId.toString(), 'No Providers Available', 'We could not find a provider in your area at this time. Your booking fee has been refunded to your wallet.');
+
+        emitJobUpdate(jobId, 'status_updated', { status: JobStatus.CANCELLED });
+    }
+
     return null;
 };
 
@@ -599,6 +621,10 @@ export const acceptJob = async (jobId: string, providerId: string) => {
           $set: {
             providerId: new mongoose.Types.ObjectId(providerId),
             acceptedAt: new Date(),
+            providerLocationAtAcceptance: {
+              type: 'Point',
+              coordinates: provider.location.coordinates
+            },
             version: 1 // Start versioning or incrementing
           }
         },
@@ -742,4 +768,98 @@ export const expireInactiveNegotiations = async () => {
 
         emitJobUpdate(job.id, 'status_updated', { jobId: job.id, priceStatus: 'EXPIRED' });
     }
+};
+
+export const monitorProviderReliability = async () => {
+    const now = new Date();
+
+    // 1. Providers who haven't started travelling
+    // Statuses that imply a provider is assigned but not yet started/arrived
+    const monitoredJobs = await Job.find({
+        status: { $in: [JobStatus.ACCEPTED, JobStatus.PROVIDER_ACCEPTED, JobStatus.SCHEDULED] },
+        providerId: { $ne: null },
+        hasStartedTravelling: { $ne: true }
+    });
+
+    for (const job of monitoredJobs) {
+        if (!job.acceptedAt || !job.providerId) continue;
+
+        const minutesSinceAcceptance = Math.floor((now.getTime() - job.acceptedAt.getTime()) / (1000 * 60));
+        const providerUserId = job.providerId.toString();
+
+        // Minute 2 Reminder
+        if (minutesSinceAcceptance === 2 && !job.notificationsSent?.includes('TRAVEL_REMINDER_2')) {
+            await notificationService.notifyUser(providerUserId, 'Movement Alert', 'The system has noticed that you have not yet started travelling to your customer.');
+            job.notificationsSent = [...(job.notificationsSent || []), 'TRAVEL_REMINDER_2'];
+            await job.save();
+        }
+        // Minute 4 Reminder
+        else if (minutesSinceAcceptance === 4 && !job.notificationsSent?.includes('TRAVEL_REMINDER_4')) {
+            await notificationService.notifyUser(providerUserId, 'Movement Reminder', 'Please begin travelling to the customer as soon as possible.');
+            job.notificationsSent = [...(job.notificationsSent || []), 'TRAVEL_REMINDER_4'];
+            await job.save();
+        }
+        // Minute 6 Warning
+        else if (minutesSinceAcceptance === 6 && !job.notificationsSent?.includes('TRAVEL_REMINDER_6')) {
+            await notificationService.notifyUser(providerUserId, 'Final Warning', 'If you do not begin travelling within the next 2 minutes, this job may be reassigned.');
+            job.notificationsSent = [...(job.notificationsSent || []), 'TRAVEL_REMINDER_6'];
+            await job.save();
+        }
+        // Minute 8 Final Evaluation & Reassignment
+        else if (minutesSinceAcceptance >= 8 && !job.notificationsSent?.includes('REASSIGNMENT_EXECUTED')) {
+            // Final check: Is provider nearby?
+            const provider = await Provider.findOne({ userId: job.providerId });
+            if (provider && provider.location) {
+                const distance = calculateDistance(provider.location.coordinates, job.location.coordinates);
+                if (distance <= 100) {
+                   // Provider is nearby, maybe GPS just hasn't updated movement enough. Skip reassignment.
+                   continue;
+                }
+            }
+
+            logger.info(`RELIABILITY | REASSIGNMENT | Job: ${job._id} | Provider ${providerUserId} inactive for 8 minutes.`);
+
+            // Record reassignment in notification list
+            job.notificationsSent = [...(job.notificationsSent || []), 'REASSIGNMENT_EXECUTED'];
+            await job.save();
+
+            // Notify Provider
+            await notificationService.notifyUser(providerUserId, 'Job Reassigned', 'You have been removed from this job due to inactivity. This may affect your reliability score.');
+
+            // Execute Reassignment Logic (Release + Rebroadcast)
+            await executeReassignment(job._id.toString(), providerUserId, 'INACTIVITY');
+        }
+    }
+};
+
+const executeReassignment = async (jobId: string, providerUserId: string, reason: string) => {
+    const job = await Job.findById(jobId);
+    if (!job) return;
+
+    // 1. Release Provider
+    const presenceService = require('./provider-presence.service');
+    await presenceService.releaseProviderFromJob(providerUserId);
+
+    // 2. Track penalty / Reliability impact
+    await performanceService.recordPenalty(providerUserId, reason);
+
+    // 3. Update Job for Re-broadcast
+    job.notifiedProviderIds = [...(job.notifiedProviderIds || []), new mongoose.Types.ObjectId(providerUserId)];
+    job.providerId = undefined;
+    job.status = JobStatus.BROADCASTED;
+    job.hasStartedTravelling = false;
+    job.travellingStartedAt = undefined;
+    job.acceptedAt = undefined; // Reset for the next provider
+    job.notificationsSent = []; // Reset reminders
+    await job.save();
+
+    // 4. Re-broadcast
+    await broadcastJob(jobId);
+
+    // 5. Notify Customer
+    await notificationService.notifyUser(job.customerId.toString(), 'Finding New Provider', 'We are re-assigning your job to another professional to ensure timely service.');
+
+    const { emitJobUpdate, syncJobStatus } = require('../socket/socket.service');
+    emitJobUpdate(jobId, 'status_updated', { status: JobStatus.BROADCASTED, providerId: null });
+    syncJobStatus(job);
 };

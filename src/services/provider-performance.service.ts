@@ -3,6 +3,8 @@ import ProviderPerformance from '../models/ProviderPerformance';
 import ProviderTierHistory from '../models/ProviderTierHistory';
 import { emitToUser } from '../socket/socket.service';
 import { notifyUser } from './notification.service';
+import { logger } from '../utils/logger';
+import mongoose from 'mongoose';
 
 export const recalculateProviderMetrics = async (providerId: string) => {
     const provider = await Provider.findById(providerId);
@@ -28,6 +30,24 @@ export const recalculateProviderMetrics = async (providerId: string) => {
 
     await provider.save();
     return provider;
+};
+
+export const recordPenalty = async (userId: string, reason: string) => {
+    const provider = await Provider.findOne({ userId });
+    if (!provider) return;
+
+    // PAGE 8 & 12: Reliability Enforcement
+    // Reduce reliability scores based on reason
+    if (reason === 'INACTIVITY') {
+        provider.performance.reliabilityScore = Math.max(0, (provider.performance.reliabilityScore || 100) - 5);
+        provider.performance.onTimeResponseScore = Math.max(0, (provider.performance.onTimeResponseScore || 100) - 2);
+    } else if (reason === 'CANCELLATION') {
+        provider.performance.cancellationScore = (provider.performance.cancellationScore || 0) + 1;
+        provider.performance.reliabilityScore = Math.max(0, (provider.performance.reliabilityScore || 100) - 10);
+    }
+
+    await provider.save();
+    logger.info(`PERFORMANCE | PENALTY_RECORDED | User: ${userId} | Reason: ${reason} | New Reliability: ${provider.performance.reliabilityScore}`);
 };
 
 export const evaluateTier = async (providerId: string) => {

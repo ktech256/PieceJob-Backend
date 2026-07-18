@@ -540,7 +540,8 @@ export const getActiveJob = async (req: AuthRequest, res: Response) => {
                 JobStatus.STARTED,
                 JobStatus.EN_ROUTE,
                 JobStatus.IN_PROGRESS,
-                JobStatus.COMPLETED
+                JobStatus.COMPLETED,
+                JobStatus.PENDING_ADMIN_REVIEW
             ] }
         }).sort({ updatedAt: -1 })
           .populate('providerId', 'firstName lastName profilePhoto phoneNumber')
@@ -949,7 +950,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 export const cancelJob = async (req: AuthRequest, res: Response) => {
     try {
       const { jobId } = req.params;
-      const { reason } = req.body;
+      const { reason, evidence } = req.body;
       const userId = req.user?.userId;
       const role = req.user?.role;
 
@@ -969,7 +970,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
           return res.status(403).json({ success: false, message: 'Unauthorized: You are not assigned to this job' });
       }
 
-      const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED];
+      const terminalStatuses = [JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.RATED, JobStatus.PENDING_ADMIN_REVIEW];
       if (terminalStatuses.includes(job.status)) {
           return res.status(400).json({ success: false, message: `Cannot cancel a ${job.status} job` });
       }
@@ -977,48 +978,114 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       logger.info(`JOB_CANCEL_VALIDATION_SUCCESS | Job: ${jobId}`);
 
       const now = new Date();
+      let refundEligible = false;
+      let needsAdminReview = false;
 
-      // SECTION 4: Cancellation Grace Windows
-      if (job.status === JobStatus.ACCEPTED || job.status === JobStatus.ARRIVED) {
-          const acceptedTime = job.acceptedAt ? job.acceptedAt.getTime() : job.updatedAt.getTime();
-          const diffSeconds = (now.getTime() - acceptedTime) / 1000;
+      // ========================================================
+      // PART A: PROVIDER CANCELLATION SYSTEM
+      // ========================================================
+      if (role === 'PROVIDER') {
+          // Case 3: After Arriving
+          if (job.status === JobStatus.ARRIVED || job.status === JobStatus.STARTED || job.status === JobStatus.IN_PROGRESS) {
+              // Evidence is MANDATORY (PAGE 7)
+              if (!evidence || !evidence.photos || evidence.photos.length === 0 || !evidence.explanation) {
+                  return res.status(400).json({
+                      success: false,
+                      message: 'Mandatory Evidence Required: GPS, Photos, and Explanation must be provided for cancellation after arrival.'
+                  });
+              }
 
-          if (role === 'PROVIDER' && diffSeconds > 90) {
-              await auditService.logAdminAction({
-                  countryCode: job.countryCode,
-                  adminId: 'SYSTEM',
-                  adminRole: 'SYSTEM',
-                  action: 'JOB_AUTO_CANCEL',
-                  entityType: 'Jobs',
-                  entityId: jobId,
-                  afterState: { status: JobStatus.CANCELLED },
-                  ipAddress: 'System',
-                  systemSource: 'API'
-              });
+              job.status = JobStatus.PENDING_ADMIN_REVIEW;
+              job.cancellationEvidence = {
+                  photos: evidence.photos,
+                  videoUrl: evidence.videoUrl,
+                  explanation: evidence.explanation,
+                  gpsAtCancellation: {
+                      type: 'Point',
+                      coordinates: evidence.coordinates || [0, 0]
+                  },
+                  timestamp: now
+              };
+              job.cancellationReason = reason || 'Work scope discrepancy';
+              needsAdminReview = true;
+          }
+          // Case 1 & 2: After acceptance / During negotiation
+          else {
+              // Apply penalty
+              await performanceService.recordPenalty(userId!, 'CANCELLATION');
+
+              // Exclude provider and rebroadcast
+              job.notifiedProviderIds = [...(job.notifiedProviderIds || []), new mongoose.Types.ObjectId(userId)];
+              job.providerId = undefined;
+              job.status = JobStatus.BROADCASTED;
+              job.acceptedAt = undefined;
+              job.hasStartedTravelling = false;
+              job.notificationsSent = [];
+
+              await job.save();
+              await jobService.broadcastJob(jobId);
+
+              emitJobUpdate(jobId, 'status_updated', { status: JobStatus.BROADCASTED, providerId: null });
+              return res.status(200).json({ success: true, message: 'Job cancelled and re-broadcasted successfully' });
           }
       }
 
-      job.status = JobStatus.CANCELLED;
-      job.cancelledAt = new Date();
-      job.cancelledBy = new mongoose.Types.ObjectId(userId);
-      job.cancellationReason = reason || 'Cancelled via App';
-      await job.save();
+      // ========================================================
+      // PART B: CUSTOMER CANCELLATION (REFUND LOGIC)
+      // ========================================================
+      if (role === 'CUSTOMER') {
+          // Rule 1: Within 2 minutes after acceptance
+          if (job.acceptedAt) {
+              const diffSec = (now.getTime() - job.acceptedAt.getTime()) / 1000;
+              if (diffSec <= 120) refundEligible = true;
+          }
 
-      logger.info(`JOB_CANCEL_DATABASE_UPDATED | Job: ${jobId} | Status: CANCELLED`);
+          // Rule 2: Provider NOT moved within 7 minutes
+          if (!refundEligible && job.acceptedAt && !job.hasStartedTravelling) {
+              const diffSec = (now.getTime() - job.acceptedAt.getTime()) / 1000;
+              if (diffSec > 420) refundEligible = true;
+          }
 
-      // Stop every remaining broadcast wave
-      try {
-          const { clearJobBroadcasts } = require('../services/job-broadcast.queue');
-          await clearJobBroadcasts(jobId);
-          logger.info(`JOB_CANCEL_BROADCAST_STOPPED | Job: ${jobId}`);
-      } catch (e) {
-          logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
+          // Rule 3: During Negotiation
+          if (!refundEligible && (job.status === JobStatus.PROVIDER_ACCEPTED || job.status === JobStatus.ACCEPTED)) {
+              refundEligible = true;
+          }
+
+          // Force No Refund for terminal/active states not covered above
+          if (job.hasStartedTravelling || job.status === JobStatus.ARRIVED || job.status === JobStatus.STARTED || job.status === JobStatus.IN_PROGRESS) {
+              refundEligible = false;
+          }
+
+          job.status = JobStatus.CANCELLED;
+          job.cancelledAt = now;
+          job.cancelledBy = new mongoose.Types.ObjectId(userId);
+          job.cancellationReason = reason || 'Cancelled by customer';
+
+          if (refundEligible) {
+              await financialService.refundJob(job._id.toString(), 'Customer cancellation within refund window');
+          } else {
+              await job.save();
+          }
       }
 
-      // Reset provider status based on their isOnline preference
-      if (job.providerId) {
-          const presenceService = require('../services/provider-presence.service');
-          await presenceService.releaseProviderFromJob(job.providerId.toString());
+      if (needsAdminReview) {
+          await job.save();
+          emitAdminUpdate('new_dispute_review', { jobId: job.id, countryCode: job.countryCode });
+      }
+
+      // Cleanup
+      if (job.status === JobStatus.CANCELLED) {
+          try {
+              const { clearJobBroadcasts } = require('../services/job-broadcast.queue');
+              await clearJobBroadcasts(jobId);
+          } catch (e) {
+              logger.error(`Error clearing broadcasts for job ${jobId}: ${e}`);
+          }
+
+          if (job.providerId) {
+              const presenceService = require('../services/provider-presence.service');
+              await presenceService.releaseProviderFromJob(job.providerId.toString());
+          }
       }
 
       // Notify other party
@@ -1026,22 +1093,22 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
       if (notifyTargetId) {
           await notificationService.notifyUser(
               notifyTargetId,
-              'Job Cancelled',
-              `The job has been cancelled by the ${role?.toLowerCase()}.`
+              'Job Update',
+              needsAdminReview ? 'The provider has requested a cancellation which is now under review.' : `The job has been cancelled by the ${role?.toLowerCase()}.`
           );
-          logger.info(`JOB_CANCEL_PROVIDER_NOTIFIED | Target: ${notifyTargetId}`);
       }
 
-      emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
+      emitAdminUpdate('job_status_updated', { jobId: job.id, status: job.status });
+      emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: job.status });
 
-      // Notify both via Socket
-      emitJobUpdate(job.id, 'status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
-      emitToWorkspace(job.countryCode, 'status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
-
-      logger.info(`JOB_CANCEL_COMPLETED | Job: ${jobId}`);
-      res.status(200).json({ success: true, message: 'Job cancelled successfully' });
-    } catch (error) {
-      res.status(500).json({ success: false, message: 'Cancellation failed', error });
+      res.status(200).json({
+          success: true,
+          message: needsAdminReview ? 'Cancellation submitted for admin review.' : 'Job cancelled successfully',
+          refunded: refundEligible
+      });
+    } catch (error: any) {
+      logger.error(`JOB | CANCEL_FAILED | Job: ${req.params.jobId} | Error: ${error.message}`);
+      res.status(500).json({ success: false, message: 'Cancellation failed', error: error.message });
     }
   };
 

@@ -110,6 +110,8 @@ router.get('/users/:id', userAdminController.getUserById);
 router.patch('/users/:id/status', userAdminController.updateUserStatus);
 
 // Job Overrides & Details
+router.get('/jobs/reviews/queue', hasPermission('MANAGE_DISPUTES'), jobAdminController.adminListPendingReviews);
+router.post('/jobs/:jobId/resolve-dispute', hasPermission('MANAGE_DISPUTES'), jobAdminController.adminResolveDispute);
 router.get('/jobs/:jobId', hasPermission('VIEW_AUDIT'), jobAdminController.adminGetJobDetails);
 router.patch('/jobs/:jobId/status', hasPermission('MANAGE_SUPPORT'), jobAdminController.adminUpdateJobStatus);
 
@@ -208,6 +210,7 @@ router.get('/finance/commissions/timeline/:jobId', hasPermission('MANAGE_FINANCE
 router.post('/finance/reconciliation/run', hasPermission('MANAGE_FINANCE'), financeController.runReconciliation);
 router.post('/finance/statements/provider/generate', hasPermission('MANAGE_FINANCE'), financeController.generateProviderStatement);
 router.post('/finance/manual-credit', hasPermission('MANAGE_FINANCE'), financeController.issueManualCredit);
+router.post('/finance/manual-debit', hasPermission('MANAGE_FINANCE'), financeController.issueManualDebit);
 
 // Pricing & Rules (PAGE 4)
 router.get('/pricing/rules', hasPermission('MANAGE_PRICING'), pricingAdminController.listPricingRules);

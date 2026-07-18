@@ -1037,3 +1037,83 @@ export const issueManualCredit = async (req: AuthRequest, res: Response) => {
         session.endSession();
     }
 };
+
+/**
+ * Manually debit a provider's wallet balance (specifically balanceCredit).
+ * This is used for penalties, overpayment recovery, etc.
+ */
+export const issueManualDebit = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { providerId, amount, reason, notes } = req.body;
+        const adminId = req.user?.userId;
+
+        if (!providerId || !amount || amount <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid providerId or amount' });
+        }
+
+        const providerUser = await User.findById(providerId).session(session);
+        if (!providerUser) {
+            return res.status(404).json({ success: false, message: 'Provider user not found' });
+        }
+
+        const country = await Country.findOne({ code: providerUser.countryCode }).session(session);
+        const currency = country?.currency || 'USD';
+
+        // 1. Mutate Wallet balanceCredit (Negative amount for debit)
+        const result = await walletService.mutateWallet({
+            userId: providerId,
+            amount: -amount,
+            type: TransactionType.MANUAL_DEBIT,
+            balanceType: 'balanceCredit',
+            description: reason || 'Manual Admin Debit/Penalty',
+            countryCode: providerUser.countryCode,
+            currency,
+            session,
+            metadata: {
+                manual: true,
+                adminId,
+                notes,
+                reason,
+                workspace: providerUser.countryCode
+            }
+        });
+
+        // 2. Log Admin Action for Audit
+        await auditService.logAdminAction({
+            countryCode: providerUser.countryCode,
+            adminId: adminId as string,
+            adminRole: req.user?.role as string,
+            action: 'MANUAL_DEBIT_ISSUED',
+            entityType: 'Wallet',
+            entityId: result?.wallet?._id?.toString() || 'unknown',
+            afterState: {
+                providerId,
+                amount,
+                reason,
+                notes,
+                newBalance: result?.wallet?.balanceCredit
+            },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        }, session);
+
+        await session.commitTransaction();
+
+        res.status(200).json({
+            success: true,
+            message: 'Manual debit issued successfully',
+            data: {
+                transactionId: result?.ledger?.transactionId,
+                newBalance: result?.wallet?.balanceCredit
+            }
+        });
+    } catch (error: any) {
+        await session.abortTransaction();
+        logger.error(`FINANCE | MANUAL_DEBIT_FAILED | Provider: ${req.body.providerId} | Error: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
+    }
+};

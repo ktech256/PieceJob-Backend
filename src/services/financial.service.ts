@@ -315,9 +315,9 @@ export const completeJobFinancials = async (jobOrId: string | IJob, providerId: 
   }
 };
 
-export const refundJob = async (jobId: string, reason: string) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+export const refundJob = async (jobId: string, reason: string, existingSession?: mongoose.ClientSession) => {
+    const session = existingSession || await mongoose.startSession();
+    if (!existingSession) session.startTransaction();
     try {
         const job = await Job.findById(jobId).session(session);
         if (!job) throw new Error('Job not found');
@@ -380,12 +380,12 @@ export const refundJob = async (jobId: string, reason: string) => {
             await presenceService.releaseProviderFromJob(job.providerId.toString());
         }
 
-        await session.commitTransaction();
+        if (!existingSession) await session.commitTransaction();
     } catch (error) {
-        await session.abortTransaction();
+        if (!existingSession) await session.abortTransaction();
         throw error;
     } finally {
-        session.endSession();
+        if (!existingSession) session.endSession();
     }
 };
 

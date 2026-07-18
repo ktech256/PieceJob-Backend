@@ -91,35 +91,49 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
         // This prevents bypassing negotiation/photos in PROVIDER_ACCEPTED state
         const activeJob = await Job.findOne({
             providerId: userId,
-            status: JobStatus.EN_ROUTE
+            status: { $in: [JobStatus.EN_ROUTE, JobStatus.PROVIDER_ACCEPTED, JobStatus.ACCEPTED] }
         });
 
         if (activeJob) {
             const distance = calculateDistance(coordinates, activeJob.location.coordinates);
 
+            // Movement Monitoring (PAGE 7/8 Requirements)
+            if (!activeJob.hasStartedTravelling && activeJob.providerLocationAtAcceptance) {
+                const distanceFromAcceptance = calculateDistance(coordinates, activeJob.providerLocationAtAcceptance.coordinates);
+                if (distanceFromAcceptance > 100) { // Moved more than 100m
+                    activeJob.hasStartedTravelling = true;
+                    activeJob.travellingStartedAt = now;
+                    logger.info(`PRESENCE | MOVEMENT_DETECTED | Job: ${activeJob._id} | Provider: ${userId} has started travelling.`);
+                }
+            }
+
             // Arrival Notifications (Hardened to prevent spam)
             const sent = activeJob.notificationsSent || [];
 
-            if (distance <= 50 && !sent.includes('ARRIVED')) {
-                await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider has arrived', 'Your provider is at the location.');
-                activeJob.status = JobStatus.ARRIVED;
-                activeJob.notificationsSent = [...sent, 'ARRIVED'];
-                await activeJob.save();
+            if (activeJob.status === JobStatus.EN_ROUTE) {
+                if (distance <= 50 && !sent.includes('ARRIVED')) {
+                    await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider has arrived', 'Your provider is at the location.');
+                    activeJob.status = JobStatus.ARRIVED;
+                    activeJob.notificationsSent = [...sent, 'ARRIVED'];
+                    await activeJob.save();
 
-                // Unified Real-Time Sync
-                const { syncJobStatus } = require('../socket/socket.service');
-                syncJobStatus(activeJob);
+                    // Unified Real-Time Sync
+                    const { syncJobStatus } = require('../socket/socket.service');
+                    syncJobStatus(activeJob);
+                }
+                else if (distance <= 1000 && distance > 500 && !sent.includes('ALMOST_THERE')) {
+                    // ~5 mins away
+                    await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is almost there', 'Your provider is approximately 5 minutes away.');
+                    activeJob.notificationsSent = [...sent, 'ALMOST_THERE'];
+                }
+                else if (distance <= 5000 && distance > 4500 && !sent.includes('TEN_MINUTES')) {
+                    // ~10 mins away
+                    await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is 10 minutes away', 'Your provider will arrive in approximately 10 minutes.');
+                    activeJob.notificationsSent = [...sent, 'TEN_MINUTES'];
+                }
             }
-            else if (distance <= 1000 && distance > 500 && !sent.includes('ALMOST_THERE')) {
-                // ~5 mins away
-                await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is almost there', 'Your provider is approximately 5 minutes away.');
-                activeJob.notificationsSent = [...sent, 'ALMOST_THERE'];
-                await activeJob.save();
-            }
-            else if (distance <= 5000 && distance > 4500 && !sent.includes('TEN_MINUTES')) {
-                // ~10 mins away
-                await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is 10 minutes away', 'Your provider will arrive in approximately 10 minutes.');
-                activeJob.notificationsSent = [...sent, 'TEN_MINUTES'];
+
+            if (activeJob.isModified()) {
                 await activeJob.save();
             }
         }

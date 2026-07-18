@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import Job, { JobStatus } from '../../models/Job';
 import AuditLog from '../../models/AuditLog';
-import Ledger from '../../models/Ledger';
+import Ledger, { TransactionType } from '../../models/Ledger';
 import Call from '../../models/Call';
 import Chat from '../../models/Chat';
 import Provider from '../../models/Provider';
@@ -130,5 +130,101 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: `Job status updated to ${status}` });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Lists all jobs that are in PENDING_ADMIN_REVIEW status.
+ */
+export const adminListPendingReviews = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || req.user?.countryCode;
+        const jobs = await Job.find({
+            status: JobStatus.PENDING_ADMIN_REVIEW,
+            countryCode
+        })
+        .sort({ updatedAt: -1 })
+        .populate('customerId', 'firstName lastName profilePhoto')
+        .populate('providerId', 'firstName lastName profilePhoto');
+
+        res.status(200).json({ success: true, data: jobs });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to list pending reviews', error });
+    }
+};
+
+import * as financialService from '../../services/financial.service';
+import * as performanceService from '../../services/provider-performance.service';
+
+/**
+ * Resolves a cancellation dispute from the review queue.
+ */
+export const adminResolveDispute = async (req: AuthRequest, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { jobId } = req.params;
+        const { resolution, fault, penaltyAmount } = req.body; // resolution: 'APPROVE_REFUND' | 'REJECT_REFUND', fault: 'CUSTOMER' | 'PROVIDER'
+
+        const job = await Job.findById(jobId).session(session);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        const previousStatus = job.status;
+
+        if (resolution === 'APPROVE_REFUND') {
+            await financialService.refundJob(jobId, `Admin Resolution: ${fault} at fault.`, session);
+
+            if (fault === 'PROVIDER' && job.providerId) {
+                // Apply financial penalty to provider (negative wallet adjustment)
+                const penalty = penaltyAmount || job.bookingFee; // Default to booking fee if not specified
+
+                await require('../../services/wallet.service').mutateWallet({
+                    userId: job.providerId.toString(),
+                    amount: -penalty,
+                    type: TransactionType.MANUAL_DEBIT,
+                    balanceType: 'balanceCredit',
+                    description: `Penalty: Cancellation dispute resolution (Job #${jobId.slice(-6)})`,
+                    jobId: job._id,
+                    countryCode: job.countryCode,
+                    currency: job.pricingSnapshot?.currencyCode || 'USD',
+                    session,
+                    metadata: { fault: 'PROVIDER', adminId: req.user?.userId }
+                });
+
+                await performanceService.recordPenalty(job.providerId.toString(), 'CANCELLATION');
+            }
+        } else {
+            // Reject Refund - Keep job as CANCELLED but paymentStatus stays PAID (platform keeps booking fee)
+            job.status = JobStatus.CANCELLED;
+            job.escrowStatus = 'REFUNDED'; // Mark as resolved
+            await job.save({ session });
+        }
+
+        await auditService.logAdminAction({
+            countryCode: job.countryCode,
+            adminId: req.user?.userId as string,
+            adminRole: req.user?.role as string,
+            action: 'DISPUTE_RESOLVED',
+            entityType: 'Jobs',
+            entityId: jobId,
+            afterState: { resolution, fault, penaltyAmount },
+            ipAddress: req.ip,
+            systemSource: 'ADMIN_DASHBOARD'
+        }, session);
+
+        await session.commitTransaction();
+
+        // Notify parties
+        await notificationService.notifyUser(job.customerId.toString(), 'Dispute Resolved', resolution === 'APPROVE_REFUND' ? 'Your refund has been approved.' : 'Your refund request was declined after review.');
+        if (job.providerId) {
+            await notificationService.notifyUser(job.providerId.toString(), 'Dispute Resolved', fault === 'PROVIDER' ? 'You have been found at fault for the job cancellation. A penalty has been applied.' : 'The cancellation review has been completed.');
+        }
+
+        res.status(200).json({ success: true, message: 'Dispute resolved successfully' });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(500).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
     }
 };

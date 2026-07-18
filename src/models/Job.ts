@@ -19,7 +19,8 @@ export enum JobStatus {
   CANCELLED = 'CANCELLED',
   DISPUTED = 'DISPUTED',
   SCHEDULED = 'SCHEDULED',
-  RESCHEDULED = 'RESCHEDULED'
+  RESCHEDULED = 'RESCHEDULED',
+  PENDING_ADMIN_REVIEW = 'PENDING_ADMIN_REVIEW'
 }
 
 export interface IJob extends Document {
@@ -56,6 +57,12 @@ export interface IJob extends Document {
   cancellationReason?: string;
   cancelledBy?: mongoose.Types.ObjectId;
   acceptedAt?: Date;
+  providerLocationAtAcceptance?: {
+    type: string;
+    coordinates: number[];
+  };
+  hasStartedTravelling?: boolean;
+  travellingStartedAt?: Date;
   arrivedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
@@ -95,6 +102,18 @@ export interface IJob extends Document {
   taskPhotosRequestedAt?: Date;
   taskPhotosSeen?: boolean;
   taskPhotos?: string[];
+
+  // Cancellation Evidence
+  cancellationEvidence?: {
+    photos: string[];
+    videoUrl?: string;
+    explanation: string;
+    gpsAtCancellation?: {
+      type: string;
+      coordinates: number[];
+    };
+    timestamp: Date;
+  };
 
   notificationsSent?: string[];
   notifiedProviderIds: mongoose.Types.ObjectId[];
@@ -141,6 +160,12 @@ const JobSchema: Schema = new Schema({
   cancellationReason: { type: String },
   cancelledBy: { type: Schema.Types.ObjectId, ref: 'User' },
   acceptedAt: { type: Date },
+  providerLocationAtAcceptance: {
+    type: { type: String, default: 'Point' },
+    coordinates: { type: [Number] }
+  },
+  hasStartedTravelling: { type: Boolean, default: false },
+  travellingStartedAt: { type: Date },
   arrivedAt: { type: Date },
   startedAt: { type: Date },
   completedAt: { type: Date },
@@ -180,6 +205,18 @@ const JobSchema: Schema = new Schema({
   taskPhotosRequestedAt: { type: Date },
   taskPhotosSeen: { type: Boolean, default: false },
   taskPhotos: [{ type: String }],
+
+  // Cancellation Evidence
+  cancellationEvidence: {
+    photos: [{ type: String }],
+    videoUrl: { type: String },
+    explanation: { type: String },
+    gpsAtCancellation: {
+      type: { type: String, default: 'Point' },
+      coordinates: { type: [Number] }
+    },
+    timestamp: { type: Date }
+  },
 
   notificationsSent: { type: [String], default: [] },
   notifiedProviderIds: { type: [Schema.Types.ObjectId], ref: 'User', default: [] },
