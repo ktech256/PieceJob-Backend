@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
@@ -1149,14 +1150,33 @@ import * as attachmentService from '../services/email-attachment.service';
 export const downloadReceipt = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;
-        const userId = req.user?.userId;
+        const { token } = req.query;
+        let userId: string | null = null;
+
+        // 1. Try Token-based Auth (from Email link)
+        if (token) {
+            try {
+                const decoded = jwt.verify(token as string, process.env.JWT_SECRET || 'secret') as any;
+                if (decoded.jobId === jobId && decoded.type === 'RECEIPT_DOWNLOAD') {
+                    userId = decoded.customerId;
+                }
+            } catch (e) {
+                logger.warn(`RECEIPT_DOWNLOAD | INVALID_TOKEN | Job: ${jobId}`);
+            }
+        }
+
+        // 2. Try Standard Auth (from App session)
+        if (!userId && req.user) {
+            userId = req.user.userId;
+        }
 
         const job = await Job.findById(jobId);
         if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
         // Security: Ensure only the customer of this job can download the receipt
-        if (job.customerId.toString() !== userId) {
-            return res.status(403).json({ success: false, message: 'Unauthorized: This receipt does not belong to you' });
+        if (!userId || job.customerId.toString() !== userId) {
+            logger.error(`RECEIPT_DOWNLOAD | UNAUTHORIZED | User: ${userId} | Job: ${jobId}`);
+            return res.status(403).json({ success: false, message: 'Unauthorized: Access denied' });
         }
 
         const pdfBuffer = await attachmentService.generateJobReceiptPDF(jobId);
@@ -1165,6 +1185,7 @@ export const downloadReceipt = async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename=PieceJob-Receipt-${jobId.slice(-6)}.pdf`);
         res.status(200).send(pdfBuffer);
     } catch (error: any) {
+        logger.error(`RECEIPT_DOWNLOAD | ERROR | Job: ${req.params.jobId} | ${error.message}`);
         res.status(500).json({ success: false, message: 'Failed to download receipt', error: error.message });
     }
 };

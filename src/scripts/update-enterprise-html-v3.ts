@@ -148,7 +148,7 @@ const redesignedTemplates = [
         </div>
 
         <div style="text-align: center;">
-            <a href="https://api.piecejob.co/api/v1/jobs/{{jobId}}/receipt/download" class="button" style="background-color: #121212;">Download PDF Receipt</a>
+            <a href="{{downloadUrl}}" class="button" style="background-color: #121212;">Download PDF Receipt</a>
         </div>
       </div>
 
@@ -277,7 +277,7 @@ const update = async () => {
     for (const t of redesignedTemplates) {
       const updateData: any = { body: t.body, subject: t.subject };
       if (t.templateCode === 'JOB_COMPLETED_RECEIPT') {
-          updateData.placeholders = ['firstName', 'serviceName', 'jobId', 'providerName', 'providerRating', 'amount', 'currency', 'time', 'address', 'duration', 'bookingFee', 'negotiatedAmount'];
+          updateData.placeholders = ['firstName', 'serviceName', 'jobId', 'providerName', 'providerRating', 'amount', 'currency', 'time', 'address', 'duration', 'bookingFee', 'negotiatedAmount', 'downloadUrl'];
       }
 
       await NotificationTemplate.findOneAndUpdate(

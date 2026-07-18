@@ -5,6 +5,7 @@ import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import ServiceExpectedDuration from '../models/ServiceExpectedDuration';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
 import { emitToUser, emitJobUpdate, emitAdminUpdate, emitToWorkspace, isUserConnected } from '../socket/socket.service';
 import { addJobToBroadcastQueue } from './job-broadcast.queue';
 import * as notificationService from './notification.service';
@@ -222,8 +223,17 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             const providerStats = await Provider.findOne({ userId: job.providerId });
 
             if (customer?.email) {
-                const serviceAmt = job.agreedPrice || job.serviceFee || 0;
-                const totalPaid = serviceAmt + job.bookingFee;
+                const totalPaid = job.agreedPrice || (job.serviceFee || 0) + job.bookingFee;
+                const providerAmount = totalPaid - job.bookingFee;
+
+                // Secure Token for Download (7 days expiry)
+                const downloadToken = jwt.sign(
+                    { jobId: job._id.toString(), customerId: job.customerId.toString(), type: 'RECEIPT_DOWNLOAD' },
+                    process.env.JWT_SECRET || 'secret',
+                    { expiresIn: '7d' }
+                );
+
+                const downloadUrl = `https://api.piecejob.co/api/v1/jobs/${job._id}/receipt/download?token=${downloadToken}`;
 
                 await notificationQueue.addNotificationToQueue({
                     type: 'EMAIL',
@@ -237,11 +247,12 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                         providerRating: providerStats?.ratingAvg?.toFixed(1) || '5.0',
                         amount: totalPaid.toFixed(2),
                         bookingFee: job.bookingFee.toFixed(2),
-                        negotiatedAmount: serviceAmt.toFixed(2),
+                        negotiatedAmount: providerAmount.toFixed(2),
                         currency: job.pricingSnapshot?.currencyCode || 'R',
                         time: new Date().toLocaleString(),
                         address: job.location?.address || 'N/A',
-                        duration: job.startedAt && job.completedAt ? `${Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / (1000 * 60))} minutes` : 'N/A'
+                        duration: job.startedAt && job.completedAt ? `${Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / (1000 * 60))} minutes` : 'N/A',
+                        downloadUrl: downloadUrl
                     },
                     countryCode: job.countryCode
                 });
@@ -249,13 +260,12 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
 
             // Dispatch Provider Job Completion Receipt (ISSUE 2)
             if (providerUser?.email) {
-                const serviceAmt = job.agreedPrice || job.serviceFee || 0;
-                const grossAmount = serviceAmt + job.bookingFee;
+                const totalPaid = job.agreedPrice || (job.serviceFee || 0) + job.bookingFee;
 
                 const isNegotiatedJob = job.priceNegotiationRequired !== false;
                 const currentFeeRate = job.serviceFeeRateSnapshot || 15;
-                const totalServiceFee = isNegotiatedJob ? (job.agreedPrice || (job.serviceFee || 0) + job.bookingFee) * (currentFeeRate / 100) : job.bookingFee;
-                const netEarnings = grossAmount - totalServiceFee;
+                const totalServiceFee = isNegotiatedJob ? totalPaid * (currentFeeRate / 100) : job.bookingFee;
+                const netEarnings = totalPaid - totalServiceFee;
 
                 // Extract Suburb/City (Hide Street Address)
                 const fullAddress = job.location?.address || "";
@@ -279,8 +289,8 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                         suburb: suburb,
                         city: city,
                         bookingFee: job.bookingFee.toFixed(2),
-                        negotiatedAmount: serviceAmt.toFixed(2),
-                        grossAmount: grossAmount.toFixed(2),
+                        negotiatedAmount: (totalPaid - job.bookingFee).toFixed(2),
+                        grossAmount: totalPaid.toFixed(2),
                         platformFee: totalServiceFee.toFixed(2),
                         netEarnings: netEarnings.toFixed(2),
                         currency: job.pricingSnapshot?.currencyCode || 'R'
