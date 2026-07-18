@@ -442,24 +442,6 @@ export const releaseEscrowFunds = async () => {
                 session,
                 metadata: { settlement: 'ESCROW_RELEASE' }
             });
-
-            // Dispatch Provider Net Earnings Email
-            const providerUser = await User.findById(job.providerId).session(session);
-            if (providerUser?.email) {
-                await notificationQueue.addNotificationToQueue({
-                    type: 'EMAIL',
-                    email: providerUser.email,
-                    templateCode: 'PROVIDER_NET_EARNINGS',
-                    templateData: {
-                        firstName: providerUser.firstName,
-                        amount: netAmount.toString(),
-                        currency: ledgerEntry.currency,
-                        jobId: job._id.toString(),
-                        serviceName: job.serviceName || job.serviceCode
-                    },
-                    countryCode: job.countryCode
-                });
-            }
         }
 
         // REFERRAL REWARD - Still process this as it encourages growth

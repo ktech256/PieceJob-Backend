@@ -337,22 +337,6 @@ export const requestJob = async (req: AuthRequest, res: Response) => {
 
     await job.save();
 
-    // Send Job Request Confirmation Email
-    const customer = await User.findById(req.user?.userId);
-    if (customer?.email) {
-        await notificationQueue.addNotificationToQueue({
-            type: 'EMAIL',
-            email: customer.email,
-            templateCode: 'JOB_REQUEST_CONFIRMATION',
-            templateData: {
-                firstName: customer.firstName,
-                serviceName: service.name,
-                jobId: job._id.toString()
-            },
-            countryCode: job.countryCode
-        });
-    }
-
     // Auto-save location for reuse (Issue 3)
     await userContextService.autoSaveLocation(req.user!.userId, address, coordinates);
 
@@ -827,7 +811,11 @@ export const acceptJob = async (req: AuthRequest, res: Response) => {
                 firstName: customer.firstName,
                 serviceName: job.serviceName || job.serviceCode,
                 providerName: providerData ? `${providerData.firstName} ${providerData.lastName}` : 'A professional',
-                jobId: job._id.toString()
+                providerPhoto: providerData?.profilePicture || '',
+                providerRating: providerData?.ratingAvg?.toFixed(1) || '5.0',
+                jobId: job._id.toString(),
+                eta: 'Calculating...', // ETA is dynamic, will show app default
+                customerId: job.customerId.toString()
             },
             countryCode: job.countryCode
         });
@@ -947,26 +935,6 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
                 'Provider Arrived',
                 'Your provider has arrived at the location.'
             );
-
-            // Fetch Provider Info for email
-            const provider = await User.findById(updatedJob.providerId);
-
-            // Dispatch Provider Arrived Email
-            const customer = await User.findById(updatedJob.customerId);
-            if (customer?.email) {
-                await notificationQueue.addNotificationToQueue({
-                    type: 'EMAIL',
-                    email: customer.email,
-                    templateCode: 'PROVIDER_ARRIVED',
-                    templateData: {
-                        firstName: customer.firstName,
-                        serviceName: updatedJob.serviceName || updatedJob.serviceCode,
-                        jobId: updatedJob._id.toString(),
-                        providerName: provider ? `${provider.firstName} ${provider.lastName}` : 'Your professional'
-                    },
-                    countryCode: updatedJob.countryCode
-                });
-            }
         }
     }
 
@@ -1062,23 +1030,6 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
               `The job has been cancelled by the ${role?.toLowerCase()}.`
           );
           logger.info(`JOB_CANCEL_PROVIDER_NOTIFIED | Target: ${notifyTargetId}`);
-
-          // Dispatch Cancelled Email
-          const targetUser = await User.findById(notifyTargetId);
-          if (targetUser?.email) {
-              await notificationQueue.addNotificationToQueue({
-                  type: 'EMAIL',
-                  email: targetUser.email,
-                  templateCode: 'JOB_CANCELLED',
-                  templateData: {
-                      firstName: targetUser.firstName,
-                      serviceName: job.serviceName || job.serviceCode,
-                      cancelledBy: role === 'PROVIDER' ? 'Provider' : 'Customer',
-                      reason: reason || 'N/A'
-                  },
-                  countryCode: job.countryCode
-              });
-          }
       }
 
       emitAdminUpdate('job_status_updated', { jobId: job.id, status: JobStatus.CANCELLED });
@@ -1112,22 +1063,6 @@ export const reportUnableToLocate = async (req: AuthRequest, res: Response) => {
             'Provider Alert',
             'Your professional is at the location but cannot find you. Please check your phone.'
         );
-
-        // Dispatch Email
-        const customer = await User.findById(job.customerId);
-        if (customer?.email) {
-            await notificationQueue.addNotificationToQueue({
-                type: 'EMAIL',
-                email: customer.email,
-                templateCode: 'PROVIDER_UNABLE_TO_LOCATE',
-                templateData: {
-                    firstName: customer.firstName,
-                    serviceName: job.serviceName || job.serviceCode,
-                    jobId: job._id.toString()
-                },
-                countryCode: job.countryCode
-            });
-        }
 
         res.status(200).json({ success: true, message: 'Customer notified.' });
     } catch (error: any) {

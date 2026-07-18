@@ -3,6 +3,7 @@ import User from '../models/User';
 import Provider, { ProviderTier } from '../models/Provider';
 import Service, { GenderRule, VerificationLevel } from '../models/Service';
 import ServiceExpectedDuration from '../models/ServiceExpectedDuration';
+import Ledger, { TransactionType } from '../models/Ledger';
 import { IJob } from '../models/Job';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -221,6 +222,11 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
             const socketService = require('../socket/socket.service');
             socketService.syncJobStatus(job, 'status_updated', { adminOverride });
 
+            // 7. ENRICH EMAILS WITH TRANSACTION DETAILS
+            const ledger = await Ledger.findOne({ jobId: job._id, type: TransactionType.BOOKING_FEE });
+            const paymentMethod = ledger?.metadata?.method || 'Card/Wallet';
+            const transactionRef = job.paymentReference || ledger?.transactionId || 'N/A';
+
             // Fetch customer and provider info for receipt
             const customer = await User.findById(job.customerId);
             const providerUser = await User.findById(job.providerId);
@@ -256,6 +262,8 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                         time: new Date().toLocaleString(),
                         address: job.location?.address || 'N/A',
                         duration: job.startedAt && job.completedAt ? `${Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / (1000 * 60))} minutes` : 'N/A',
+                        paymentMethod: paymentMethod,
+                        transactionRef: transactionRef,
                         downloadUrl: downloadUrl
                     },
                     countryCode: job.countryCode
@@ -297,7 +305,9 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                         grossAmount: totalPaid.toFixed(2),
                         platformFee: totalServiceFee.toFixed(2),
                         netEarnings: netEarnings.toFixed(2),
-                        currency: job.pricingSnapshot?.currencyCode || 'R'
+                        currency: job.pricingSnapshot?.currencyCode || 'R',
+                        transactionRef: transactionRef,
+                        walletCredit: netEarnings.toFixed(2)
                     },
                     countryCode: job.countryCode
                 });
@@ -728,22 +738,6 @@ export const expireInactiveNegotiations = async () => {
             const presenceService = require('./provider-presence.service');
             await presenceService.releaseProviderFromJob(job.providerId.toString());
             await notificationService.notifyUser(job.providerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
-        }
-
-        // Dispatch Negotiation Expired Email
-        const customer = await User.findById(job.customerId);
-        if (customer?.email) {
-            await notificationQueue.addNotificationToQueue({
-                type: 'EMAIL',
-                email: customer.email,
-                templateCode: 'NEGOTIATION_EXPIRED',
-                templateData: {
-                    firstName: customer.firstName,
-                    serviceName: job.serviceName || job.serviceCode,
-                    jobId: job._id.toString()
-                },
-                countryCode: job.countryCode
-            });
         }
 
         emitJobUpdate(job.id, 'status_updated', { jobId: job.id, priceStatus: 'EXPIRED' });

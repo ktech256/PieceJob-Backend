@@ -198,23 +198,6 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
                 { type: 'PRICE_ACCEPTED', jobId: job._id.toString() }
             );
 
-            // Dispatch Negotiation Accepted Email
-            const senderUser = await User.findById(proposal.senderId);
-            if (senderUser?.email) {
-                await notificationQueue.addNotificationToQueue({
-                    type: 'EMAIL',
-                    email: senderUser.email,
-                    templateCode: 'NEGOTIATION_ACCEPTED',
-                    templateData: {
-                        firstName: senderUser.firstName,
-                        amount: proposal.amount.toString(),
-                        jobId: job._id.toString(),
-                        serviceName: job.serviceName || job.serviceCode
-                    },
-                    countryCode: job.countryCode
-                });
-            }
-
         } else {
             proposal.status = 'REJECTED';
             job.priceStatus = 'REJECTED';
@@ -277,22 +260,6 @@ export const respondToProposal = async (req: AuthRequest, res: Response) => {
                     'The customer has rejected the final proposal. This job is no longer available to you.',
                     { type: 'PRICE_REJECTED', jobId: job._id.toString() }
                 );
-
-                // Dispatch Negotiation Terminated Email
-                const rejectedUser = await User.findById(rejectedProviderId);
-                if (rejectedUser?.email) {
-                    await notificationQueue.addNotificationToQueue({
-                        type: 'EMAIL',
-                        email: rejectedUser.email,
-                        templateCode: 'NEGOTIATION_TERMINATED',
-                        templateData: {
-                            firstName: rejectedUser.firstName,
-                            jobId: job._id.toString(),
-                            serviceName: job.serviceName || job.serviceCode
-                        },
-                        countryCode: job.countryCode
-                    });
-                }
             }
         }
 
