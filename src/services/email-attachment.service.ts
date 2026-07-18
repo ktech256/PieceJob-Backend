@@ -20,6 +20,18 @@ export const getAttachmentsForEmail = async (templateCode: string, templateData:
       logger.info(`EMAIL_ATTACHMENT | SKIPPED | PDF Attachment removed for Customer Receipt: ${jobId}. Body-Receipt active.`);
     }
 
+    if (templateCode === 'PROVIDER_JOB_COMPLETED' && jobId) {
+      logger.info(`EMAIL_ATTACHMENT | GENERATING_PDF | Provider Earnings: ${jobId}`);
+      const pdf = await generateProviderEarningsPDF(jobId);
+      if (pdf) {
+          attachments.push({
+              filename: `Earnings-Receipt-${jobId.toString().slice(-6)}.pdf`,
+              content: pdf,
+              contentType: 'application/pdf'
+          });
+      }
+    }
+
     if (templateCode === 'TAX_INVOICE' && templateData.invoiceId) {
       const pdf = await generateInvoicePDF(templateData.invoiceId);
       attachments.push({
@@ -65,6 +77,39 @@ export const generateJobReceiptPDF = async (jobId: string) => {
       phone: '+27 11 000 0000'
     }
   });
+};
+
+const generateProviderEarningsPDF = async (jobId: string) => {
+    const job = await Job.findById(jobId).populate('customerId providerId');
+    if (!job) throw new Error('Job not found');
+
+    const serviceAmt = job.agreedPrice || job.serviceFee || 0;
+    const grossAmount = serviceAmt + job.bookingFee;
+
+    // Simple logic match for email
+    const serviceFeeRate = job.serviceFeeRateSnapshot || 15;
+    const isNegotiated = job.priceNegotiationRequired !== false;
+    const totalServiceFee = isNegotiated ? (job.agreedPrice || (job.serviceFee || 0) + job.bookingFee) * (serviceFeeRate / 100) : job.bookingFee;
+    const netEarnings = (job.agreedPrice || (job.serviceFee || 0) + job.bookingFee) - totalServiceFee;
+
+    return await generatePDF({
+      title: 'PROVIDER EARNINGS RECEIPT',
+      items: [
+        { label: 'Job ID', value: `#${job._id.toString().slice(-6)}` },
+        { label: 'Service', value: job.serviceName || job.serviceCode },
+        { label: 'Date', value: job.completedAt?.toDateString() || new Date().toDateString() },
+        { label: 'Gross Job Value', value: `${job.pricingSnapshot?.currencyCode || 'R'} ${grossAmount.toFixed(2)}` },
+        { label: 'Platform Service Fee', value: `${job.pricingSnapshot?.currencyCode || 'R'} ${totalServiceFee.toFixed(2)}` },
+        { label: 'Net Earnings', value: `${job.pricingSnapshot?.currencyCode || 'R'} ${netEarnings.toFixed(2)}` },
+        { label: 'Status', value: 'CREDITED TO ESCROW' }
+      ],
+      companyDetails: {
+        name: 'PieceJob (Pty) Ltd - Provider Network',
+        address: 'Oracle North, Johannesburg, South Africa',
+        email: 'pro-support@piecejob.co',
+        phone: '+27 11 000 0000'
+      }
+    });
 };
 
 const generateInvoicePDF = async (invoiceId: string) => {

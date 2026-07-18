@@ -71,7 +71,7 @@ export const sendEmail = async (options: EmailOptions) => {
     // Wrap in Premium Enterprise Branding
     const footer = config.emailSignature || '';
     const isProvider = template.category === 'PROVIDER';
-    const primaryColor = isProvider ? '#1A56DB' : '#FF9900'; // Royal Blue for Pro, Orange for Customer
+    const primaryColor = isProvider ? '#2E7D32' : '#D32F2F'; // PieceJob Green for Pro, PieceJob Red for Customer
     const brandName = config.branding.companyName || 'PieceJob';
     const logoUrl = config.branding.logoUrl || 'https://piecejob.co/assets/logos/piecejob-logo.png';
 

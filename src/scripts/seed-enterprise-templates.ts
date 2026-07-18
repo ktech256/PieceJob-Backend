@@ -467,6 +467,21 @@ const templates: any[] = [
     countryCode: 'GLOBAL'
   },
   {
+    templateCode: 'PROVIDER_JOB_COMPLETED',
+    channel: 'EMAIL',
+    category: 'PROVIDER',
+    description: 'Detailed earnings receipt for the provider upon job completion.',
+    trigger: 'Job Completed',
+    recipient: 'Provider',
+    priority: 'HIGH',
+    language: 'EN',
+    subject: 'Job Completed Successfully - Earnings Receipt',
+    body: '<h1>Job Completed</h1><p>Hi {{firstName}}, you earned {{currency}} {{netEarnings}} from job #{{jobId}}.</p>',
+    plainTextBody: 'Hi {{firstName}}, you earned {{currency}} {{netEarnings}} from job #{{jobId}}.',
+    placeholders: ['firstName', 'jobId', 'serviceName', 'customerName', 'completionDate', 'completionTime', 'startTime', 'duration', 'suburb', 'city', 'bookingFee', 'negotiatedAmount', 'grossAmount', 'platformFee', 'netEarnings', 'currency'],
+    countryCode: 'GLOBAL'
+  },
+  {
     templateCode: 'PROVIDER_VERIFICATION_APPROVED',
     channel: 'EMAIL',
     category: 'PROVIDER',

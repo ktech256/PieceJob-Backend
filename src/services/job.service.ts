@@ -247,6 +247,48 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 });
             }
 
+            // Dispatch Provider Job Completion Receipt (ISSUE 2)
+            if (providerUser?.email) {
+                const serviceAmt = job.agreedPrice || job.serviceFee || 0;
+                const grossAmount = serviceAmt + job.bookingFee;
+
+                const isNegotiatedJob = job.priceNegotiationRequired !== false;
+                const currentFeeRate = job.serviceFeeRateSnapshot || 15;
+                const totalServiceFee = isNegotiatedJob ? (job.agreedPrice || (job.serviceFee || 0) + job.bookingFee) * (currentFeeRate / 100) : job.bookingFee;
+                const netEarnings = grossAmount - totalServiceFee;
+
+                // Extract Suburb/City (Hide Street Address)
+                const fullAddress = job.location?.address || "";
+                const parts = fullAddress.split(',').map(s => s.trim());
+                const suburb = parts.length > 2 ? parts[parts.length - 3] : (parts.length > 1 ? parts[0] : "Local Area");
+                const city = parts.length > 1 ? parts[parts.length - 2] : "PieceJob Zone";
+
+                await notificationQueue.addNotificationToQueue({
+                    type: 'EMAIL',
+                    email: providerUser.email,
+                    templateCode: 'PROVIDER_JOB_COMPLETED',
+                    templateData: {
+                        firstName: providerUser.firstName,
+                        jobId: job._id.toString(),
+                        serviceName: job.serviceName || job.serviceCode,
+                        customerName: customer?.firstName || 'Customer',
+                        completionDate: new Date().toLocaleDateString(),
+                        completionTime: new Date().toLocaleTimeString(),
+                        startTime: job.startedAt ? job.startedAt.toLocaleTimeString() : 'N/A',
+                        duration: job.startedAt && job.completedAt ? `${Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / (1000 * 60))} mins` : 'N/A',
+                        suburb: suburb,
+                        city: city,
+                        bookingFee: job.bookingFee.toFixed(2),
+                        negotiatedAmount: serviceAmt.toFixed(2),
+                        grossAmount: grossAmount.toFixed(2),
+                        platformFee: totalServiceFee.toFixed(2),
+                        netEarnings: netEarnings.toFixed(2),
+                        currency: job.pricingSnapshot?.currencyCode || 'R'
+                    },
+                    countryCode: job.countryCode
+                });
+            }
+
             notificationService.notifyUser(
                 job.customerId.toString(),
                 'Job Completed',
