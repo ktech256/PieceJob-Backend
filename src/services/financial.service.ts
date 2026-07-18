@@ -374,6 +374,12 @@ export const refundJob = async (jobId: string, reason: string) => {
         job.status = JobStatus.CANCELLED;
         await job.save({ session });
 
+        // RELEASE PROVIDER
+        if (job.providerId) {
+            const presenceService = require('./provider-presence.service');
+            await presenceService.releaseProviderFromJob(job.providerId.toString());
+        }
+
         await session.commitTransaction();
     } catch (error) {
         await session.abortTransaction();

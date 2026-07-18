@@ -81,12 +81,10 @@ export const adminUpdateJobStatus = async (req: AuthRequest, res: Response) => {
                     logger.error(`[ADMIN] Error clearing broadcasts: ${e}`);
                 }
 
-                // If it had a provider, make them online again
+                // If it had a provider, release them back to available pool
                 if (job.providerId) {
-                    await Provider.findOneAndUpdate(
-                        { userId: job.providerId },
-                        { currentAvailabilityStatus: 'ONLINE' }
-                    );
+                    const presenceService = require('../../services/provider-presence.service');
+                    await presenceService.releaseProviderFromJob(job.providerId.toString());
                 }
             }
 

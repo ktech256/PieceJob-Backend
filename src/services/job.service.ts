@@ -209,6 +209,10 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 // Referral Processing (End-to-End Implementation)
                 const referralService = require('./referral.service');
                 referralService.handleJobCompletion(job);
+
+                // RESET PROVIDER AVAILABILITY (FIX FOR PERSISTENCE ISSUE)
+                const presenceService = require('./provider-presence.service');
+                await presenceService.releaseProviderFromJob(job.providerId.toString());
             } catch (postCommitErr) {
                 logger.warn(`JOB_COMPLETION | Post-Commit Error: ${postCommitErr}`);
             }
@@ -719,8 +723,10 @@ export const expireInactiveNegotiations = async () => {
         // The spec says \"Status EXPIRED. Notify both users.\"
         await job.save();
 
-        await notificationService.notifyUser(job.customerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
+        // RELEASE PROVIDER
         if (job.providerId) {
+            const presenceService = require('./provider-presence.service');
+            await presenceService.releaseProviderFromJob(job.providerId.toString());
             await notificationService.notifyUser(job.providerId.toString(), 'Negotiation Expired', 'The price negotiation for your job has expired.');
         }
 

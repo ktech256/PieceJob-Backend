@@ -1049,18 +1049,8 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
 
       // Reset provider status based on their isOnline preference
       if (job.providerId) {
-          const provider = await Provider.findOne({ userId: job.providerId });
-          if (provider) {
-              provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
-              await provider.save();
-
-              emitAdminUpdate('provider_status_changed', {
-                  userId: job.providerId,
-                  isOnline: provider.isOnline,
-                  status: provider.currentAvailabilityStatus,
-                  timestamp: new Date()
-              });
-          }
+          const presenceService = require('../services/provider-presence.service');
+          await presenceService.releaseProviderFromJob(job.providerId.toString());
       }
 
       // Notify other party

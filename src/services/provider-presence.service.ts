@@ -11,19 +11,41 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
     const now = new Date();
     const oldProvider = await Provider.findOne({ userId });
 
+    if (!oldProvider) {
+        logger.error(`HEARTBEAT | FAILED | Provider not found for user: ${userId}`);
+        return null;
+    }
+
+    // SELF-HEALING: If heartbeat is coming in but provider is marked offline, try to re-online them
+    // only if they are approved, not suspended, and have services configured.
+    let statusUpdate: any = {
+        lastHeartbeat: now,
+        lastGpsUpdate: now,
+        'location.coordinates': coordinates,
+        hardwareId
+    };
+
+    if (!oldProvider.isOnline) {
+        const canAutoOnline = oldProvider.verificationStatus === 'APPROVED' &&
+            (!oldProvider.suspendedUntil || oldProvider.suspendedUntil < now) &&
+            oldProvider.servicesOffered.length > 0;
+
+        if (canAutoOnline) {
+            logger.info(`HEARTBEAT | SELF_HEALING | Re-onlining provider ${userId} due to active heartbeat.`);
+            statusUpdate.isOnline = true;
+            statusUpdate.currentAvailabilityStatus = 'ONLINE';
+            statusUpdate.lastOnlineAt = now;
+        }
+    }
+
     const provider = await Provider.findOneAndUpdate(
-        { userId, isOnline: true },
-        {
-            lastHeartbeat: now,
-            lastGpsUpdate: now,
-            'location.coordinates': coordinates,
-            hardwareId
-        },
+        { userId },
+        { $set: statusUpdate },
         { new: true }
     );
 
-    if (provider && oldProvider) {
-        logger.heartbeat(userId, true);
+    if (provider) {
+        logger.heartbeat(userId, provider.isOnline);
 
         // EVENT-DRIVEN HEALTH MONITOR: Check token health during heartbeat
         // If provider is online but has no token, request repair via Socket
@@ -106,12 +128,14 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
 };
 
 export const checkGhostOffline = async () => {
-    const sixtySecondsAgo = new Date(Date.now() - 60000);
+    // FORENSIC FIX: Increase threshold to 3 minutes to prevent aggressive ghosting
+    // while app heartbeats are every 10-30s.
+    const threshold = new Date(Date.now() - 3 * 60 * 1000);
 
-    // Providers who haven't sent a heartbeat in 60s but are still marked online
+    // Providers who haven't sent a heartbeat in 3m but are still marked online
     const ghosts = await Provider.find({
         isOnline: true,
-        lastHeartbeat: { $lt: sixtySecondsAgo }
+        lastHeartbeat: { $lt: threshold }
     });
 
     for (const ghost of ghosts) {
@@ -129,4 +153,36 @@ export const checkGhostOffline = async () => {
     }
 
     return ghosts.length;
+};
+
+/**
+ * Ensures a provider is returned to the available pool if they are still online.
+ * Resets currentAvailabilityStatus to ONLINE if isOnline is true.
+ */
+export const releaseProviderFromJob = async (userId: string) => {
+    try {
+        const provider = await Provider.findOne({ userId });
+        if (provider) {
+            provider.currentAvailabilityStatus = provider.isOnline ? 'ONLINE' : 'OFFLINE';
+            await provider.save();
+
+            emitAdminUpdate('provider_status_changed', {
+                userId: userId,
+                isOnline: provider.isOnline,
+                status: provider.currentAvailabilityStatus,
+                timestamp: new Date()
+            });
+
+            // Notify User Room so app can sync
+            const { emitToUser } = require('../socket/socket.service');
+            emitToUser(userId.toString(), 'provider_status_sync', {
+                isOnline: provider.isOnline,
+                status: provider.currentAvailabilityStatus
+            });
+
+            logger.info(`PRESENCE | RELEASE | Provider ${userId} released to ${provider.currentAvailabilityStatus}`);
+        }
+    } catch (error: any) {
+        logger.error(`PRESENCE | RELEASE_FAILED | User: ${userId} | ${error.message}`);
+    }
 };

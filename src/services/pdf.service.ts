@@ -124,7 +124,7 @@ export const generatePDF = async (data: PDFData): Promise<Buffer> => {
 
             data.timeline.forEach((point, index) => {
                 doc.circle(margin + 5, y + 5, 3).fill(brandColor);
-                if (index < data.timeline.length - 1) {
+                if (data.timeline && index < data.timeline.length - 1) {
                     doc.moveTo(margin + 5, y + 8).lineTo(margin + 5, y + 22).stroke('#EEEEEE');
                 }
                 doc.fillColor('#666666').fontSize(9).font('Helvetica').text(point.event, margin + 20, y);
