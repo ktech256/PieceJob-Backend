@@ -14,19 +14,10 @@ export const getAttachmentsForEmail = async (templateCode: string, templateData:
     logger.info(`EMAIL_ATTACHMENT | ANALYZING | Template: ${templateCode} | Target ID: ${jobId}`);
 
     if (templateCode === 'JOB_COMPLETED_RECEIPT' && jobId) {
-      logger.info(`EMAIL_ATTACHMENT | GENERATING_PDF | Job: ${jobId}`);
-      const pdf = await generateJobReceiptPDF(jobId);
-
-      if (pdf && pdf.length > 0) {
-        attachments.push({
-          filename: `PieceJob-Receipt-${jobId.toString().slice(-6)}.pdf`,
-          content: pdf,
-          contentType: 'application/pdf'
-        });
-        logger.info(`EMAIL_ATTACHMENT | SUCCESS | Attached PDF for Job: ${jobId}`);
-      } else {
-        logger.error(`EMAIL_ATTACHMENT | FAILED | PDF buffer empty for Job: ${jobId}`);
-      }
+      // NOTE: For Job Completed emails to customers, we no longer attach the PDF.
+      // The email body itself is the high-fidelity receipt.
+      // A download button in the HTML will point to the secure retrieval endpoint.
+      logger.info(`EMAIL_ATTACHMENT | SKIPPED | PDF Attachment removed for Customer Receipt: ${jobId}. Body-Receipt active.`);
     }
 
     if (templateCode === 'TAX_INVOICE' && templateData.invoiceId) {
@@ -52,7 +43,7 @@ export const getAttachmentsForEmail = async (templateCode: string, templateData:
   }
 };
 
-const generateJobReceiptPDF = async (jobId: string) => {
+export const generateJobReceiptPDF = async (jobId: string) => {
   const job = await Job.findById(jobId).populate('customerId providerId');
   if (!job) throw new Error('Job not found');
 

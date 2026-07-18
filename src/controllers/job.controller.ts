@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Job, { JobStatus } from '../models/Job';
 import User from '../models/User';
@@ -1141,6 +1141,31 @@ export const reportUnableToLocate = async (req: AuthRequest, res: Response) => {
         res.status(200).json({ success: true, message: 'Customer notified.' });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+import * as attachmentService from '../services/email-attachment.service';
+
+export const downloadReceipt = async (req: AuthRequest, res: Response) => {
+    try {
+        const { jobId } = req.params;
+        const userId = req.user?.userId;
+
+        const job = await Job.findById(jobId);
+        if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+        // Security: Ensure only the customer of this job can download the receipt
+        if (job.customerId.toString() !== userId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized: This receipt does not belong to you' });
+        }
+
+        const pdfBuffer = await attachmentService.generateJobReceiptPDF(jobId);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=PieceJob-Receipt-${jobId.slice(-6)}.pdf`);
+        res.status(200).send(pdfBuffer);
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: 'Failed to download receipt', error: error.message });
     }
 };
 

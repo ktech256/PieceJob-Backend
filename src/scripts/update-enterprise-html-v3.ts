@@ -95,54 +95,74 @@ const redesignedTemplates = [
   },
   {
     templateCode: 'JOB_COMPLETED_RECEIPT',
-    subject: 'PieceJob Receipt: {{serviceName}} [PJ-{{jobId}}]',
+    subject: 'Payment Receipt: {{serviceName}} [PJ-{{jobId}}]',
     body: `
-      <h1 class="h1">Thanks for using PieceJob, {{firstName}}!</h1>
-      <p class="p">Your job for <b>{{serviceName}}</b> was completed successfully. We hope you're satisfied with the service provided.</p>
+      <h1 class="h1">Payment Receipt</h1>
+      <p class="p">Hi {{firstName}}, thank you for using PieceJob. Your payment has been successfully processed for <b>{{serviceName}}</b>.</p>
 
-      <div class="card">
-        <div style="margin-bottom: 25px; border-bottom: 2px solid #121212; padding-bottom: 15px;">
-            <span style="font-size: 10px; font-weight: 900; color: #999; text-transform: uppercase;">Total Paid</span>
-            <div style="font-size: 36px; font-weight: 900; color: #121212;">{{currency}} {{amount}}</div>
+      <div class="card" style="border: 2px solid #f0f0f0; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #121212; padding-bottom: 20px;">
+            <p style="font-size: 11px; font-weight: 900; color: #999; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.1em;">Total Paid</p>
+            <div style="font-size: 48px; font-weight: 900; color: #121212;">{{currency}} {{amount}}</div>
+            <p style="font-size: 12px; font-weight: 700; color: #121212; margin-top: 5px;">{{time}}</p>
         </div>
 
-        <div class="detail-row">
-            <span class="label">Service</span>
-            <span class="value">{{serviceName}}</span>
+        <div style="margin-bottom: 30px;">
+            <p style="font-size: 12px; font-weight: 900; color: #121212; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.05em;">Payment Breakdown</p>
+            <div class="detail-row">
+                <span class="label">Booking Fee</span>
+                <span class="value">{{currency}} {{bookingFee}}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Provider Service</span>
+                <span class="value">{{currency}} {{negotiatedAmount}}</span>
+            </div>
+            <div class="detail-row" style="border-top: 1px solid #121212; padding-top: 12px; margin-top: 5px;">
+                <span class="label" style="color:#121212; font-weight:900;">Total</span>
+                <span class="value" style="color:#121212; font-weight:900;">{{currency}} {{amount}}</span>
+            </div>
         </div>
-        <div class="detail-row">
-            <span class="label">Job Reference</span>
-            <span class="value">#{{jobId}}</span>
+
+        <div style="margin-bottom: 30px;">
+            <p style="font-size: 12px; font-weight: 900; color: #121212; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.05em;">Job Details</p>
+            <div class="detail-row">
+                <span class="label">Reference</span>
+                <span class="value">#{{jobId}}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Professional</span>
+                <span class="value">{{providerName}} (★{{providerRating}})</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Service</span>
+                <span class="value">{{serviceName}}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Duration</span>
+                <span class="value">{{duration}}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Address</span>
+                <span class="value">{{address}}</span>
+            </div>
         </div>
-        <div class="detail-row">
-            <span class="label">Professional</span>
-            <span class="value">{{providerName}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="label">Completed At</span>
-            <span class="value">{{time}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="label">Duration</span>
-            <span class="value">{{duration}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="label">Location</span>
-            <span class="value">{{address}}</span>
+
+        <div style="text-align: center;">
+            <a href="https://api.piecejob.co/api/v1/jobs/{{jobId}}/receipt/download" class="button" style="background-color: #121212;">Download PDF Receipt</a>
         </div>
       </div>
 
-      <div style="background-color: #f8f9fa; border-radius: 16px; padding: 25px; margin-bottom: 30px;">
-        <p style="font-size: 12px; font-weight: 800; color: #999; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.05em;">Rate your experience</p>
-        <p class="p" style="font-size: 14px;">How was the quality of work from <b>{{providerName}}</b>? Your feedback helps keep PieceJob safe and reliable.</p>
-        <a href="https://piecejob.co/rate/{{jobId}}" style="color: #FF9900; font-weight: 900; text-decoration: none; font-size: 14px; text-transform: uppercase;">Leave a Rating &rarr;</a>
+      <div style="display: table; width: 100%; margin-top: 20px;">
+        <div style="display: table-cell; width: 48%; vertical-align: top;">
+            <a href="https://piecejob.co/rate/{{jobId}}" class="button" style="width: 100%; padding: 15px 0; text-align: center; background-color: #FF9900; box-shadow: none; font-size: 11px;">Rate Provider</a>
+        </div>
+        <div style="display: table-cell; width: 4%;"></div>
+        <div style="display: table-cell; width: 48%; vertical-align: top;">
+            <a href="https://piecejob.co/support/report/{{jobId}}" class="button" style="width: 100%; padding: 15px 0; text-align: center; background-color: #f0f0f0; color: #121212 !important; box-shadow: none; font-size: 11px;">Report Issue</a>
+        </div>
       </div>
 
-      <p class="p" style="font-size: 14px; color: #888;">Your detailed official tax receipt is attached to this email as a PDF.</p>
-
-      <div style="text-align: center;">
-        <a href="https://piecejob.co/support" class="button" style="background-color: #121212;">Need Help?</a>
-      </div>
+      <p class="p" style="font-size: 13px; color: #888; text-align: center; margin-top: 40px;">Need a hand? Our support team is available 24/7 to help with any questions regarding this receipt.</p>
     `
   },
   {
@@ -255,9 +275,14 @@ const update = async () => {
     console.log('Connected to MongoDB');
 
     for (const t of redesignedTemplates) {
+      const updateData: any = { body: t.body, subject: t.subject };
+      if (t.templateCode === 'JOB_COMPLETED_RECEIPT') {
+          updateData.placeholders = ['firstName', 'serviceName', 'jobId', 'providerName', 'providerRating', 'amount', 'currency', 'time', 'address', 'duration', 'bookingFee', 'negotiatedAmount'];
+      }
+
       await NotificationTemplate.findOneAndUpdate(
         { templateCode: t.templateCode, channel: 'EMAIL', countryCode: 'GLOBAL' },
-        { $set: { body: t.body, subject: t.subject } },
+        { $set: updateData },
         { upsert: false }
       );
       console.log(`Redesigned template: ${t.templateCode}`);

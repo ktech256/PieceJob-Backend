@@ -218,9 +218,13 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
 
             // Fetch customer and provider info for receipt
             const customer = await User.findById(job.customerId);
-            const provider = await User.findById(job.providerId);
+            const providerUser = await User.findById(job.providerId);
+            const providerStats = await Provider.findOne({ userId: job.providerId });
 
             if (customer?.email) {
+                const serviceAmt = job.agreedPrice || job.serviceFee || 0;
+                const totalPaid = serviceAmt + job.bookingFee;
+
                 await notificationQueue.addNotificationToQueue({
                     type: 'EMAIL',
                     email: customer.email,
@@ -229,8 +233,11 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                         firstName: customer.firstName,
                         serviceName: job.serviceName || job.serviceCode,
                         jobId: job._id.toString(),
-                        providerName: provider ? `${provider.firstName} ${provider.lastName}` : 'PieceJob Pro',
-                        amount: (job.agreedPrice || (job.serviceFee || 0) + job.bookingFee).toString(),
+                        providerName: providerUser ? `${providerUser.firstName} ${providerUser.lastName}` : 'PieceJob Pro',
+                        providerRating: providerStats?.ratingAvg?.toFixed(1) || '5.0',
+                        amount: totalPaid.toFixed(2),
+                        bookingFee: job.bookingFee.toFixed(2),
+                        negotiatedAmount: serviceAmt.toFixed(2),
                         currency: job.pricingSnapshot?.currencyCode || 'R',
                         time: new Date().toLocaleString(),
                         address: job.location?.address || 'N/A',
