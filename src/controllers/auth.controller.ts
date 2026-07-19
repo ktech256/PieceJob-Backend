@@ -569,10 +569,6 @@ export const login = async (req: Request, res: Response) => {
         ...providerExtra
       }
     });
-        countryCode: user.countryCode,
-        referralCode: user.referralCode
-      }
-    });
   } catch (error: any) {
     logger.error(`AUTH | LOGIN_ERROR | ${error.message}`);
     res.status(500).json({
