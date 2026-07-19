@@ -432,13 +432,30 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
           // Formula: (Health Score * 0.5) + (Reliability * 0.3) + (Customer Rating * 2)
           // Ties are broken by distance.
           const sortedByQuality = providers.sort((a, b) => {
-              const qualityA = ((a.performance.healthScore || 100) * 0.5) +
-                               ((a.performance.reliabilityScore || 100) * 0.3) +
-                               (a.ratingAvg * 20 * 0.2);
+              const isAProbation = (a.ratingCount || 0) < 5;
+              const isBProbation = (b.ratingCount || 0) < 5;
 
-              const qualityB = ((b.performance.healthScore || 100) * 0.5) +
-                               ((b.performance.reliabilityScore || 100) * 0.3) +
-                               (b.ratingAvg * 20 * 0.2);
+              let qualityA = 0;
+              if (isAProbation) {
+                  // Ignore Rating (20%) and redistribute weight to Health (50%) and Reliability (30%)
+                  // New Weights: Health (50/80 = 62.5%), Reliability (30/80 = 37.5%)
+                  qualityA = ((a.performance.healthScore || 100) * 0.625) +
+                             ((a.performance.reliabilityScore || 100) * 0.375);
+              } else {
+                  qualityA = ((a.performance.healthScore || 100) * 0.5) +
+                             ((a.performance.reliabilityScore || 100) * 0.3) +
+                             (a.ratingAvg * 20 * 0.2);
+              }
+
+              let qualityB = 0;
+              if (isBProbation) {
+                  qualityB = ((b.performance.healthScore || 100) * 0.625) +
+                             ((b.performance.reliabilityScore || 100) * 0.375);
+              } else {
+                  qualityB = ((b.performance.healthScore || 100) * 0.5) +
+                             ((b.performance.reliabilityScore || 100) * 0.3) +
+                             (b.ratingAvg * 20 * 0.2);
+              }
 
               if (Math.abs(qualityA - qualityB) > 0.1) {
                   return qualityB - qualityA; // High quality first

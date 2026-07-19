@@ -46,6 +46,19 @@ export const sanitizeJobForMobile = async (job: any) => {
     if (providerInfo && providerInfo.profilePhoto) providerInfo.profilePicture = providerInfo.profilePhoto;
     if (customerInfo && customerInfo.profilePhoto) customerInfo.profilePicture = customerInfo.profilePhoto;
 
+    // Fetch extra performance data for Provider (ratingCount)
+    if (providerId) {
+        const providerData = await Provider.findOne({ userId: providerId }).select('ratingCount ratingAvg jobsCompleted');
+        if (providerData) {
+            providerInfo = {
+                ...(providerInfo || {}),
+                ratingCount: providerData.ratingCount || 0,
+                ratingAvg: providerData.ratingAvg,
+                jobsCompleted: providerData.jobsCompleted
+            };
+        }
+    }
+
     // Timezone Conversion (ISSUE 1 FIX)
     const country = await Country.findOne({ code: jobObj.countryCode });
     const tz = country?.timezone || 'UTC';
@@ -1208,8 +1221,10 @@ export const rateJob = async (req: AuthRequest, res: Response) => {
             if (job.providerId) {
                 const provider = await Provider.findOne({ userId: job.providerId });
                 if (provider) {
-                    const totalRating = (provider.ratingAvg * provider.jobsCompleted) + rating;
-                    provider.ratingAvg = totalRating / (provider.jobsCompleted + 1);
+                    const currentRatingCount = provider.ratingCount || 0;
+                    const totalRating = (provider.ratingAvg * currentRatingCount) + rating;
+                    provider.ratingCount = currentRatingCount + 1;
+                    provider.ratingAvg = totalRating / provider.ratingCount;
                     await provider.save();
                     await performanceService.recalculateProviderMetrics(provider._id.toString());
                 }

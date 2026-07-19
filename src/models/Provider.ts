@@ -40,6 +40,7 @@ export interface IProvider extends Document {
   lastHeartbeat?: Date;
   lastGpsUpdate?: Date;
   ratingAvg: number;
+  ratingCount: number;
   jobsCompleted: number;
 
   performance: {
@@ -161,6 +162,7 @@ const ProviderSchema: Schema = new Schema({
   lastHeartbeat: { type: Date },
   lastGpsUpdate: { type: Date },
   ratingAvg: { type: Number, default: 0 },
+  ratingCount: { type: Number, default: 0 },
   jobsCompleted: { type: Number, default: 0 },
 
   performance: {

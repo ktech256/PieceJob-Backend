@@ -157,8 +157,39 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
         let topRatedNearby: any[] = [];
 
         if (!isNaN(lat) && !isNaN(lng)) {
-            // ... (rest of geoNear logic) ...
-            // I'm not changing geoNear, just ensuring I don't break the flow.
+            const rawNearby = await Provider.aggregate([
+                {
+                    $geoNear: {
+                        near: { type: 'Point', coordinates: [lng, lat] },
+                        distanceField: 'distance',
+                        maxDistance: settings.matchingRadiusKm * 1000,
+                        query: { isOnline: true, currentAvailabilityStatus: 'ONLINE', countryCode, verificationStatus: 'APPROVED' },
+                        spherical: true
+                    }
+                },
+                { $sort: { ratingAvg: -1, distance: 1 } },
+                { $limit: 10 },
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: 'userId',
+                        foreignField: '_id',
+                        as: 'user'
+                    }
+                },
+                { $unwind: '$user' }
+            ]);
+
+            topRatedNearby = await Promise.all(rawNearby.map(async (p) => ({
+                id: p._id.toString(),
+                name: p.user.firstName,
+                photo: p.user.profilePhoto ? await storageService.getSignedUrl(p.user.profilePhoto) : null,
+                rating: p.ratingAvg,
+                ratingCount: p.ratingCount || 0,
+                tier: p.tier,
+                services: p.servicesOffered,
+                distance: p.distance
+            })));
         }
 
         // 7. Recommended Services
@@ -338,6 +369,8 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
             tier: provider.tier,
             tierProgress: 0.75, // Logic for progression can be added
             rating: provider.ratingAvg,
+            ratingCount: provider.ratingCount || 0,
+            isProbationActive: (provider.ratingCount || 0) < 5,
             verificationStatus: provider.verificationStatus,
             isOnline: provider.isOnline
         };

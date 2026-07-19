@@ -524,6 +524,19 @@ export const login = async (req: Request, res: Response) => {
       { expiresIn: '7d' }
     );
 
+    let providerExtra = {};
+    if (user.role === UserRole.PROVIDER) {
+        const p = await Provider.findOne({ userId: user._id }).select('ratingAvg ratingCount tier verificationStatus');
+        if (p) {
+            providerExtra = {
+                ratingAvg: p.ratingAvg,
+                ratingCount: p.ratingCount || 0,
+                tier: p.tier,
+                verificationStatus: p.verificationStatus
+            };
+        }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -536,7 +549,9 @@ export const login = async (req: Request, res: Response) => {
             role: user.role,
             gender: user.gender,
             countryCode: user.countryCode,
-            referralCode: user.referralCode
+            referralCode: user.referralCode,
+            profilePhoto: user.profilePhoto,
+            ...providerExtra
         }
       },
       // Legacy root fields for dashboard compatibility
@@ -548,6 +563,12 @@ export const login = async (req: Request, res: Response) => {
         lastName: user.lastName,
         role: user.role,
         gender: user.gender,
+        countryCode: user.countryCode,
+        referralCode: user.referralCode,
+        profilePhoto: user.profilePhoto,
+        ...providerExtra
+      }
+    });
         countryCode: user.countryCode,
         referralCode: user.referralCode
       }

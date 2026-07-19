@@ -147,6 +147,8 @@ export const listProviderRankings = async (req: AuthRequest, res: Response) => {
             location: `${(p.userId as any).city}, ${(p.userId as any).province}`,
             reliability: p.performance.reliabilityScore,
             rating: p.ratingAvg,
+            ratingCount: p.ratingCount || 0,
+            isProbation: (p.ratingCount || 0) < 5,
             jobs: p.jobsCompleted,
             tier: p.tier
         }));
@@ -258,7 +260,7 @@ export const listTopProviders = async (req: AuthRequest, res: Response) => {
         const providers = await Provider.find(query)
             .sort({ 'performance.completionRate': -1, ratingAvg: -1 })
             .limit(50)
-            .populate('userId', 'firstName lastName');
+            .populate('userId', 'firstName lastName city province profilePhoto');
 
         res.status(200).json({ success: true, providers });
     } catch (error) {

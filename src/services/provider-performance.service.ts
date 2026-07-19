@@ -83,15 +83,32 @@ export const calculateHealthScore = async (providerId: string) => {
     const provider = await Provider.findById(providerId);
     if (!provider) return 0;
 
+    const ratingCount = provider.ratingCount || 0;
+    const isProbation = ratingCount < 5;
+
     // ISSUE 2: REDESIGNED HEALTH SCORE FORMULA
     // Weighting: Rating (25%), Reliability (25%), Acceptance (20%), Cancellation (15%), Arrival (15%)
-    const ratingComp = (provider.ratingAvg / 5) * 25;
-    const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.25;
-    const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.20;
-    const cancellationComp = (provider.performance.cancellationScore || 100) * 0.15;
-    const arrivalComp = (provider.performance.arrivalRate || 0) * 0.15;
 
-    const healthScore = Math.min(100, Math.max(0, ratingComp + reliabilityComp + acceptanceComp + cancellationComp + arrivalComp));
+    let healthScore = 0;
+
+    if (isProbation) {
+        // Exclude Rating (25%) and redistribute weight to remaining 75%
+        // Factors: Reliability (25/75=33.3%), Acceptance (20/75=26.7%), Cancellation (15/75=20%), Arrival (15/75=20%)
+        const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.3333;
+        const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.2667;
+        const cancellationComp = (provider.performance.cancellationScore || 100) * 0.20;
+        const arrivalComp = (provider.performance.arrivalRate || 0) * 0.20;
+        healthScore = reliabilityComp + acceptanceComp + cancellationComp + arrivalComp;
+    } else {
+        const ratingComp = (provider.ratingAvg / 5) * 25;
+        const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.25;
+        const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.20;
+        const cancellationComp = (provider.performance.cancellationScore || 100) * 0.15;
+        const arrivalComp = (provider.performance.arrivalRate || 0) * 0.15;
+        healthScore = ratingComp + reliabilityComp + acceptanceComp + cancellationComp + arrivalComp;
+    }
+
+    healthScore = Math.min(100, Math.max(0, healthScore));
 
     const oldHealth = (provider.performance as any).healthScore || 100;
 

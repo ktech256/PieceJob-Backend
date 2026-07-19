@@ -308,6 +308,7 @@ export const globalSearch = async (req: Request, res: Response) => {
                         name: `${u.firstName} ${u.lastName}`,
                         photo: u.profilePhoto,
                         rating: p.ratingAvg,
+                        ratingCount: p.ratingCount || 0,
                         services: p.servicesOffered
                     };
                 })

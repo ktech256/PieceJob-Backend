@@ -242,16 +242,18 @@ export const getOnlineProviders = async (req: AuthRequest, res: Response) => {
             };
         }
 
-        const providers = await Provider.find(query).select('userId ratingAvg jobsCompleted location');
+        const providers = await Provider.find(query).select('userId ratingAvg ratingCount jobsCompleted location isOnline');
 
         const populated = await User.populate(providers, { path: 'userId', select: 'firstName lastName profilePhoto' });
 
         const formatted = populated.map((p: any) => ({
             id: p._id,
-            userId: p.userId._id,
-            firstName: p.userId.firstName,
-            lastName: p.userId.lastName,
+            userId: p.userId?._id,
+            firstName: p.userId?.firstName,
+            lastName: p.userId?.lastName,
+            profilePicture: p.userId?.profilePhoto,
             ratingAvg: p.ratingAvg,
+            ratingCount: p.ratingCount || 0,
             jobsCompleted: p.jobsCompleted,
             location: p.location,
             isOnline: p.isOnline
@@ -754,6 +756,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
                 tier: provider.tier,
                 tierProgress: 0.75,
                 rating: provider.ratingAvg,
+                ratingCount: provider.ratingCount || 0,
+                isProbationActive: (provider.ratingCount || 0) < 5,
                 rankNational: provider.performance.rankNational,
                 rankProvince: provider.performance.rankProvince,
                 rankCity: provider.performance.rankCity,
