@@ -24,7 +24,7 @@ const ProviderPerformanceSchema: Schema = new Schema({
   complaintRate: { type: Number, default: 0 },
   ratingAvg: { type: Number, default: 0 },
   reliabilityScore: { type: Number, default: 100 },
-  cancellationScore: { type: Number, default: 0 },
+  cancellationScore: { type: Number, default: 100 },
   acceptanceScore: { type: Number, default: 100 },
   onTimeResponseScore: { type: Number, default: 100 },
   periodStart: { type: Date, required: true },

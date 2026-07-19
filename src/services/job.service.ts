@@ -751,14 +751,18 @@ export const acceptJob = async (jobId: string, providerId: string) => {
           );
       });
 
-      await Provider.findOneAndUpdate(
+      const updatedProvider = await Provider.findOneAndUpdate(
           { userId: providerId },
           {
               $inc: { 'performance.acceptedJobs': 1 },
               $set: { currentAvailabilityStatus: 'BUSY' }
           },
-          { session }
+          { session, new: true }
       );
+
+      if (updatedProvider) {
+          await performanceService.recalculateProviderMetrics(updatedProvider._id.toString());
+      }
 
       await session.commitTransaction();
       session.endSession();

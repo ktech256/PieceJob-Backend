@@ -950,6 +950,12 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
                 'Your provider has arrived at the location.'
             );
         }
+
+        // ISSUE 3 & 7: Update Live Performance Metrics
+        if (updatedJob.providerId) {
+            const p = await Provider.findOne({ userId: updatedJob.providerId });
+            if (p) await performanceService.recalculateProviderMetrics(p._id.toString());
+        }
     }
 
     const sanitized = await sanitizeJobForMobile(updatedJob || job);

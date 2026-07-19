@@ -39,27 +39,51 @@ export const recalculateProviderMetrics = async (providerId: string) => {
     const provider = await Provider.findById(providerId);
     if (!provider) return null;
 
-    const perf = provider.performance;
+    const perf = provider.performance || {
+        acceptedJobs: 0,
+        completedJobs: 0,
+        broadcastOpportunities: 0,
+        arrivedOnTimeJobs: 0,
+        cancellationCount: 0,
+        reliabilityScore: 100,
+        cancellationScore: 100,
+        acceptanceRate: 100,
+        completionRate: 100,
+        arrivalRate: 100
+    };
 
-    // ISSUE 4: Forensic Count Correction (Ensure Accepted >= Completed + Cancelled)
+    // Ensure performance subdocument exists
+    if (!provider.performance) {
+        provider.performance = perf as any;
+    }
+
+    // ISSUE 5: Forensic Count Correction (Ensure Accepted >= Completed + Cancelled)
     const completedCount = perf.completedJobs || 0;
     const cancelledCount = perf.cancellationCount || 0;
-    // We can't know the exact history, but we can ensure logical consistency.
     provider.performance.acceptedJobs = Math.max(perf.acceptedJobs || 0, completedCount + cancelledCount);
 
+    // Initial Scores for New Providers (ISSUE 1 & 8)
+    if (provider.performance.reliabilityScore === 0 && completedCount === 0 && cancelledCount === 0) {
+        provider.performance.reliabilityScore = 100;
+    }
+    if (provider.performance.cancellationScore === 0 && cancelledCount === 0) {
+        provider.performance.cancellationScore = 100;
+    }
+
     const oldAcceptance = provider.performance.acceptanceRate;
-    const oldCompletion = provider.performance.completionRate;
 
+    // ISSUE 7: Acceptance Rate Calculation
     provider.performance.acceptanceRate = perf.broadcastOpportunities > 0
-        ? Math.min(100, (perf.acceptedJobs / perf.broadcastOpportunities) * 100)
-        : 100; // Default to 100% for new providers (ISSUE 1 & 2)
-
-    provider.performance.completionRate = perf.acceptedJobs > 0
-        ? Math.min(100, (perf.completedJobs / perf.acceptedJobs) * 100)
+        ? Math.min(100, (provider.performance.acceptedJobs / perf.broadcastOpportunities) * 100)
         : 100;
 
-    provider.performance.arrivalRate = perf.acceptedJobs > 0
-        ? Math.min(100, (perf.arrivedOnTimeJobs / perf.acceptedJobs) * 100)
+    // ISSUE 3: Arrival Rate
+    provider.performance.completionRate = provider.performance.acceptedJobs > 0
+        ? Math.min(100, (perf.completedJobs / provider.performance.acceptedJobs) * 100)
+        : 100;
+
+    provider.performance.arrivalRate = provider.performance.acceptedJobs > 0
+        ? Math.min(100, (perf.arrivedOnTimeJobs / provider.performance.acceptedJobs) * 100)
         : 100;
 
     provider.performance.complaintRate = perf.completedJobs > 0
@@ -100,17 +124,17 @@ export const calculateHealthScore = async (providerId: string) => {
     if (isProbation) {
         // Exclude Rating (25%) and redistribute weight to remaining 75%
         // Factors: Reliability (25/75=33.3%), Acceptance (20/75=26.7%), Cancellation (15/75=20%), Arrival (15/75=20%)
-        const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.3333;
-        const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.2667;
-        const cancellationComp = (provider.performance.cancellationScore || 100) * 0.20;
-        const arrivalComp = (provider.performance.arrivalRate || 0) * 0.20;
+        const reliabilityComp = (provider.performance.reliabilityScore ?? 100) * 0.3333;
+        const acceptanceComp = (provider.performance.acceptanceRate ?? 100) * 0.2667;
+        const cancellationComp = (provider.performance.cancellationScore ?? 100) * 0.20;
+        const arrivalComp = (provider.performance.arrivalRate ?? 100) * 0.20;
         healthScore = reliabilityComp + acceptanceComp + cancellationComp + arrivalComp;
     } else {
         const ratingComp = (provider.ratingAvg / 5) * 25;
-        const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.25;
-        const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.20;
-        const cancellationComp = (provider.performance.cancellationScore || 100) * 0.15;
-        const arrivalComp = (provider.performance.arrivalRate || 0) * 0.15;
+        const reliabilityComp = (provider.performance.reliabilityScore ?? 100) * 0.25;
+        const acceptanceComp = (provider.performance.acceptanceRate ?? 100) * 0.20;
+        const cancellationComp = (provider.performance.cancellationScore ?? 100) * 0.15;
+        const arrivalComp = (provider.performance.arrivalRate ?? 100) * 0.15;
         healthScore = ratingComp + reliabilityComp + acceptanceComp + cancellationComp + arrivalComp;
     }
 
@@ -431,10 +455,13 @@ export const getProviderAnalytics = async (providerId: string, period: '7d' | '3
 };
 
 export const calculateRankings = async (countryCode: string = 'ZA') => {
-    // 1. National Rankings
-    const national = await Provider.find({ countryCode })
+    // 1. National Rankings (Exclude providers in probation)
+    const national = await Provider.find({ countryCode, jobsCompleted: { $gte: 5 } })
         .sort({ 'performance.healthScore': -1, 'jobsCompleted': -1 })
         .select('_id');
+
+    // Reset rankings for everyone else (e.g. those who fell below threshold or are new)
+    await Provider.updateMany({ countryCode, jobsCompleted: { $lt: 5 } }, { $set: { 'performance.rankNational': 0, 'performance.rankProvince': 0, 'performance.rankCity': 0 } });
 
     const updates = national.map((p, index) => ({
         updateOne: {

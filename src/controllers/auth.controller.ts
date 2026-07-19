@@ -384,7 +384,17 @@ export const registerProvider = async (req: Request, res: Response) => {
       idOrPassportNumber: actualIdNumber,
       servicesOffered,
       countryCode: countryCode,
-      location: { coordinates: [0, 0] }
+      location: { coordinates: [0, 0] },
+      performance: {
+          reliabilityScore: 100,
+          cancellationScore: 100,
+          acceptanceScore: 100,
+          onTimeResponseScore: 100,
+          healthScore: 100,
+          acceptanceRate: 100,
+          completionRate: 100,
+          arrivalRate: 100
+      }
     });
 
     await provider.save({ session });
