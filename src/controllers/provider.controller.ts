@@ -680,13 +680,14 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         const monthAgo = new Date();
         monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-        const provider = await Provider.findOne({ userId });
+        const provider = await Provider.findOne({ userId }).populate('userId', 'createdAt');
         if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
 
-        const [earningsToday, earningsWeekly, earningsMonthly, jobsAgg] = await Promise.all([
+        const [earningsToday, earningsWeekly, earningsMonthly, earningsLifetime, jobsAgg] = await Promise.all([
             getProviderNetEarnings(userId as string, startOfToday),
             getProviderNetEarnings(userId as string, weekAgo),
             getProviderNetEarnings(userId as string, monthAgo),
+            getProviderNetEarnings(userId as string, new Date(0)),
             Job.aggregate([
                 { $match: { providerId: new mongoose.Types.ObjectId(userId as string) } },
                 { $group: { _id: "$status", count: { $sum: 1 } } }
@@ -699,13 +700,45 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         const healthScore = provider.performance.healthScore || 100;
         const healthStatus = performanceService.getHealthStatus(healthScore);
 
+        // Calculate Average Arrival Time & Duration for Dashboard
+        const recentJobs = await Job.find({
+            providerId: new mongoose.Types.ObjectId(userId as string),
+            status: { $in: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED] }
+        }).limit(20);
+
+        let totalArrivalMin = 0;
+        let arrivedCount = 0;
+        let totalDurationMin = 0;
+        let durationCount = 0;
+
+        recentJobs.forEach(j => {
+            if (j.acceptedAt && j.arrivedAt) {
+                totalArrivalMin += (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
+                arrivedCount++;
+            }
+            if (j.startedAt && j.completedAt) {
+                totalDurationMin += (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
+                durationCount++;
+            }
+        });
+
+        const avgArrival = arrivedCount > 0 ? Math.round(totalArrivalMin / arrivedCount) : 0;
+        const avgDuration = durationCount > 0 ? Math.round(totalDurationMin / durationCount) : 0;
+
+        // Fetch Recent Badges
+        const badges = await mongoose.model('ProviderBadge').find({ providerId: provider._id }).sort({ earnedAt: -1 }).limit(3);
+
         res.status(200).json({
             success: true,
             data: {
                 earningsToday,
                 earningsWeekly,
                 earningsMonthly,
+                earningsLifetime,
+                jobsAccepted: provider.performance.acceptedJobs,
                 jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
+                jobsCancelled: provider.performance.cancellationScore,
+                cancellationCount: jobsByStatus[JobStatus.CANCELLED] || 0,
                 jobsActive: (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0),
                 acceptanceRate: provider.performance.acceptanceRate,
                 completionRate: provider.performance.completionRate,
@@ -715,9 +748,18 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
                 onTimeResponseScore: provider.performance.onTimeResponseScore,
                 healthScore,
                 healthStatus,
+                averageArrivalTime: `${avgArrival} mins`,
+                averageJobDuration: `${avgDuration} mins`,
+                mostRequestedService: provider.servicesOffered[0] || 'N/A',
                 tier: provider.tier,
                 tierProgress: 0.75,
                 rating: provider.ratingAvg,
+                rankNational: provider.performance.rankNational,
+                rankProvince: provider.performance.rankProvince,
+                rankCity: provider.performance.rankCity,
+                activeSince: (provider.userId as any).createdAt,
+                lastActive: provider.lastOnlineAt,
+                recentBadges: badges.map(b => b.name),
                 verificationStatus: provider.verificationStatus,
                 isGhostMode: false
             }

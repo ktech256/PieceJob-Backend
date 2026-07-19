@@ -427,14 +427,25 @@ export const findEligibleProviders = async (job: IJob, wave: number) => {
       }).limit(20).populate('userId', 'fcmToken role firstName email');
 
       if (providers.length > 0) {
-          // SORT BY QUALITY (Hybrid logic)
-          // 1. Reliability Score (High to low)
-          // 2. Customer Rating (High to low)
-          // 3. Distance (Already handled roughly by $near fetch)
+          // ISSUE 4: ENTERPRISE PROVIDER RANKING ALGORITHM
+          // Priorities quality metrics over simple radius matching within each wave.
+          // Formula: (Health Score * 0.5) + (Reliability * 0.3) + (Customer Rating * 2)
+          // Ties are broken by distance.
           const sortedByQuality = providers.sort((a, b) => {
-              const scoreA = (a.performance.reliabilityScore || 0) + (a.ratingAvg * 10);
-              const scoreB = (b.performance.reliabilityScore || 0) + (b.ratingAvg * 10);
-              return scoreB - scoreA;
+              const qualityA = ((a.performance.healthScore || 100) * 0.5) +
+                               ((a.performance.reliabilityScore || 100) * 0.3) +
+                               (a.ratingAvg * 20 * 0.2);
+
+              const qualityB = ((b.performance.healthScore || 100) * 0.5) +
+                               ((b.performance.reliabilityScore || 100) * 0.3) +
+                               (b.ratingAvg * 20 * 0.2);
+
+              if (Math.abs(qualityA - qualityB) > 0.1) {
+                  return qualityB - qualityA; // High quality first
+              }
+
+              // Tie-breaker: Distance (calculated from $near results or manually)
+              return 0; // Mongo $near already provides a distance-based initial order
           });
 
           // FORENSIC REPAIR: Filter out providers who have NO fcmToken AND are NOT connected via Socket

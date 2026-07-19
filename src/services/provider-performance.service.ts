@@ -83,12 +83,15 @@ export const calculateHealthScore = async (providerId: string) => {
     const provider = await Provider.findById(providerId);
     if (!provider) return 0;
 
-    const ratingComp = (provider.ratingAvg / 5) * 30;
-    const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.3;
-    const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.2;
-    const arrivalComp = (provider.performance.arrivalRate || 0) * 0.2;
+    // ISSUE 2: REDESIGNED HEALTH SCORE FORMULA
+    // Weighting: Rating (25%), Reliability (25%), Acceptance (20%), Cancellation (15%), Arrival (15%)
+    const ratingComp = (provider.ratingAvg / 5) * 25;
+    const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.25;
+    const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.20;
+    const cancellationComp = (provider.performance.cancellationScore || 100) * 0.15;
+    const arrivalComp = (provider.performance.arrivalRate || 0) * 0.15;
 
-    const healthScore = Math.min(100, Math.max(0, ratingComp + reliabilityComp + acceptanceComp + arrivalComp));
+    const healthScore = Math.min(100, Math.max(0, ratingComp + reliabilityComp + acceptanceComp + cancellationComp + arrivalComp));
 
     const oldHealth = (provider.performance as any).healthScore || 100;
 
@@ -173,15 +176,19 @@ export const recordPenalty = async (userId: string, reason: string, jobId?: stri
         });
     } else if (reason === 'CANCELLATION') {
         points = -10;
-        provider.performance.cancellationScore = (provider.performance.cancellationScore || 0) + 1;
+
+        // Corrected Cancellation Score (Percentage-based)
+        const oldCancellation = provider.performance.cancellationScore || 100;
+        provider.performance.cancellationScore = Math.max(0, oldCancellation + points);
+
         provider.performance.reliabilityScore = Math.max(0, (provider.performance.reliabilityScore || 100) + points);
 
         await recordAdjustment({
             providerId: provider._id.toString(),
             userId,
-            scoreType: PerformanceScoreType.RELIABILITY,
-            oldScore: oldReliability,
-            newScore: provider.performance.reliabilityScore,
+            scoreType: PerformanceScoreType.CANCELLATION,
+            oldScore: oldCancellation,
+            newScore: provider.performance.cancellationScore,
             adjustmentPoints: points,
             reason: jobId ? `Cancelled Job ${jobId.slice(-6)} during negotiation.` : 'Repeated cancellations.',
             jobId
@@ -286,7 +293,10 @@ export const recoverScores = async () => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const providers = await Provider.find({
-        'performance.reliabilityScore': { $lt: 100 }
+        $or: [
+            { 'performance.reliabilityScore': { $lt: 100 } },
+            { 'performance.cancellationScore': { $lt: 100 } }
+        ]
     });
 
     for (const provider of providers) {
@@ -298,9 +308,12 @@ export const recoverScores = async () => {
 
         if (recentAdjustments === 0) {
             const oldReliability = provider.performance.reliabilityScore;
-            provider.performance.reliabilityScore = Math.min(100, provider.performance.reliabilityScore + 2);
+            const oldCancellation = provider.performance.cancellationScore;
 
-            if (oldReliability !== provider.performance.reliabilityScore) {
+            provider.performance.reliabilityScore = Math.min(100, provider.performance.reliabilityScore + 2);
+            provider.performance.cancellationScore = Math.min(100, (provider.performance.cancellationScore || 100) + 2);
+
+            if (oldReliability !== provider.performance.reliabilityScore || oldCancellation !== provider.performance.cancellationScore) {
                 await recordAdjustment({
                     providerId: provider._id.toString(),
                     userId: provider.userId.toString(),
@@ -308,11 +321,11 @@ export const recoverScores = async () => {
                     oldScore: oldReliability,
                     newScore: provider.performance.reliabilityScore,
                     adjustmentPoints: 2,
-                    reason: 'Reliability restored due to consistent positive performance.'
+                    reason: 'Performance recovery due to consistent professional conduct.'
                 });
                 await provider.save();
 
-                await notifyUser(provider.userId.toString(), 'Reliability Restored', 'Your reliability score has improved due to your consistent professional performance.');
+                await notifyUser(provider.userId.toString(), 'Performance Recovery', 'Your performance scores have improved due to your consistent professional conduct.');
             }
         }
     }
