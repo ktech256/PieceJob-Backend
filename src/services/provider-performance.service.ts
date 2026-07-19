@@ -41,20 +41,26 @@ export const recalculateProviderMetrics = async (providerId: string) => {
 
     const perf = provider.performance;
 
+    // ISSUE 4: Forensic Count Correction (Ensure Accepted >= Completed + Cancelled)
+    const completedCount = perf.completedJobs || 0;
+    const cancelledCount = perf.cancellationCount || 0;
+    // We can't know the exact history, but we can ensure logical consistency.
+    provider.performance.acceptedJobs = Math.max(perf.acceptedJobs || 0, completedCount + cancelledCount);
+
     const oldAcceptance = provider.performance.acceptanceRate;
     const oldCompletion = provider.performance.completionRate;
 
     provider.performance.acceptanceRate = perf.broadcastOpportunities > 0
-        ? (perf.acceptedJobs / perf.broadcastOpportunities) * 100
-        : 0;
+        ? Math.min(100, (perf.acceptedJobs / perf.broadcastOpportunities) * 100)
+        : 100; // Default to 100% for new providers (ISSUE 1 & 2)
 
     provider.performance.completionRate = perf.acceptedJobs > 0
-        ? (perf.completedJobs / perf.acceptedJobs) * 100
-        : 0;
+        ? Math.min(100, (perf.completedJobs / perf.acceptedJobs) * 100)
+        : 100;
 
     provider.performance.arrivalRate = perf.acceptedJobs > 0
-        ? (perf.arrivedOnTimeJobs / perf.acceptedJobs) * 100
-        : 0;
+        ? Math.min(100, (perf.arrivedOnTimeJobs / perf.acceptedJobs) * 100)
+        : 100;
 
     provider.performance.complaintRate = perf.completedJobs > 0
         ? (perf.complaintsCount / perf.completedJobs) * 100
@@ -197,6 +203,9 @@ export const recordPenalty = async (userId: string, reason: string, jobId?: stri
         // Corrected Cancellation Score (Percentage-based)
         const oldCancellation = provider.performance.cancellationScore || 100;
         provider.performance.cancellationScore = Math.max(0, oldCancellation + points);
+
+        // Track raw count for dashboard (ISSUE 1 & 4)
+        provider.performance.cancellationCount = (provider.performance.cancellationCount || 0) + 1;
 
         provider.performance.reliabilityScore = Math.max(0, (provider.performance.reliabilityScore || 100) + points);
 

@@ -699,6 +699,15 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         const jobsByStatus: any = {};
         jobsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
 
+        // ISSUE 4 FIX: Ensure consistency between accepted and completed/cancelled counts
+        const jobsCompleted = jobsByStatus[JobStatus.COMPLETED] || 0;
+        const jobsCancelled = provider.performance.cancellationCount || 0;
+        const rawAccepted = provider.performance.acceptedJobs || 0;
+        const activeCount = (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0) + (jobsByStatus[JobStatus.EN_ROUTE] || 0) + (jobsByStatus[JobStatus.IN_PROGRESS] || 0);
+
+        // Corrected Accepted Jobs should be at least sum of all historical states
+        const jobsAccepted = Math.max(rawAccepted, jobsCompleted + jobsCancelled + activeCount);
+
         const healthScore = provider.performance.healthScore || 100;
         const healthStatus = performanceService.getHealthStatus(healthScore);
 
@@ -737,11 +746,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
                 earningsWeekly,
                 earningsMonthly,
                 earningsLifetime,
-                jobsAccepted: provider.performance.acceptedJobs,
-                jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
-                jobsCancelled: provider.performance.cancellationScore,
-                cancellationCount: jobsByStatus[JobStatus.CANCELLED] || 0,
-                jobsActive: (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0),
+                jobsAccepted,
+                jobsCompleted,
+                jobsCancelled: jobsCancelled,
+                cancellationCount: jobsCancelled,
+                jobsActive: activeCount,
                 acceptanceRate: provider.performance.acceptanceRate,
                 completionRate: provider.performance.completionRate,
                 arrivalRate: provider.performance.arrivalRate,
