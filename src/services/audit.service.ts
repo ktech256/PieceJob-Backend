@@ -51,19 +51,29 @@ export const logFinancialMutation = async (data: {
         newBalance: number;
     };
     adminId?: string;
+    reason?: string;
+    disputeId?: string;
+    ipAddress?: string;
+    deviceInfo?: string;
     systemSource?: string;
 }, session?: mongoose.ClientSession) => {
-    const { countryCode, userId, action, financialInfo, adminId, systemSource } = data;
+    const { countryCode, userId, action, financialInfo, adminId, reason, disputeId, ipAddress, deviceInfo, systemSource } = data;
 
     return await new AuditLog({
         auditId: `FIN-${uuidv4().split('-')[0].toUpperCase()}`,
         auditType: AuditType.FINANCIAL_MUTATION,
         systemSource: systemSource || 'API',
         countryCode,
-        userId,
+        userId: new mongoose.Types.ObjectId(userId),
+        adminId: (adminId && adminId !== 'SYSTEM' && mongoose.Types.ObjectId.isValid(adminId as string)) ? new mongoose.Types.ObjectId(adminId as string) : undefined,
         action,
-        financialInfo,
-        adminId: (adminId && adminId !== 'SYSTEM' && mongoose.Types.ObjectId.isValid(adminId as string)) ? adminId : undefined,
+        financialInfo: {
+            ...financialInfo,
+            jobId: financialInfo.jobId ? new mongoose.Types.ObjectId(financialInfo.jobId) : undefined
+        },
+        afterState: { reason, disputeId },
+        ipAddress,
+        deviceInfo,
         timestampUTC: new Date()
     }).save({ session });
 };

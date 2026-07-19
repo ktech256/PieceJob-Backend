@@ -56,6 +56,11 @@ export interface IProvider extends Document {
     cancellationScore: number;
     acceptanceScore: number;
     onTimeResponseScore: number;
+    healthScore: number;
+    consecutiveCompletedJobs: number;
+    rankNational: number;
+    rankProvince: number;
+    rankCity: number;
   };
 
   equipment: {
@@ -171,7 +176,12 @@ const ProviderSchema: Schema = new Schema({
     reliabilityScore: { type: Number, default: 100 },
     cancellationScore: { type: Number, default: 0 },
     acceptanceScore: { type: Number, default: 100 },
-    onTimeResponseScore: { type: Number, default: 100 }
+    onTimeResponseScore: { type: Number, default: 100 },
+    healthScore: { type: Number, default: 100 },
+    consecutiveCompletedJobs: { type: Number, default: 0 },
+    rankNational: { type: Number, default: 0 },
+    rankProvince: { type: Number, default: 0 },
+    rankCity: { type: Number, default: 0 }
   },
 
   equipment: [{

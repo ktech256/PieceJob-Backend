@@ -696,6 +696,9 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         const jobsByStatus: any = {};
         jobsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
 
+        const healthScore = provider.performance.healthScore || 100;
+        const healthStatus = performanceService.getHealthStatus(healthScore);
+
         res.status(200).json({
             success: true,
             data: {
@@ -707,6 +710,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
                 acceptanceRate: provider.performance.acceptanceRate,
                 completionRate: provider.performance.completionRate,
                 arrivalRate: provider.performance.arrivalRate,
+                reliabilityScore: provider.performance.reliabilityScore,
+                cancellationScore: provider.performance.cancellationScore,
+                onTimeResponseScore: provider.performance.onTimeResponseScore,
+                healthScore,
+                healthStatus,
                 tier: provider.tier,
                 tierProgress: 0.75,
                 rating: provider.ratingAvg,

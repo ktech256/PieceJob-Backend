@@ -95,7 +95,12 @@ export const mutateWallet = async (options: WalletMutationOptions) => {
             previousBalance: (wallet as any)[balanceType] - amount,
             newBalance: (wallet as any)[balanceType]
         },
-        systemSource: 'API'
+        adminId: metadata?.adminId,
+        reason: metadata?.reason || description,
+        disputeId: metadata?.disputeId,
+        ipAddress: metadata?.ipAddress,
+        deviceInfo: metadata?.deviceInfo,
+        systemSource: metadata?.systemSource || 'API'
     }, session);
 
     // 4. Dispatch Wallet Emails (Conditional on Transaction Type)

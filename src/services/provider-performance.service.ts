@@ -75,7 +75,72 @@ export const recalculateProviderMetrics = async (providerId: string) => {
 
     await provider.save();
     await checkAndAwardBadges(provider._id.toString());
+    await calculateHealthScore(provider._id.toString());
     return provider;
+};
+
+export const calculateHealthScore = async (providerId: string) => {
+    const provider = await Provider.findById(providerId);
+    if (!provider) return 0;
+
+    const ratingComp = (provider.ratingAvg / 5) * 30;
+    const reliabilityComp = (provider.performance.reliabilityScore || 100) * 0.3;
+    const acceptanceComp = (provider.performance.acceptanceRate || 0) * 0.2;
+    const arrivalComp = (provider.performance.arrivalRate || 0) * 0.2;
+
+    const healthScore = Math.min(100, Math.max(0, ratingComp + reliabilityComp + acceptanceComp + arrivalComp));
+
+    const oldHealth = (provider.performance as any).healthScore || 100;
+
+    // Update provider in memory (will be saved in snapshot or other triggers)
+    // For live tracking, let's update it now.
+    await Provider.updateOne({ _id: providerId }, { $set: { 'performance.healthScore': healthScore } });
+
+    if (Math.abs(oldHealth - healthScore) >= 5) {
+        const status = getHealthStatus(healthScore);
+        await notifyUser(provider.userId.toString(), 'Health Score Update', `Your overall health score is now ${healthScore.toFixed(0)}% (${status}).`);
+    }
+
+    return healthScore;
+};
+
+export const handleJobCompletionQuality = async (userId: string) => {
+    const provider = await Provider.findOne({ userId });
+    if (!provider) return;
+
+    provider.performance.consecutiveCompletedJobs = (provider.performance.consecutiveCompletedJobs || 0) + 1;
+
+    if (provider.performance.consecutiveCompletedJobs >= 10) {
+        // Milestone reached: 10 consecutive jobs
+        const oldReliability = provider.performance.reliabilityScore;
+        if (oldReliability < 100) {
+            provider.performance.reliabilityScore = Math.min(100, oldReliability + 1);
+
+            await recordAdjustment({
+                providerId: provider._id.toString(),
+                userId: userId,
+                scoreType: PerformanceScoreType.RELIABILITY,
+                oldScore: oldReliability,
+                newScore: provider.performance.reliabilityScore,
+                adjustmentPoints: 1,
+                reason: 'Reliability boost for 10 consecutive completed jobs.'
+            });
+
+            await notifyUser(userId, 'Reliability Boost!', 'You earned +1 reliability point for completing 10 consecutive jobs.');
+        }
+        provider.performance.consecutiveCompletedJobs = 0; // Reset counter
+    }
+
+    await provider.save();
+    await recalculateProviderMetrics(provider._id.toString());
+};
+
+export const getHealthStatus = (score: number) => {
+    if (score >= 90) return 'Excellent';
+    if (score >= 80) return 'Very Good';
+    if (score >= 70) return 'Good';
+    if (score >= 60) return 'Needs Improvement';
+    return 'Suspension Risk';
 };
 
 export const recordPenalty = async (userId: string, reason: string, jobId?: string) => {
@@ -86,6 +151,9 @@ export const recordPenalty = async (userId: string, reason: string, jobId?: stri
     const oldOnTime = provider.performance.onTimeResponseScore;
     let points = 0;
     let type = PerformanceScoreType.RELIABILITY;
+
+    // Reset consecutive completion count on any penalty
+    provider.performance.consecutiveCompletedJobs = 0;
 
     // PAGE 8 & 12: Reliability Enforcement
     if (reason === 'INACTIVITY') {
@@ -251,48 +319,143 @@ export const recoverScores = async () => {
 };
 
 export const getProviderAnalytics = async (providerId: string, period: '7d' | '30d' | '90d' | 'all') => {
-    const provider = await Provider.findById(providerId);
+    const provider = await Provider.findById(providerId).populate('userId', 'firstName lastName createdAt');
     if (!provider) return null;
 
     let startDate = new Date(0);
-    if (period === '7d') startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    else if (period === '30d') startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    else if (period === '90d') startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    if (period === '7d') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    else if (period === '30d') startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    else if (period === '90d') startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    const [adjustments, jobs, earnings] = await Promise.all([
+    const [adjustments, jobs, earnings, badges] = await Promise.all([
         PerformanceAdjustment.find({ providerId, createdAt: { $gte: startDate } }).sort({ createdAt: -1 }),
         Job.find({ providerId: provider.userId, createdAt: { $gte: startDate } }),
         mongoose.model('Ledger').aggregate([
             { $match: { toUserId: provider.userId, type: 'SERVICE_FEE', createdAt: { $gte: startDate }, status: 'COMPLETED' } },
             { $group: { _id: null, total: { $sum: "$amount" } } }
-        ])
+        ]),
+        ProviderBadge.find({ providerId }).sort({ earnedAt: -1 })
     ]);
 
-    // Calculate trends
-    // ... complex aggregation for trends ...
+    const completedJobs = jobs.filter(j => j.status === JobStatus.COMPLETED || j.status === JobStatus.RATED || j.status === JobStatus.CLOSED);
+    const cancelledJobs = jobs.filter(j => j.status === JobStatus.CANCELLED);
+
+    // Calculate Average Arrival Time & Duration
+    let totalArrivalMin = 0;
+    let arrivedCount = 0;
+    let totalDurationMin = 0;
+    let durationCount = 0;
+
+    completedJobs.forEach(j => {
+        if (j.acceptedAt && j.arrivedAt) {
+            totalArrivalMin += (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
+            arrivedCount++;
+        }
+        if (j.startedAt && j.completedAt) {
+            totalDurationMin += (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
+            durationCount++;
+        }
+    });
+
+    const avgArrival = arrivedCount > 0 ? Math.round(totalArrivalMin / arrivedCount) : 0;
+    const avgDuration = durationCount > 0 ? Math.round(totalDurationMin / durationCount) : 0;
 
     return {
-        currentScores: {
-            reliability: provider.performance.reliabilityScore,
-            acceptance: provider.performance.acceptanceRate,
-            cancellation: provider.performance.cancellationScore,
-            onTime: provider.performance.arrivalRate,
-            rating: provider.ratingAvg
-        },
-        jobs: {
-            accepted: provider.performance.acceptedJobs,
-            completed: provider.performance.completedJobs,
-            cancelled: provider.performance.cancellationScore
-        },
-        earnings: earnings[0]?.total || 0,
-        adjustments,
-        // rankings, etc.
+        dailyEarnings: [], // Fill with real chart points if needed
+        weeklyEarnings: [],
+        monthlyEarnings: [],
+        lifetimeEarnings: earnings[0]?.total || 0,
+        totalJobsAccepted: provider.performance.acceptedJobs,
+        totalJobsCompleted: provider.performance.completedJobs,
+        totalJobsCancelled: provider.performance.cancellationScore,
+        acceptanceRate: provider.performance.acceptanceRate,
+        completionRate: provider.performance.completionRate,
+        arrivalRate: provider.performance.arrivalRate,
+        reliabilityScore: provider.performance.reliabilityScore,
+        cancellationScore: provider.performance.cancellationScore,
+        healthScore: provider.performance.healthScore,
+        healthStatus: getHealthStatus(provider.performance.healthScore),
+        averageArrivalTime: `${avgArrival} mins`,
+        averageJobDuration: `${avgDuration} mins`,
+        currentRank: provider.performance.rankNational || 0,
+        cityRank: provider.performance.rankCity || 0,
+        provinceRank: provider.performance.rankProvince || 0,
+        badges: badges.map(b => b.name),
+        mostRequestedService: provider.servicesOffered[0] || 'N/A',
+        activeSince: (provider.userId as any).createdAt?.toLocaleDateString() || 'N/A',
+        lastActive: provider.lastOnlineAt?.toLocaleString() || 'N/A',
+        ratingTrend: [],
+        reliabilityTrend: [],
+        tierProgression: 75
     };
+};
+
+export const calculateRankings = async (countryCode: string = 'ZA') => {
+    // 1. National Rankings
+    const national = await Provider.find({ countryCode })
+        .sort({ 'performance.healthScore': -1, 'jobsCompleted': -1 })
+        .select('_id');
+
+    const updates = national.map((p, index) => ({
+        updateOne: {
+            filter: { _id: p._id },
+            update: { $set: { 'performance.rankNational': index + 1 } }
+        }
+    }));
+
+    if (updates.length > 0) await Provider.bulkWrite(updates);
+
+    // 2. Province/City Rankings
+    const users = await mongoose.model('User').find({ countryCode, role: 'PROVIDER' }).select('_id province city');
+    const provinceMap: Record<string, string[]> = {};
+    const cityMap: Record<string, string[]> = {};
+
+    users.forEach(u => {
+        if (u.province) {
+            provinceMap[u.province] = provinceMap[u.province] || [];
+            provinceMap[u.province].push(u._id.toString());
+        }
+        if (u.city) {
+            cityMap[u.city] = cityMap[u.city] || [];
+            cityMap[u.city].push(u._id.toString());
+        }
+    });
+
+    for (const province of Object.keys(provinceMap)) {
+        const provProviders = await Provider.find({ userId: { $in: provinceMap[province] } })
+            .sort({ 'performance.healthScore': -1, 'jobsCompleted': -1 })
+            .select('_id');
+
+        const provUpdates = provProviders.map((p, index) => ({
+            updateOne: {
+                filter: { _id: p._id },
+                update: { $set: { 'performance.rankProvince': index + 1 } }
+            }
+        }));
+        if (provUpdates.length > 0) await Provider.bulkWrite(provUpdates);
+    }
+
+    for (const city of Object.keys(cityMap)) {
+        const cityProviders = await Provider.find({ userId: { $in: cityMap[city] } })
+            .sort({ 'performance.healthScore': -1, 'jobsCompleted': -1 })
+            .select('_id');
+
+        const cityUpdates = cityProviders.map((p, index) => ({
+            updateOne: {
+                filter: { _id: p._id },
+                update: { $set: { 'performance.rankCity': index + 1 } }
+            }
+        }));
+        if (cityUpdates.length > 0) await Provider.bulkWrite(cityUpdates);
+    }
 };
 
 export const takePerformanceSnapshot = async (countryCode: string) => {
     const providers = await Provider.find(); // Ideally filtered by countryCode if available on Provider
     const now = new Date();
+
+    await calculateRankings(countryCode);
 
     for (const provider of providers) {
         await recalculateProviderMetrics(provider._id.toString());

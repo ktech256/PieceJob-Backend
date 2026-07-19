@@ -205,6 +205,8 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                 // Fraud Alert and Stats Update
                 fraudService.analyzeJobCompletion(job.id);
 
+                await performanceService.handleJobCompletionQuality(job.providerId.toString());
+
                 userContextService.trackJobAddress(job.customerId.toString(), job.location.address || '', job.location.coordinates);
 
                 // Referral Processing (End-to-End Implementation)

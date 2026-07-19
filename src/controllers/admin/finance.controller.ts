@@ -927,7 +927,8 @@ export const getAuditTrail = async (req: AuthRequest, res: Response) => {
         if (targetId) query.entityId = targetId;
 
         const logs = await mongoose.model('AuditLog').find(query).sort({ createdAt: -1 }).limit(200)
-            .populate('adminId', 'firstName lastName');
+            .populate('adminId', 'firstName lastName')
+            .populate('userId', 'firstName lastName');
 
         res.status(200).json({ success: true, logs });
     } catch (error) {
