@@ -6,6 +6,7 @@ const router = Router();
 
 router.post('/request-otp', authController.requestOtp);
 router.post('/verify-otp', authController.verifyOtp);
+router.get('/check-phone/:phoneNumber', authController.checkPhone);
 router.post('/register/customer', authController.registerCustomer);
 router.post('/register/provider', authController.registerProvider);
 router.post('/login', authController.login);

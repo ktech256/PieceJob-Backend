@@ -419,6 +419,30 @@ export const registerProvider = async (req: Request, res: Response) => {
   }
 };
 
+export const checkPhone = async (req: Request, res: Response) => {
+    try {
+        const { phoneNumber } = req.params;
+        const cleanPhone = phoneNumber.trim();
+
+        const user = await User.findOne({ phoneNumber: cleanPhone });
+        if (user) {
+            return res.status(409).json({
+                success: false,
+                message: 'The phone number is already registered on PieceJob.',
+                exists: true
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Phone number is available.',
+            exists: false
+        });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: 'Error checking phone number', error: error.message });
+    }
+};
+
 export const login = async (req: Request, res: Response) => {
   try {
     const { identifier, password, deviceId, hardwareId, fcmToken, appType } = req.body;
