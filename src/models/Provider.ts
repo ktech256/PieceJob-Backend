@@ -53,6 +53,7 @@ export interface IProvider extends Document {
     completedJobs: number;
     arrivedOnTimeJobs: number;
     complaintsCount: number;
+    cancellationCount: number;
     reliabilityScore: number;
     cancellationScore: number;
     acceptanceScore: number;
