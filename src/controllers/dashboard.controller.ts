@@ -283,37 +283,7 @@ export const getCustomerPromotions = async (req: AuthRequest, res: Response) => 
     }
 };
 
-const getProviderNetEarnings = async (userId: string, startDate: Date) => {
-    const results = await Ledger.aggregate([
-        {
-            $match: {
-                $or: [
-                    { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE },
-                    { fromUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.COMMISSION }
-                ],
-                createdAt: { $gte: startDate },
-                status: 'COMPLETED'
-            }
-        },
-        {
-            $group: {
-                _id: "$jobId",
-                gross: { $sum: { $cond: [{ $eq: ["$type", TransactionType.SERVICE_FEE] }, "$amount", 0] } },
-                commission: { $sum: { $cond: [{ $eq: ["$type", TransactionType.COMMISSION] }, "$amount", 0] } }
-            }
-        },
-        {
-            $project: {
-                net: { $cond: [{ $gt: ["$gross", 0] }, { $subtract: ["$gross", "$commission"] }, 0] }
-            }
-        },
-        {
-            $group: { _id: null, total: { $sum: "$net" } }
-        }
-    ]);
-
-    return results[0]?.total || 0;
-};
+import * as performanceService from '../services/provider-performance.service';
 
 export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
     try {
@@ -336,44 +306,8 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
 
         const currencySymbol = country?.currencySymbol || country?.currency || 'R';
 
-        // 1. Stats
-        const now = new Date();
-        const startOfToday = new Date(now.setHours(0, 0, 0, 0));
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-
-        const [earningsToday, earningsWeekly, earningsMonthly, jobStatsAgg] = await Promise.all([
-            getProviderNetEarnings(userId as string, startOfToday),
-            getProviderNetEarnings(userId as string, weekAgo),
-            getProviderNetEarnings(userId as string, monthAgo),
-            Job.aggregate([
-                { $match: { providerId: new mongoose.Types.ObjectId(userId as string) } },
-                { $group: { _id: "$status", count: { $sum: 1 } } }
-            ])
-        ]);
-
-        const jobsByStatus: any = {};
-        jobStatsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
-
-        const stats = {
-            earningsToday,
-            earningsWeekly,
-            earningsMonthly,
-            jobsCompleted: jobsByStatus[JobStatus.COMPLETED] || 0,
-            jobsActive: (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0),
-            acceptanceRate: provider.performance.acceptanceRate || 0,
-            completionRate: provider.performance.completionRate || 0,
-            arrivalRate: provider.performance.arrivalRate || 0,
-            tier: provider.tier,
-            tierProgress: 0.75, // Logic for progression can be added
-            rating: provider.ratingAvg,
-            ratingCount: provider.ratingCount || 0,
-            isProbationActive: (provider.ratingCount || 0) < 5,
-            verificationStatus: provider.verificationStatus,
-            isOnline: provider.isOnline
-        };
+        // 1. Stats (Unified Logic)
+        const stats = await performanceService.getFullProviderStats(userId as string);
 
         // 2. Active Job
         const activeJobRaw = await Job.findOne({
@@ -404,6 +338,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
         }
 
         // 3. Recent Activity (Latest 5 records sorted by activity time to match Job History)
+        const now = new Date();
         const recentJobs = await Job.find({
             providerId: userId,
             countryCode,

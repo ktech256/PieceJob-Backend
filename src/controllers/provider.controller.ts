@@ -675,112 +675,15 @@ const getProviderNetEarnings = async (userId: string, startDate: Date) => {
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.userId;
-        const now = new Date();
-        const startOfToday = new Date(now.setHours(0, 0, 0, 0));
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        const stats = await performanceService.getFullProviderStats(userId as string);
 
-        const provider = await Provider.findOne({ userId }).populate('userId', 'createdAt');
-        if (!provider) return res.status(404).json({ success: false, message: 'Provider not found' });
-
-        const [earningsToday, earningsWeekly, earningsMonthly, earningsLifetime, jobsAgg] = await Promise.all([
-            getProviderNetEarnings(userId as string, startOfToday),
-            getProviderNetEarnings(userId as string, weekAgo),
-            getProviderNetEarnings(userId as string, monthAgo),
-            getProviderNetEarnings(userId as string, new Date(0)),
-            Job.aggregate([
-                { $match: { providerId: new mongoose.Types.ObjectId(userId as string) } },
-                { $group: { _id: "$status", count: { $sum: 1 } } }
-            ])
-        ]);
-
-        const jobsByStatus: any = {};
-        jobsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
-
-        // ISSUE 6 FIX: Operational Efficiency synchronization
-        // Standardize completed jobs to include all terminal positive statuses
-        const jobsCompleted = (jobsByStatus[JobStatus.COMPLETED] || 0) + (jobsByStatus[JobStatus.RATED] || 0) + (jobsByStatus[JobStatus.CLOSED] || 0);
-        const jobsCancelledCount = provider.performance.cancellationCount || 0;
-        const rawAccepted = provider.performance.acceptedJobs || 0;
-        const activeCount = (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0) + (jobsByStatus[JobStatus.EN_ROUTE] || 0) + (jobsByStatus[JobStatus.IN_PROGRESS] || 0);
-
-        // Corrected Accepted Jobs should be at least sum of all historical states
-        const jobsAccepted = Math.max(rawAccepted, jobsCompleted + jobsCancelledCount + activeCount);
-
-        // ISSUE 7 FIX: Synchronization of earnings between cards
-        // Ensure lifetime earnings represents the total net across all periods
-        const finalEarningsLifetime = Math.max(earningsLifetime, earningsToday, earningsWeekly, earningsMonthly);
-
-        const healthScore = provider.performance.healthScore || 0;
-        const healthStatus = performanceService.getHealthStatus(healthScore);
-
-        // Calculate Average Arrival Time & Duration for Dashboard
-        const recentJobs = await Job.find({
-            providerId: new mongoose.Types.ObjectId(userId as string),
-            status: { $in: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED] }
-        }).limit(20);
-
-        let totalArrivalMin = 0;
-        let arrivedCount = 0;
-        let totalDurationMin = 0;
-        let durationCount = 0;
-
-        recentJobs.forEach(j => {
-            if (j.acceptedAt && j.arrivedAt) {
-                totalArrivalMin += (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
-                arrivedCount++;
-            }
-            if (j.startedAt && j.completedAt) {
-                totalDurationMin += (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
-                durationCount++;
-            }
-        });
-
-        const avgArrival = arrivedCount > 0 ? Math.round(totalArrivalMin / arrivedCount) : 0;
-        const avgDuration = durationCount > 0 ? Math.round(totalDurationMin / durationCount) : 0;
-
-        // Fetch Recent Badges
-        const badges = await mongoose.model('ProviderBadge').find({ providerId: provider._id }).sort({ earnedAt: -1 }).limit(3);
+        if (!stats) {
+            return res.status(404).json({ success: false, message: 'Provider not found' });
+        }
 
         res.status(200).json({
             success: true,
-            data: {
-                earningsToday,
-                earningsWeekly,
-                earningsMonthly,
-                earningsLifetime: finalEarningsLifetime,
-                jobsAccepted,
-                jobsCompleted,
-                jobsCancelled: provider.performance.cancellationScore || 100,
-                cancellationCount: jobsCancelledCount,
-                jobsActive: activeCount,
-                acceptanceRate: provider.performance.acceptanceRate,
-                completionRate: provider.performance.completionRate,
-                arrivalRate: provider.performance.arrivalRate,
-                reliabilityScore: provider.performance.reliabilityScore || 100,
-                cancellationScore: provider.performance.cancellationScore || 100,
-                onTimeResponseScore: provider.performance.onTimeResponseScore || 100,
-                healthScore,
-                healthStatus,
-                averageArrivalTime: `${avgArrival} mins`,
-                averageJobDuration: `${avgDuration} mins`,
-                mostRequestedService: provider.servicesOffered[0] || 'N/A',
-                tier: provider.tier,
-                tierProgress: 0.75,
-                rating: provider.ratingAvg,
-                ratingCount: provider.ratingCount || 0,
-                isProbationActive: (provider.ratingCount || 0) < 5,
-                rankNational: provider.performance.rankNational,
-                rankProvince: provider.performance.rankProvince,
-                rankCity: provider.performance.rankCity,
-                activeSince: (provider.userId as any).createdAt,
-                lastActive: provider.lastOnlineAt,
-                recentBadges: badges.map(b => b.name),
-                verificationStatus: provider.verificationStatus,
-                isGhostMode: false
-            }
+            data: stats
         });
     } catch (error) {
         logger.error(`PROVIDER | DASHBOARD_STATS_FAILED | User: ${req.user?.userId} | Error: ${error}`);

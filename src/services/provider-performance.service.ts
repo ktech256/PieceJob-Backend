@@ -4,6 +4,7 @@ import ProviderTierHistory from '../models/ProviderTierHistory';
 import PerformanceAdjustment, { PerformanceScoreType } from '../models/PerformanceAdjustment';
 import ProviderBadge from '../models/ProviderBadge';
 import Job, { JobStatus } from '../models/Job';
+import Ledger, { TransactionType } from '../models/Ledger';
 import { emitToUser } from '../socket/socket.service';
 import { notifyUser } from './notification.service';
 import { logger } from '../utils/logger';
@@ -55,61 +56,53 @@ export const recalculateProviderMetrics = async (providerId: string, session?: m
         } as any;
     }
 
-    const perf = provider.performance;
+    // FORENSIC RECOVERY: Recalculate raw counts from Job Collection (Source of Truth)
+    const jobsAgg = await Job.aggregate([
+        { $match: { providerId: provider.userId } },
+        { $group: {
+            _id: null,
+            totalAccepted: { $sum: 1 },
+            totalCompleted: { $sum: { $cond: [{ $in: ["$status", [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED]] }, 1, 0] } },
+            totalArrived: { $sum: { $cond: [{ $gt: ["$arrivedAt", null] }, 1, 0] } }
+        } }
+    ]);
 
-    // ISSUE 5 & 6: Forensic Count Correction
-    const completedCount = provider.jobsCompleted || perf.completedJobs || 0;
-    const cancelledCount = perf.cancellationCount || 0;
+    const stats = jobsAgg[0] || { totalAccepted: 0, totalCompleted: 0, totalArrived: 0 };
+    const broadcastCount = provider.performance.broadcastOpportunities || 0;
+    const cancelledCount = provider.performance.cancellationCount || 0;
 
-    // Ensure logical consistency in counters
-    provider.performance.completedJobs = Math.max(perf.completedJobs || 0, provider.jobsCompleted || 0);
-    provider.performance.acceptedJobs = Math.max(perf.acceptedJobs || 0, provider.performance.completedJobs + cancelledCount);
+    // 1. Sync Raw Counters
+    provider.performance.completedJobs = Math.max(stats.totalCompleted, provider.jobsCompleted || 0);
+    provider.performance.acceptedJobs = Math.max(stats.totalAccepted, provider.performance.completedJobs + cancelledCount);
+    provider.performance.arrivedOnTimeJobs = Math.max(stats.totalArrived, provider.performance.arrivedOnTimeJobs || 0);
 
-    // Initial Scores for New Providers (Recovery Logic for Issue 1, 2, 5)
+    // 2. Initial Scores for New Providers (Recovery Logic)
     if (provider.performance.reliabilityScore === 0 && provider.performance.completedJobs >= 0 && cancelledCount === 0) {
         provider.performance.reliabilityScore = 100;
     }
     if (provider.performance.cancellationScore === 0 && cancelledCount === 0) {
         provider.performance.cancellationScore = 100;
     }
-    if (provider.performance.healthScore === 0) {
-        provider.performance.healthScore = 100;
-    }
 
-    const oldAcceptance = provider.performance.acceptanceRate;
-
-    // ISSUE 7: Acceptance Rate Calculation (0-100 scale)
-    provider.performance.acceptanceRate = perf.broadcastOpportunities > 0
-        ? Math.min(100, (provider.performance.acceptedJobs / perf.broadcastOpportunities) * 100)
+    // 3. Rate Calculations
+    provider.performance.acceptanceRate = broadcastCount > 0
+        ? Math.min(100, (provider.performance.acceptedJobs / broadcastCount) * 100)
         : 100;
 
-    // ISSUE 3: Arrival Rate
     provider.performance.completionRate = provider.performance.acceptedJobs > 0
         ? Math.min(100, (provider.performance.completedJobs / provider.performance.acceptedJobs) * 100)
         : 100;
 
     provider.performance.arrivalRate = provider.performance.acceptedJobs > 0
-        ? Math.min(100, (perf.arrivedOnTimeJobs / provider.performance.acceptedJobs) * 100)
+        ? Math.min(100, (provider.performance.arrivedOnTimeJobs / provider.performance.acceptedJobs) * 100)
         : 100;
 
     provider.performance.complaintRate = provider.performance.completedJobs > 0
-        ? (perf.complaintsCount / provider.performance.completedJobs) * 100
+        ? (provider.performance.complaintsCount / provider.performance.completedJobs) * 100
         : 0;
 
-    // Log changes if significant
-    if (Math.abs(oldAcceptance - provider.performance.acceptanceRate) > 1) {
-        await recordAdjustment({
-            providerId: provider._id.toString(),
-            userId: provider.userId.toString(),
-            scoreType: PerformanceScoreType.ACCEPTANCE,
-            oldScore: oldAcceptance,
-            newScore: provider.performance.acceptanceRate,
-            adjustmentPoints: provider.performance.acceptanceRate - oldAcceptance,
-            reason: 'Metric recalculation based on recent activity'
-        }, session);
-    }
-
-    // Save initial batch of metrics
+    // 4. Persistence
+    provider.markModified('performance');
     await provider.save({ session });
 
     await checkAndAwardBadges(provider._id.toString(), session, provider);
@@ -162,6 +155,148 @@ export const calculateHealthScore = async (providerId: string, session?: mongoos
     }
 
     return healthScore;
+};
+
+export const getFullProviderStats = async (userId: string) => {
+    // 1. Force recalculation with DB synchronization
+    const provider = await Provider.findOne({ userId });
+    if (!provider) return null;
+
+    // Ensure all counters are fresh from the Job collection
+    await recalculateProviderMetrics(provider._id.toString());
+
+    const refreshedProvider = await Provider.findById(provider._id).populate('userId', 'createdAt');
+    if (!refreshedProvider) return null;
+
+    const now = new Date();
+    const startOfToday = new Date(now.setHours(0, 0, 0, 0));
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date();
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+    const [earningsToday, earningsWeekly, earningsMonthly, earningsLifetime, jobsAgg] = await Promise.all([
+        getProviderNetEarnings(userId, startOfToday),
+        getProviderNetEarnings(userId, weekAgo),
+        getProviderNetEarnings(userId, monthAgo),
+        getProviderNetEarnings(userId, new Date(0)),
+        Job.aggregate([
+            { $match: { providerId: new mongoose.Types.ObjectId(userId) } },
+            { $group: {
+                _id: "$status",
+                count: { $sum: 1 }
+            } }
+        ])
+    ]);
+
+    const jobsByStatus: any = {};
+    jobsAgg.forEach((j: any) => { jobsByStatus[j._id] = j.count; });
+
+    // Source of Truth counts
+    const jobsCompleted = (jobsByStatus[JobStatus.COMPLETED] || 0) + (jobsByStatus[JobStatus.RATED] || 0) + (jobsByStatus[JobStatus.CLOSED] || 0);
+    const jobsCancelledCount = refreshedProvider.performance.cancellationCount || 0;
+    const activeCount = (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0) + (jobsByStatus[JobStatus.EN_ROUTE] || 0) + (jobsByStatus[JobStatus.IN_PROGRESS] || 0);
+
+    const jobsAccepted = Math.max(refreshedProvider.performance.acceptedJobs || 0, jobsCompleted + jobsCancelledCount + activeCount);
+
+    // Earnings consistency (Issue 4 & 7)
+    const finalEarningsLifetime = earningsLifetime;
+
+    const healthScore = refreshedProvider.performance.healthScore || 0;
+    const healthStatus = getHealthStatus(healthScore);
+
+    // Timeline and efficiency (Source of Truth)
+    const recentJobs = await Job.find({
+        providerId: new mongoose.Types.ObjectId(userId),
+        status: { $in: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED] }
+    }).limit(20);
+
+    let totalArrivalMin = 0;
+    let arrivedCount = 0;
+    let totalDurationMin = 0;
+    let durationCount = 0;
+
+    recentJobs.forEach(j => {
+        if (j.acceptedAt && j.arrivedAt) {
+            totalArrivalMin += (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
+            arrivedCount++;
+        }
+        if (j.startedAt && j.completedAt) {
+            totalDurationMin += (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
+            durationCount++;
+        }
+    });
+
+    const avgArrival = arrivedCount > 0 ? Math.round(totalArrivalMin / arrivedCount) : 0;
+    const avgDuration = durationCount > 0 ? Math.round(totalDurationMin / durationCount) : 0;
+
+    const badges = await ProviderBadge.find({ providerId: refreshedProvider._id }).sort({ earnedAt: -1 }).limit(3);
+
+    return {
+        earningsToday,
+        earningsWeekly,
+        earningsMonthly,
+        earningsLifetime: finalEarningsLifetime,
+        jobsAccepted,
+        jobsCompleted,
+        jobsCancelled: refreshedProvider.performance.cancellationScore || 100,
+        cancellationCount: jobsCancelledCount,
+        jobsActive: activeCount,
+        acceptanceRate: refreshedProvider.performance.acceptanceRate || 100,
+        completionRate: refreshedProvider.performance.completionRate || 100,
+        arrivalRate: refreshedProvider.performance.arrivalRate || 100,
+        reliabilityScore: refreshedProvider.performance.reliabilityScore || 100,
+        cancellationScore: refreshedProvider.performance.cancellationScore || 100,
+        onTimeResponseScore: refreshedProvider.performance.onTimeResponseScore || 100,
+        healthScore,
+        healthStatus,
+        averageArrivalTime: `${avgArrival} mins`,
+        averageJobDuration: `${avgDuration} mins`,
+        mostRequestedService: refreshedProvider.servicesOffered[0] || 'N/A',
+        tier: refreshedProvider.tier,
+        tierProgress: 0.75,
+        rating: refreshedProvider.ratingAvg,
+        ratingCount: refreshedProvider.ratingCount || 0,
+        isProbationActive: (refreshedProvider.ratingCount || 0) < 5,
+        rankNational: refreshedProvider.performance.rankNational,
+        rankProvince: refreshedProvider.performance.rankProvince,
+        rankCity: refreshedProvider.performance.rankCity,
+        activeSince: (refreshedProvider.userId as any).createdAt,
+        lastActive: refreshedProvider.lastOnlineAt,
+        recentBadges: badges.map(b => b.name),
+        verificationStatus: refreshedProvider.verificationStatus,
+        isGhostMode: false,
+        isOnline: refreshedProvider.isOnline
+    };
+};
+
+const getProviderNetEarnings = async (userId: string, startDate: Date) => {
+    const results = await Ledger.aggregate([
+        {
+            $match: {
+                $or: [
+                    { toUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.SERVICE_FEE },
+                    { fromUserId: new mongoose.Types.ObjectId(userId), type: TransactionType.COMMISSION }
+                ],
+                createdAt: { $gte: startDate },
+                status: 'COMPLETED'
+            }
+        },
+        {
+            $group: {
+                _id: null,
+                gross: { $sum: { $cond: [{ $eq: ["$type", TransactionType.SERVICE_FEE] }, "$amount", 0] } },
+                commission: { $sum: { $cond: [{ $eq: ["$type", TransactionType.COMMISSION] }, "$amount", 0] } }
+            }
+        },
+        {
+            $project: {
+                total: { $subtract: ["$gross", "$commission"] }
+            }
+        }
+    ]);
+
+    return results[0]?.total || 0;
 };
 
 export const handleJobCompletionQuality = async (userId: string) => {
