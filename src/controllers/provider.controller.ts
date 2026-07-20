@@ -699,20 +699,21 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         const jobsByStatus: any = {};
         jobsAgg.forEach(j => { jobsByStatus[j._id] = j.count; });
 
-        // ISSUE 5 FIX: Ensure consistency between accepted and completed/cancelled counts
-        // Include all completed-like statuses
+        // ISSUE 6 FIX: Operational Efficiency synchronization
+        // Standardize completed jobs to include all terminal positive statuses
         const jobsCompleted = (jobsByStatus[JobStatus.COMPLETED] || 0) + (jobsByStatus[JobStatus.RATED] || 0) + (jobsByStatus[JobStatus.CLOSED] || 0);
-        const jobsCancelled = provider.performance.cancellationCount || 0;
+        const jobsCancelledCount = provider.performance.cancellationCount || 0;
         const rawAccepted = provider.performance.acceptedJobs || 0;
         const activeCount = (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0) + (jobsByStatus[JobStatus.EN_ROUTE] || 0) + (jobsByStatus[JobStatus.IN_PROGRESS] || 0);
 
         // Corrected Accepted Jobs should be at least sum of all historical states
-        const jobsAccepted = Math.max(rawAccepted, jobsCompleted + jobsCancelled + activeCount);
+        const jobsAccepted = Math.max(rawAccepted, jobsCompleted + jobsCancelledCount + activeCount);
 
-        // ISSUE 4: Defensive Earnings Check (Lifetime must be >= Today)
-        const finalEarningsLifetime = Math.max(earningsLifetime, earningsToday);
+        // ISSUE 7 FIX: Synchronization of earnings between cards
+        // Ensure lifetime earnings represents the total net across all periods
+        const finalEarningsLifetime = Math.max(earningsLifetime, earningsToday, earningsWeekly, earningsMonthly);
 
-        const healthScore = provider.performance.healthScore || 100;
+        const healthScore = provider.performance.healthScore || 0;
         const healthStatus = performanceService.getHealthStatus(healthScore);
 
         // Calculate Average Arrival Time & Duration for Dashboard
@@ -752,15 +753,15 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
                 earningsLifetime: finalEarningsLifetime,
                 jobsAccepted,
                 jobsCompleted,
-                jobsCancelled: jobsCancelled,
-                cancellationCount: jobsCancelled,
+                jobsCancelled: provider.performance.cancellationScore || 100,
+                cancellationCount: jobsCancelledCount,
                 jobsActive: activeCount,
                 acceptanceRate: provider.performance.acceptanceRate,
                 completionRate: provider.performance.completionRate,
                 arrivalRate: provider.performance.arrivalRate,
-                reliabilityScore: provider.performance.reliabilityScore,
-                cancellationScore: provider.performance.cancellationScore,
-                onTimeResponseScore: provider.performance.onTimeResponseScore,
+                reliabilityScore: provider.performance.reliabilityScore || 100,
+                cancellationScore: provider.performance.cancellationScore || 100,
+                onTimeResponseScore: provider.performance.onTimeResponseScore || 100,
                 healthScore,
                 healthStatus,
                 averageArrivalTime: `${avgArrival} mins`,

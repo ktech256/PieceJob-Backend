@@ -39,55 +39,61 @@ export const recalculateProviderMetrics = async (providerId: string, session?: m
     const provider = existingProvider || await Provider.findById(providerId).session(session || null);
     if (!provider) return null;
 
-    const perf = provider.performance || {
-        acceptedJobs: 0,
-        completedJobs: 0,
-        broadcastOpportunities: 0,
-        arrivedOnTimeJobs: 0,
-        cancellationCount: 0,
-        reliabilityScore: 100,
-        cancellationScore: 100,
-        acceptanceRate: 100,
-        completionRate: 100,
-        arrivalRate: 100
-    };
-
-    // Ensure performance subdocument exists
     if (!provider.performance) {
-        provider.performance = perf as any;
+        provider.performance = {
+            acceptedJobs: 0,
+            completedJobs: 0,
+            broadcastOpportunities: 0,
+            arrivedOnTimeJobs: 0,
+            cancellationCount: 0,
+            reliabilityScore: 100,
+            cancellationScore: 100,
+            acceptanceRate: 100,
+            completionRate: 100,
+            arrivalRate: 100,
+            healthScore: 100
+        } as any;
     }
 
-    // ISSUE 5: Forensic Count Correction (Ensure Accepted >= Completed + Cancelled)
-    const completedCount = perf.completedJobs || 0;
-    const cancelledCount = perf.cancellationCount || 0;
-    provider.performance.acceptedJobs = Math.max(perf.acceptedJobs || 0, completedCount + cancelledCount);
+    const perf = provider.performance;
 
-    // Initial Scores for New Providers (ISSUE 1 & 8)
-    if (provider.performance.reliabilityScore === 0 && completedCount === 0 && cancelledCount === 0) {
+    // ISSUE 5 & 6: Forensic Count Correction
+    const completedCount = provider.jobsCompleted || perf.completedJobs || 0;
+    const cancelledCount = perf.cancellationCount || 0;
+
+    // Ensure logical consistency in counters
+    provider.performance.completedJobs = Math.max(perf.completedJobs || 0, provider.jobsCompleted || 0);
+    provider.performance.acceptedJobs = Math.max(perf.acceptedJobs || 0, provider.performance.completedJobs + cancelledCount);
+
+    // Initial Scores for New Providers (Recovery Logic for Issue 1, 2, 5)
+    if (provider.performance.reliabilityScore === 0 && provider.performance.completedJobs >= 0 && cancelledCount === 0) {
         provider.performance.reliabilityScore = 100;
     }
     if (provider.performance.cancellationScore === 0 && cancelledCount === 0) {
         provider.performance.cancellationScore = 100;
     }
+    if (provider.performance.healthScore === 0) {
+        provider.performance.healthScore = 100;
+    }
 
     const oldAcceptance = provider.performance.acceptanceRate;
 
-    // ISSUE 7: Acceptance Rate Calculation
+    // ISSUE 7: Acceptance Rate Calculation (0-100 scale)
     provider.performance.acceptanceRate = perf.broadcastOpportunities > 0
         ? Math.min(100, (provider.performance.acceptedJobs / perf.broadcastOpportunities) * 100)
         : 100;
 
     // ISSUE 3: Arrival Rate
     provider.performance.completionRate = provider.performance.acceptedJobs > 0
-        ? Math.min(100, (perf.completedJobs / provider.performance.acceptedJobs) * 100)
+        ? Math.min(100, (provider.performance.completedJobs / provider.performance.acceptedJobs) * 100)
         : 100;
 
     provider.performance.arrivalRate = provider.performance.acceptedJobs > 0
         ? Math.min(100, (perf.arrivedOnTimeJobs / provider.performance.acceptedJobs) * 100)
         : 100;
 
-    provider.performance.complaintRate = perf.completedJobs > 0
-        ? (perf.complaintsCount / perf.completedJobs) * 100
+    provider.performance.complaintRate = provider.performance.completedJobs > 0
+        ? (perf.complaintsCount / provider.performance.completedJobs) * 100
         : 0;
 
     // Log changes if significant
@@ -103,7 +109,9 @@ export const recalculateProviderMetrics = async (providerId: string, session?: m
         }, session);
     }
 
+    // Save initial batch of metrics
     await provider.save({ session });
+
     await checkAndAwardBadges(provider._id.toString(), session, provider);
     await calculateHealthScore(provider._id.toString(), session, provider);
     return provider;
@@ -123,7 +131,6 @@ export const calculateHealthScore = async (providerId: string, session?: mongoos
 
     if (isProbation) {
         // Exclude Rating (25%) and redistribute weight to remaining 75%
-        // Factors: Reliability (25/75=33.3%), Acceptance (20/75=26.7%), Cancellation (15/75=20%), Arrival (15/75=20%)
         const reliabilityComp = (provider.performance.reliabilityScore ?? 100) * 0.3333;
         const acceptanceComp = (provider.performance.acceptanceRate ?? 100) * 0.2667;
         const cancellationComp = (provider.performance.cancellationScore ?? 100) * 0.20;
@@ -140,9 +147,9 @@ export const calculateHealthScore = async (providerId: string, session?: mongoos
 
     healthScore = Math.min(100, Math.max(0, healthScore));
 
-    const oldHealth = (provider.performance as any).healthScore || 100;
+    const oldHealth = (provider.performance as any).healthScore || 0;
 
-    // Update provider record in session
+    // Persist health score on the object within the session
     provider.performance.healthScore = healthScore;
     await provider.save({ session });
 
