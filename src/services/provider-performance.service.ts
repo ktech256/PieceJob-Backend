@@ -19,7 +19,7 @@ export const recordAdjustment = async (data: {
     reason: string;
     jobId?: string;
     metadata?: any;
-}) => {
+}, session?: mongoose.ClientSession) => {
     const adjustment = new PerformanceAdjustment({
         providerId: new mongoose.Types.ObjectId(data.providerId),
         userId: new mongoose.Types.ObjectId(data.userId),
@@ -31,12 +31,12 @@ export const recordAdjustment = async (data: {
         jobId: data.jobId ? new mongoose.Types.ObjectId(data.jobId) : undefined,
         metadata: data.metadata
     });
-    await adjustment.save();
+    await adjustment.save({ session });
     return adjustment;
 };
 
-export const recalculateProviderMetrics = async (providerId: string) => {
-    const provider = await Provider.findById(providerId);
+export const recalculateProviderMetrics = async (providerId: string, session?: mongoose.ClientSession, existingProvider?: any) => {
+    const provider = existingProvider || await Provider.findById(providerId).session(session || null);
     if (!provider) return null;
 
     const perf = provider.performance || {
@@ -100,17 +100,17 @@ export const recalculateProviderMetrics = async (providerId: string) => {
             newScore: provider.performance.acceptanceRate,
             adjustmentPoints: provider.performance.acceptanceRate - oldAcceptance,
             reason: 'Metric recalculation based on recent activity'
-        });
+        }, session);
     }
 
-    await provider.save();
-    await checkAndAwardBadges(provider._id.toString());
-    await calculateHealthScore(provider._id.toString());
+    await provider.save({ session });
+    await checkAndAwardBadges(provider._id.toString(), session, provider);
+    await calculateHealthScore(provider._id.toString(), session, provider);
     return provider;
 };
 
-export const calculateHealthScore = async (providerId: string) => {
-    const provider = await Provider.findById(providerId);
+export const calculateHealthScore = async (providerId: string, session?: mongoose.ClientSession, existingProvider?: any) => {
+    const provider = existingProvider || await Provider.findById(providerId).session(session || null);
     if (!provider) return 0;
 
     const ratingCount = provider.ratingCount || 0;
@@ -142,12 +142,20 @@ export const calculateHealthScore = async (providerId: string) => {
 
     const oldHealth = (provider.performance as any).healthScore || 100;
 
-    // Update provider in memory (will be saved in snapshot or other triggers)
-    // For live tracking, let's update it now.
-    await Provider.updateOne({ _id: providerId }, { $set: { 'performance.healthScore': healthScore } });
+    // Update provider record in session
+    provider.performance.healthScore = healthScore;
+    await provider.save({ session });
 
     if (Math.abs(oldHealth - healthScore) >= 5) {
         const status = getHealthStatus(healthScore);
+        // Notifications are fire-and-forget to avoid blocking transaction
+        setImmediate(async () => {
+            await notifyUser(provider.userId.toString(), 'Health Score Update', `Your overall health score is now ${healthScore.toFixed(0)}% (${status}).`);
+        });
+    }
+
+    return healthScore;
+};
         await notifyUser(provider.userId.toString(), 'Health Score Update', `Your overall health score is now ${healthScore.toFixed(0)}% (${status}).`);
     }
 
@@ -249,8 +257,8 @@ export const recordPenalty = async (userId: string, reason: string, jobId?: stri
     logger.info(`PERFORMANCE | PENALTY_RECORDED | User: ${userId} | Reason: ${reason} | New Reliability: ${provider.performance.reliabilityScore}`);
 };
 
-export const evaluateTier = async (providerId: string) => {
-    const provider = await Provider.findById(providerId);
+export const evaluateTier = async (providerId: string, session?: mongoose.ClientSession) => {
+    const provider = await Provider.findById(providerId).session(session || null);
     if (!provider) return;
 
     const oldTier = provider.tier;
@@ -277,15 +285,15 @@ export const evaluateTier = async (providerId: string) => {
 
         provider.tier = newTier;
         provider.isFeatured = (newTier === ProviderTier.ELITE);
-        await provider.save();
+        await provider.save({ session });
 
-        await ProviderTierHistory.create({
+        await ProviderTierHistory.create([{
             providerId: provider._id,
             oldTier,
             newTier,
             reason: isUpgrade ? 'Performance Upgrade' : 'Performance Downgrade',
             countryCode: (provider as any).countryCode || 'ZA'
-        });
+        }], { session });
 
         emitToUser(provider.userId.toString(), 'TIER_CHANGED', {
             oldTier,
@@ -302,8 +310,8 @@ export const evaluateTier = async (providerId: string) => {
     }
 };
 
-export const checkAndAwardBadges = async (providerId: string) => {
-    const provider = await Provider.findById(providerId);
+export const checkAndAwardBadges = async (providerId: string, session?: mongoose.ClientSession, existingProvider?: any) => {
+    const provider = existingProvider || await Provider.findById(providerId).session(session || null);
     if (!provider) return;
 
     const badgesToAward: any[] = [];
@@ -321,17 +329,19 @@ export const checkAndAwardBadges = async (providerId: string) => {
     if (provider.performance.arrivalRate >= 98 && jobs >= 20) badgesToAward.push({ code: 'ON_TIME_CHAMP', name: 'On-Time Champion', desc: 'Always arrives on time.', icon: 'on_time_badge' });
 
     for (const b of badgesToAward) {
-        const existing = await ProviderBadge.findOne({ providerId: provider._id, badgeCode: b.code });
+        const existing = await ProviderBadge.findOne({ providerId: provider._id, badgeCode: b.code }).session(session || null);
         if (!existing) {
-            await ProviderBadge.create({
+            await ProviderBadge.create([{
                 providerId: provider._id,
                 badgeCode: b.code,
                 name: b.name,
                 description: b.desc,
                 iconUrl: b.icon
-            });
+            }], { session });
 
-            await notifyUser(provider.userId.toString(), 'New Badge Earned!', `Congratulations! You have earned the ${b.name} badge.`, { type: 'BADGE_EARNED', badgeCode: b.code });
+            setImmediate(async () => {
+                await notifyUser(provider.userId.toString(), 'New Badge Earned!', `Congratulations! You have earned the ${b.name} badge.`, { type: 'BADGE_EARNED', badgeCode: b.code });
+            });
             emitToUser(provider.userId.toString(), 'BADGE_EARNED', { badgeCode: b.code, name: b.name });
         }
     }

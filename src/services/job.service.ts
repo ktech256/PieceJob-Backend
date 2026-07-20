@@ -731,26 +731,6 @@ export const acceptJob = async (jobId: string, providerId: string) => {
 
       logger.info(`JOB | ACCEPTED | Job: ${jobId} | Provider: ${providerId}`);
 
-      // Termination Signal: Tell other providers to stop ringing
-      const otherProviders = await Provider.find({
-          servicesOffered: job.serviceCode,
-          countryCode: job.countryCode,
-          isOnline: true,
-          userId: { $ne: new mongoose.Types.ObjectId(providerId) }
-      }).session(session);
-
-      otherProviders.forEach(p => {
-          const targetUserId = (p.userId as any)._id || p.userId;
-          emitToUser(targetUserId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
-          notificationService.notifyUser(
-              targetUserId,
-              'Job No Longer Available',
-              'This request was accepted by another provider.',
-              { type: 'JOB_ASSIGNED_ELSEWHERE', jobId },
-              true
-          );
-      });
-
       const updatedProvider = await Provider.findOneAndUpdate(
           { userId: providerId },
           {
@@ -761,11 +741,49 @@ export const acceptJob = async (jobId: string, providerId: string) => {
       );
 
       if (updatedProvider) {
-          await performanceService.recalculateProviderMetrics(updatedProvider._id.toString());
+          await performanceService.recalculateProviderMetrics(updatedProvider._id.toString(), session);
       }
 
       await session.commitTransaction();
       session.endSession();
+
+      // PART B: POST-COMMIT NOTIFICATIONS (Async/Non-blocking)
+      // This ensures the main response returns immediately to the provider while cleanup happens in background.
+      setImmediate(async () => {
+          try {
+              // 1. Tell other providers to stop ringing
+              const otherProviders = await Provider.find({
+                  servicesOffered: job.serviceCode,
+                  countryCode: job.countryCode,
+                  isOnline: true,
+                  userId: { $ne: new mongoose.Types.ObjectId(providerId) }
+              }).populate('userId', 'fcmToken');
+
+              const fcmTokens: string[] = [];
+              otherProviders.forEach(p => {
+                  const targetUserId = (p.userId as any)._id || p.userId;
+                  const user = p.userId as any;
+
+                  // Socket is fast and cheap
+                  emitToUser(targetUserId.toString(), 'JOB_ASSIGNED_ELSEWHERE', { jobId });
+
+                  if (user?.fcmToken) fcmTokens.push(user.fcmToken);
+              });
+
+              // Use Multicast for FCM if possible (Batch of 500)
+              if (fcmTokens.length > 0) {
+                  await notificationService.notifyDevices(
+                      fcmTokens,
+                      'Job No Longer Available',
+                      'This request was accepted by another provider.',
+                      { type: 'JOB_ASSIGNED_ELSEWHERE', jobId }
+                  );
+              }
+          } catch (err) {
+              logger.error(`POST_ACCEPT_CLEANUP_FAILED | Job: ${jobId} | Error: ${err}`);
+          }
+      });
+
       return job;
     } catch (error: any) {
       await session.abortTransaction();
