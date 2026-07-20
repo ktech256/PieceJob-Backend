@@ -57,26 +57,41 @@ export const recalculateProviderMetrics = async (providerId: string, session?: m
     }
 
     // FORENSIC RECOVERY: Recalculate raw counts from Job Collection (Source of Truth)
+    // Exclude test jobs and immediate completions from operational averages (Issue 15)
     const jobsAgg = await Job.aggregate([
-        { $match: { providerId: provider.userId } },
+        { $match: { providerId: provider.userId, isTestJob: { $ne: true } } },
         { $group: {
             _id: null,
             totalAccepted: { $sum: 1 },
             totalCompleted: { $sum: { $cond: [{ $in: ["$status", [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED]] }, 1, 0] } },
-            totalArrived: { $sum: { $cond: [{ $gt: ["$arrivedAt", null] }, 1, 0] } }
+            // Measurable Arrival (Issue 7 & 14): distance > 50m OR travel time > 1 min
+            totalMeasurableArrivals: { $sum: { $cond: [
+                { $and: [
+                    { $gt: ["$arrivedAt", null] },
+                    { $or: [
+                        { $gt: ["$distanceTravelled", 50] },
+                        { $gt: [{ $subtract: ["$arrivedAt", "$acceptedAt"] }, 60000] }
+                    ]}
+                ]}, 1, 0]
+            }},
+            totalOnTimeArrivals: { $sum: { $cond: [
+                { $and: [
+                    { $gt: ["$arrivedAt", null] },
+                    { $lte: [{ $subtract: ["$arrivedAt", "$acceptedAt"] }, 1200000] }
+                ]}, 1, 0]
+            }}
         } }
     ]);
 
-    const stats = jobsAgg[0] || { totalAccepted: 0, totalCompleted: 0, totalArrived: 0 };
+    const stats = jobsAgg[0] || { totalAccepted: 0, totalCompleted: 0, totalMeasurableArrivals: 0, totalOnTimeArrivals: 0 };
     const broadcastCount = provider.performance.broadcastOpportunities || 0;
     const cancelledCount = provider.performance.cancellationCount || 0;
 
     // 1. Sync Raw Counters
     provider.performance.completedJobs = Math.max(stats.totalCompleted, provider.jobsCompleted || 0);
     provider.performance.acceptedJobs = Math.max(stats.totalAccepted, provider.performance.completedJobs + cancelledCount);
-    provider.performance.arrivedOnTimeJobs = Math.max(stats.totalArrived, provider.performance.arrivedOnTimeJobs || 0);
 
-    // 2. Initial Scores for New Providers (Recovery Logic)
+    // 2. Initial Scores for New Providers (Recovery Logic for Issue 1, 2, 5)
     if (provider.performance.reliabilityScore === 0 && provider.performance.completedJobs >= 0 && cancelledCount === 0) {
         provider.performance.reliabilityScore = 100;
     }
@@ -84,18 +99,21 @@ export const recalculateProviderMetrics = async (providerId: string, session?: m
         provider.performance.cancellationScore = 100;
     }
 
-    // 3. Rate Calculations
+    const oldAcceptance = provider.performance.acceptanceRate;
+
+    // 3. Rate Calculations with Divide-by-Zero Protection (Issue 14)
+    // Map to -1 (N/A) if no valid denominator exists
     provider.performance.acceptanceRate = broadcastCount > 0
         ? Math.min(100, (provider.performance.acceptedJobs / broadcastCount) * 100)
-        : 100;
+        : -1;
 
     provider.performance.completionRate = provider.performance.acceptedJobs > 0
         ? Math.min(100, (provider.performance.completedJobs / provider.performance.acceptedJobs) * 100)
-        : 100;
+        : -1;
 
-    provider.performance.arrivalRate = provider.performance.acceptedJobs > 0
-        ? Math.min(100, (provider.performance.arrivedOnTimeJobs / provider.performance.acceptedJobs) * 100)
-        : 100;
+    provider.performance.arrivalRate = stats.totalMeasurableArrivals > 0
+        ? Math.min(100, (stats.totalOnTimeArrivals / stats.totalMeasurableArrivals) * 100)
+        : -1;
 
     provider.performance.complaintRate = provider.performance.completedJobs > 0
         ? (provider.performance.complaintsCount / provider.performance.completedJobs) * 100
@@ -115,26 +133,37 @@ export const calculateHealthScore = async (providerId: string, session?: mongoos
     if (!provider) return 0;
 
     const ratingCount = provider.ratingCount || 0;
-    const isProbation = ratingCount < 5;
+    const completedJobs = provider.jobsCompleted || 0;
 
-    // ISSUE 2: REDESIGNED HEALTH SCORE FORMULA
-    // Weighting: Rating (25%), Reliability (25%), Acceptance (20%), Cancellation (15%), Arrival (15%)
+    // ISSUE 1: Health Score becomes meaningful after data exists
+    if (completedJobs === 0) {
+        provider.performance.healthScore = -1; // -1 for Pending/Insufficient
+        await provider.save({ session });
+        return -1;
+    }
+
+    const isProbation = ratingCount < 5;
 
     let healthScore = 0;
 
+    // Denominator handling for rates (Issue 14 redistribution)
+    const accRate = provider.performance.acceptanceRate === -1 ? 100 : provider.performance.acceptanceRate;
+    const arrRate = provider.performance.arrivalRate === -1 ? 100 : provider.performance.arrivalRate;
+
     if (isProbation) {
         // Exclude Rating (25%) and redistribute weight to remaining 75%
+        // New Weights: Reliability (33.3%), Acceptance (26.7%), Cancellation (20%), Arrival (20%)
         const reliabilityComp = (provider.performance.reliabilityScore ?? 100) * 0.3333;
-        const acceptanceComp = (provider.performance.acceptanceRate ?? 100) * 0.2667;
+        const acceptanceComp = accRate * 0.2667;
         const cancellationComp = (provider.performance.cancellationScore ?? 100) * 0.20;
-        const arrivalComp = (provider.performance.arrivalRate ?? 100) * 0.20;
+        const arrivalComp = arrRate * 0.20;
         healthScore = reliabilityComp + acceptanceComp + cancellationComp + arrivalComp;
     } else {
         const ratingComp = (provider.ratingAvg / 5) * 25;
         const reliabilityComp = (provider.performance.reliabilityScore ?? 100) * 0.25;
-        const acceptanceComp = (provider.performance.acceptanceRate ?? 100) * 0.20;
+        const acceptanceComp = accRate * 0.20;
         const cancellationComp = (provider.performance.cancellationScore ?? 100) * 0.15;
-        const arrivalComp = (provider.performance.arrivalRate ?? 100) * 0.15;
+        const arrivalComp = arrRate * 0.15;
         healthScore = ratingComp + reliabilityComp + acceptanceComp + cancellationComp + arrivalComp;
     }
 
@@ -142,13 +171,11 @@ export const calculateHealthScore = async (providerId: string, session?: mongoos
 
     const oldHealth = (provider.performance as any).healthScore || 0;
 
-    // Persist health score on the object within the session
     provider.performance.healthScore = healthScore;
     await provider.save({ session });
 
-    if (Math.abs(oldHealth - healthScore) >= 5) {
+    if (oldHealth !== -1 && Math.abs(oldHealth - healthScore) >= 5) {
         const status = getHealthStatus(healthScore);
-        // Notifications are fire-and-forget to avoid blocking transaction
         setImmediate(async () => {
             await notifyUser(provider.userId.toString(), 'Health Score Update', `Your overall health score is now ${healthScore.toFixed(0)}% (${status}).`);
         });
@@ -192,23 +219,25 @@ export const getFullProviderStats = async (userId: string) => {
     const jobsByStatus: any = {};
     jobsAgg.forEach((j: any) => { jobsByStatus[j._id] = j.count; });
 
-    // Source of Truth counts
+    // Source of Truth counts (Operational Efficiency)
     const jobsCompleted = (jobsByStatus[JobStatus.COMPLETED] || 0) + (jobsByStatus[JobStatus.RATED] || 0) + (jobsByStatus[JobStatus.CLOSED] || 0);
     const jobsCancelledCount = refreshedProvider.performance.cancellationCount || 0;
     const activeCount = (jobsByStatus[JobStatus.ACCEPTED] || 0) + (jobsByStatus[JobStatus.ARRIVED] || 0) + (jobsByStatus[JobStatus.STARTED] || 0) + (jobsByStatus[JobStatus.EN_ROUTE] || 0) + (jobsByStatus[JobStatus.IN_PROGRESS] || 0);
 
     const jobsAccepted = Math.max(refreshedProvider.performance.acceptedJobs || 0, jobsCompleted + jobsCancelledCount + activeCount);
 
-    // Earnings consistency (Issue 4 & 7)
+    // Earnings consistency (Issue 12)
     const finalEarningsLifetime = earningsLifetime;
 
-    const healthScore = refreshedProvider.performance.healthScore || 0;
-    const healthStatus = getHealthStatus(healthScore);
+    const healthScore = refreshedProvider.performance.healthScore; // Might be -1
+    const healthStatus = healthScore === -1 ? "Insufficient Data" : getHealthStatus(healthScore);
 
     // Timeline and efficiency (Source of Truth)
+    // Exclude extremely short durations (< 2 mins) from averages (Issue 9 & 15)
     const recentJobs = await Job.find({
         providerId: new mongoose.Types.ObjectId(userId),
-        status: { $in: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED] }
+        status: { $in: [JobStatus.COMPLETED, JobStatus.RATED, JobStatus.CLOSED] },
+        isTestJob: { $ne: true }
     }).limit(20);
 
     let totalArrivalMin = 0;
@@ -218,17 +247,23 @@ export const getFullProviderStats = async (userId: string) => {
 
     recentJobs.forEach(j => {
         if (j.acceptedAt && j.arrivedAt) {
-            totalArrivalMin += (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
-            arrivedCount++;
+            const arrDiff = (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
+            if (arrDiff > 1) { // Issue 8: Exclude < 1 min arrivals
+                totalArrivalMin += arrDiff;
+                arrivedCount++;
+            }
         }
         if (j.startedAt && j.completedAt) {
-            totalDurationMin += (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
-            durationCount++;
+            const durDiff = (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
+            if (durDiff > 2) { // Issue 9: Exclude < 2 mins duration
+                totalDurationMin += durDiff;
+                durationCount++;
+            }
         }
     });
 
-    const avgArrival = arrivedCount > 0 ? Math.round(totalArrivalMin / arrivedCount) : 0;
-    const avgDuration = durationCount > 0 ? Math.round(totalDurationMin / durationCount) : 0;
+    const avgArrivalLabel = arrivedCount > 0 ? `${Math.round(totalArrivalMin / arrivedCount)} mins` : null;
+    const avgDurationLabel = durationCount > 0 ? `${Math.round(totalDurationMin / durationCount)} mins` : null;
 
     const badges = await ProviderBadge.find({ providerId: refreshedProvider._id }).sort({ earnedAt: -1 }).limit(3);
 
@@ -242,20 +277,21 @@ export const getFullProviderStats = async (userId: string) => {
         jobsCancelled: refreshedProvider.performance.cancellationScore || 100,
         cancellationCount: jobsCancelledCount,
         jobsActive: activeCount,
-        acceptanceRate: refreshedProvider.performance.acceptanceRate || 100,
-        completionRate: refreshedProvider.performance.completionRate || 100,
-        arrivalRate: refreshedProvider.performance.arrivalRate || 100,
+        // Map -1 to null for DTO to handle "N/A" (Issue 1, 7, 14)
+        acceptanceRate: refreshedProvider.performance.acceptanceRate === -1 ? null : refreshedProvider.performance.acceptanceRate,
+        completionRate: refreshedProvider.performance.completionRate === -1 ? null : refreshedProvider.performance.completionRate,
+        arrivalRate: refreshedProvider.performance.arrivalRate === -1 ? null : refreshedProvider.performance.arrivalRate,
         reliabilityScore: refreshedProvider.performance.reliabilityScore || 100,
         cancellationScore: refreshedProvider.performance.cancellationScore || 100,
         onTimeResponseScore: refreshedProvider.performance.onTimeResponseScore || 100,
-        healthScore,
+        healthScore: healthScore === -1 ? null : healthScore,
         healthStatus,
-        averageArrivalTime: `${avgArrival} mins`,
-        averageJobDuration: `${avgDuration} mins`,
+        averageArrivalTime: avgArrivalLabel,
+        averageJobDuration: avgDurationLabel,
         mostRequestedService: refreshedProvider.servicesOffered[0] || 'N/A',
         tier: refreshedProvider.tier,
         tierProgress: 0.75,
-        rating: refreshedProvider.ratingAvg,
+        rating: refreshedProvider.ratingCount < 5 ? null : refreshedProvider.ratingAvg, // Issue 1: Hide until 5 jobs
         ratingCount: refreshedProvider.ratingCount || 0,
         isProbationActive: (refreshedProvider.ratingCount || 0) < 5,
         rankNational: refreshedProvider.performance.rankNational,
@@ -548,53 +584,15 @@ export const getProviderAnalytics = async (providerId: string, period: '7d' | '3
         ProviderBadge.find({ providerId }).sort({ earnedAt: -1 })
     ]);
 
-    const completedJobs = jobs.filter(j => j.status === JobStatus.COMPLETED || j.status === JobStatus.RATED || j.status === JobStatus.CLOSED);
-    const cancelledJobs = jobs.filter(j => j.status === JobStatus.CANCELLED);
-
-    // Calculate Average Arrival Time & Duration
-    let totalArrivalMin = 0;
-    let arrivedCount = 0;
-    let totalDurationMin = 0;
-    let durationCount = 0;
-
-    completedJobs.forEach(j => {
-        if (j.acceptedAt && j.arrivedAt) {
-            totalArrivalMin += (j.arrivedAt.getTime() - j.acceptedAt.getTime()) / (1000 * 60);
-            arrivedCount++;
-        }
-        if (j.startedAt && j.completedAt) {
-            totalDurationMin += (j.completedAt.getTime() - j.startedAt.getTime()) / (1000 * 60);
-            durationCount++;
-        }
-    });
-
-    const avgArrival = arrivedCount > 0 ? Math.round(totalArrivalMin / arrivedCount) : 0;
-    const avgDuration = durationCount > 0 ? Math.round(totalDurationMin / durationCount) : 0;
+    const stats = await getFullProviderStats(provider.userId.toString());
+    if (!stats) return null;
 
     return {
-        dailyEarnings: [], // Fill with real chart points if needed
-        weeklyEarnings: [],
-        monthlyEarnings: [],
-        lifetimeEarnings: earnings[0]?.total || 0,
-        totalJobsAccepted: provider.performance.acceptedJobs,
-        totalJobsCompleted: provider.performance.completedJobs,
-        totalJobsCancelled: provider.performance.cancellationScore,
-        acceptanceRate: provider.performance.acceptanceRate,
-        completionRate: provider.performance.completionRate,
-        arrivalRate: provider.performance.arrivalRate,
-        reliabilityScore: provider.performance.reliabilityScore,
-        cancellationScore: provider.performance.cancellationScore,
-        healthScore: provider.performance.healthScore,
-        healthStatus: getHealthStatus(provider.performance.healthScore),
-        averageArrivalTime: `${avgArrival} mins`,
-        averageJobDuration: `${avgDuration} mins`,
-        currentRank: provider.performance.rankNational || 0,
-        cityRank: provider.performance.rankCity || 0,
-        provinceRank: provider.performance.rankProvince || 0,
-        badges: badges.map(b => b.name),
-        mostRequestedService: provider.servicesOffered[0] || 'N/A',
-        activeSince: (provider.userId as any).createdAt?.toLocaleDateString() || 'N/A',
-        lastActive: provider.lastOnlineAt?.toLocaleString() || 'N/A',
+        ...stats,
+        lifetimeEarnings: earnings[0]?.total || stats.earningsLifetime,
+        totalJobsAccepted: stats.jobsAccepted,
+        totalJobsCompleted: stats.jobsCompleted,
+        totalJobsCancelled: stats.cancellationCount,
         ratingTrend: [],
         reliabilityTrend: [],
         tierProgression: 75
@@ -636,7 +634,7 @@ export const calculateRankings = async (countryCode: string = 'ZA') => {
     });
 
     for (const province of Object.keys(provinceMap)) {
-        const provProviders = await Provider.find({ userId: { $in: provinceMap[province] } })
+        const provProviders = await Provider.find({ userId: { $in: provinceMap[province] }, jobsCompleted: { $gte: 5 } })
             .sort({ 'performance.healthScore': -1, 'jobsCompleted': -1 })
             .select('_id');
 
@@ -650,7 +648,7 @@ export const calculateRankings = async (countryCode: string = 'ZA') => {
     }
 
     for (const city of Object.keys(cityMap)) {
-        const cityProviders = await Provider.find({ userId: { $in: cityMap[city] } })
+        const cityProviders = await Provider.find({ userId: { $in: cityMap[city] }, jobsCompleted: { $gte: 5 } })
             .sort({ 'performance.healthScore': -1, 'jobsCompleted': -1 })
             .select('_id');
 
