@@ -156,11 +156,6 @@ export const calculateHealthScore = async (providerId: string, session?: mongoos
 
     return healthScore;
 };
-        await notifyUser(provider.userId.toString(), 'Health Score Update', `Your overall health score is now ${healthScore.toFixed(0)}% (${status}).`);
-    }
-
-    return healthScore;
-};
 
 export const handleJobCompletionQuality = async (userId: string) => {
     const provider = await Provider.findOne({ userId });
