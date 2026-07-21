@@ -7,6 +7,7 @@ import Ledger, { TransactionType } from '../models/Ledger';
 import Notification from '../models/Notification';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 import * as notificationQueue from '../services/notification.queue';
 import { logger } from '../utils/logger';
 import mongoose from 'mongoose';
@@ -186,6 +187,21 @@ export const getPartnerNotifications = async (req: Request, res: Response) => {
         const partnerId = (req as any).user?.partnerId;
         const notifications = await Notification.find({ userId: partnerId }).sort({ createdAt: -1 }).limit(50);
         res.status(200).json({ success: true, data: notifications });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updatePartnerProfile = async (req: Request, res: Response) => {
+    try {
+        const partnerId = (req as any).user?.partnerId;
+        const { email, phone, name } = req.body;
+
+        const partner = await AffiliatePartner.findByIdAndUpdate(partnerId, {
+            email, phone, name
+        }, { new: true });
+
+        res.status(200).json({ success: true, data: partner });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -762,7 +778,7 @@ export const adminUpdateSettlementStatus = async (req: Request, res: Response) =
 
         // Notification to Partner
         notificationQueue.addNotificationToQueue({
-            type: 'NOTIFICATION',
+            type: 'PUSH',
             userId: partner._id.toString(),
             title: `Settlement Update: ${newStatus}`,
             body: `Your settlement request ${settlement.settlementId} is now ${newStatus.toLowerCase()}. ${note || ''}`,
