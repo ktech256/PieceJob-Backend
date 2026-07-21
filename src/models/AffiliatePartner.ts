@@ -37,6 +37,18 @@ export interface IAffiliatePartner extends Document {
         available: number;
         paid: number;
     };
+    commissionSettings: {
+        customerReward: number;
+        providerReward: number;
+        businessReward: number;
+        maxRewardableJobs: number;
+        customerEnabled: boolean;
+        providerEnabled: boolean;
+        businessEnabled: boolean;
+        effectiveDate: Date;
+        createdBy?: string;
+        updatedBy?: string;
+    };
     createdAt: Date;
     updatedAt: Date;
 }
@@ -71,6 +83,18 @@ const AffiliatePartnerSchema: Schema = new Schema({
         pending: { type: Number, default: 0 },
         available: { type: Number, default: 0 },
         paid: { type: Number, default: 0 }
+    },
+    commissionSettings: {
+        customerReward: { type: Number, default: 10 },
+        providerReward: { type: Number, default: 20 },
+        businessReward: { type: Number, default: 50 },
+        maxRewardableJobs: { type: Number, default: 5 },
+        customerEnabled: { type: Boolean, default: true },
+        providerEnabled: { type: Boolean, default: true },
+        businessEnabled: { type: Boolean, default: true },
+        effectiveDate: { type: Date, default: Date.now },
+        createdBy: { type: String },
+        updatedBy: { type: String }
     }
 }, { timestamps: true });
 

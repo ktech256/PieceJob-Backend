@@ -62,12 +62,17 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
         // Fetch reward history for trend and stats
-        const rewards = await ReferralReward.find({ referrerId: partnerId });
+        const rewards = await ReferralReward.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName');
         const referrals = await ReferralRecord.find({ referrerId: partnerId });
+        const records = await ReferralRecord.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName');
 
         const earningsToday = rewards.filter(r => r.createdAt >= startOfDay).reduce((acc, r) => acc + r.amount, 0);
         const earningsWeekly = rewards.filter(r => r.createdAt >= startOfWeek).reduce((acc, r) => acc + r.amount, 0);
         const earningsMonthly = rewards.filter(r => r.createdAt >= startOfMonth).reduce((acc, r) => acc + r.amount, 0);
+
+        const latestCommission = rewards.length > 0 ? rewards.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] : null;
+        const topReferral = referrals.length > 0 ? referrals.sort((a, b) => b.totalCommissionGenerated - a.totalCommissionGenerated)[0] : null;
+        const latestReferral = records.length > 0 ? records.sort((a, b) => (b.createdAt as any) - (a.createdAt as any))[0] : null;
 
         res.status(200).json({
             success: true,
@@ -86,6 +91,22 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
                     weekly: earningsWeekly,
                     monthly: earningsMonthly,
                     lifetime: rewards.reduce((acc, r) => acc + r.amount, 0)
+                },
+                highlights: {
+                    latestCommission: latestCommission ? {
+                        amount: latestCommission.amount,
+                        date: latestCommission.createdAt,
+                        referredUser: latestCommission.referredId
+                    } : null,
+                    topReferral: topReferral ? {
+                        id: topReferral._id,
+                        commission: topReferral.totalCommissionGenerated,
+                        jobs: topReferral.jobsCompletedCount
+                    } : null,
+                    latestReferral: latestReferral ? {
+                        name: `${(latestReferral.referredId as any).firstName} ${(latestReferral.referredId as any).lastName}`,
+                        date: latestReferral.createdAt
+                    } : null
                 },
                 recentActivity: rewards.slice(0, 10).map(r => ({
                     id: r._id,
@@ -125,28 +146,28 @@ export const getPartnerReports = async (req: Request, res: Response) => {
         const partnerId = (req as any).user?.partnerId;
 
         // Aggregate stats per campaign or period
-        const records = await ReferralRecord.find({ referrerId: partnerId });
+        const records = await ReferralRecord.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName role createdAt');
         const rewards = await ReferralReward.find({ referrerId: partnerId });
-
-        // Simple monthly aggregation
-        const monthlyStats = await ReferralReward.aggregate([
-            { $match: { referrerId: new mongoose.Types.ObjectId(partnerId), status: 'REWARDED' } },
-            {
-                $group: {
-                    _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" } },
-                    totalEarned: { $sum: "$amount" },
-                    count: { $sum: 1 }
-                }
-            },
-            { $sort: { "_id.year": -1, "_id.month": -1 } }
-        ]);
 
         res.status(200).json({
             success: true,
             data: {
                 totalReferrals: records.length,
                 qualifiedCount: records.filter(r => r.jobsCompletedCount > 0).length,
-                monthlyStats
+                referrals: records.map(r => ({
+                    id: r._id,
+                    user: {
+                        name: `${(r.referredId as any).firstName} ${(r.referredId as any).lastName}`,
+                        role: (r.referredId as any).role,
+                        joinedAt: (r.referredId as any).createdAt
+                    },
+                    jobsCompleted: r.jobsCompletedCount,
+                    rewardsIssued: r.rewardsIssuedCount,
+                    commissionGenerated: r.totalCommissionGenerated,
+                    lifetimeSpend: r.totalSpend,
+                    status: r.status,
+                    lastActivity: r.lastCompletedJobAt
+                }))
             }
         });
     } catch (error: any) {
@@ -182,7 +203,7 @@ export const updatePartnerProfile = async (req: Request, res: Response) => {
 export const createPartner = async (req: Request, res: Response) => {
     logger.info(`[AFFILIATE] Onboarding Request Received: ${req.body.email}`);
     try {
-        const { name, email, phone, type, contactPerson, countryCode, commissionModel, commissionValue, password } = req.body;
+        const { name, email, phone, type, contactPerson, countryCode, commissionModel, commissionValue, password, commissionSettings } = req.body;
 
         // 1. Structural Validation
         if (!name || !email || !phone || !type || !contactPerson || !countryCode || !commissionValue) {
@@ -217,7 +238,20 @@ export const createPartner = async (req: Request, res: Response) => {
             ...req.body,
             email: email.toLowerCase(),
             passwordHash,
-            referralCode
+            referralCode,
+            commissionSettings: {
+                ...(commissionSettings || {
+                    customerReward: 10,
+                    providerReward: 20,
+                    businessReward: 50,
+                    maxRewardableJobs: 5,
+                    customerEnabled: true,
+                    providerEnabled: true,
+                    businessEnabled: true,
+                    effectiveDate: new Date()
+                }),
+                createdBy: (req as any).user?.userId
+            }
         });
 
         await partner.save();
@@ -305,7 +339,32 @@ export const getPartners = async (req: Request, res: Response) => {
                             }
                         }
                     },
+                    jobsWeekly: {
+                        $size: {
+                            $filter: {
+                                input: "$rewardDocs",
+                                as: "rw",
+                                cond: { $gte: ["$$rw.createdAt", startOfWeek] }
+                            }
+                        }
+                    },
+                    jobsMonthly: {
+                        $size: {
+                            $filter: {
+                                input: "$rewardDocs",
+                                as: "rw",
+                                cond: { $gte: ["$$rw.createdAt", startOfMonth] }
+                            }
+                        }
+                    },
                     earningsLifetime: { $sum: "$rewardDocs.amount" },
+                    averageEarningsPerReferral: {
+                        $cond: [
+                            { $gt: [{ $size: "$referralDocs" }, 0] },
+                            { $divide: [{ $sum: "$rewardDocs.amount" }, { $size: "$referralDocs" }] },
+                            0
+                        ]
+                    },
                     paidCommission: "$balance.paid",
                     pendingCommission: {
                         $sum: {
@@ -375,6 +434,11 @@ export const updatePartner = async (req: Request, res: Response) => {
         const updateData: any = { ...req.body };
         if (email) updateData.email = email.toLowerCase();
 
+        if (updateData.commissionSettings) {
+            updateData.commissionSettings.updatedBy = (req as any).user?.userId;
+            updateData.commissionSettings.effectiveDate = new Date();
+        }
+
         // Remove sensitive or read-only fields from updateData
         delete updateData.passwordHash;
         delete updateData.referralCode;
@@ -403,6 +467,17 @@ export const getPartnerAnalytics = async (req: Request, res: Response) => {
             Ledger.find({ toUserId: id, type: TransactionType.REFERRAL_REWARD }).sort({ createdAt: -1 })
         ]);
 
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+        const yesterday = new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000);
+        const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const earningsToday = rewards.filter(r => r.createdAt >= startOfDay).reduce((acc, r) => acc + r.amount, 0);
+        const earningsYesterday = rewards.filter(r => r.createdAt >= yesterday && r.createdAt < startOfDay).reduce((acc, r) => acc + r.amount, 0);
+        const earningsWeekly = rewards.filter(r => r.createdAt >= startOfWeek).reduce((acc, r) => acc + r.amount, 0);
+        const earningsMonthly = rewards.filter(r => r.createdAt >= startOfMonth).reduce((acc, r) => acc + r.amount, 0);
+
         // Geographic mapping (Province-based)
         const geoStats = await mongoose.model('User').aggregate([
             { $match: { _id: { $in: referrals.map(r => r.referredId) } } },
@@ -415,7 +490,8 @@ export const getPartnerAnalytics = async (req: Request, res: Response) => {
             {
                 $group: {
                     _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" } },
-                    amount: { $sum: "$amount" }
+                    amount: { $sum: "$amount" },
+                    jobs: { $sum: 1 }
                 }
             },
             { $sort: { "_id.year": 1, "_id.month": 1 } }
@@ -427,10 +503,17 @@ export const getPartnerAnalytics = async (req: Request, res: Response) => {
                 partner,
                 metrics: {
                     totalReferrals: referrals.length,
+                    activeLeads: referrals.filter(r => r.status === 'ACTIVE').length,
                     customerSignups: referrals.filter((r: any) => r.referredId?.role === 'CUSTOMER').length,
                     providerSignups: referrals.filter((r: any) => r.referredId?.role === 'PROVIDER').length,
                     conversionRate: referrals.length > 0 ? (referrals.filter(r => r.jobsCompletedCount > 0).length / referrals.length) * 100 : 0,
+                    jobsLifetime: referrals.reduce((acc, r) => acc + r.jobsCompletedCount, 0),
+                    revenueGenerated: referrals.reduce((acc, r) => acc + (r.lifetimeJobValue || 0), 0),
                     earnings: {
+                        today: earningsToday,
+                        yesterday: earningsYesterday,
+                        weekly: earningsWeekly,
+                        monthly: earningsMonthly,
                         total: rewards.reduce((acc, r) => acc + r.amount, 0),
                         paid: partner.balance.paid,
                         available: partner.balance.available,
@@ -439,8 +522,19 @@ export const getPartnerAnalytics = async (req: Request, res: Response) => {
                 },
                 geoStats,
                 monthlyTrend,
-                recentReferrals: referrals.slice(0, 10),
-                recentTransactions: ledgerEntries.slice(0, 10)
+                referrals: referrals.map(r => ({
+                    id: r._id,
+                    user: r.referredId,
+                    completedJobs: r.jobsCompletedCount,
+                    rewardedJobs: r.rewardsIssuedCount,
+                    maxRewards: r.maxRewardableJobs,
+                    commission: r.totalCommissionGenerated,
+                    revenue: r.lifetimeJobValue,
+                    status: r.status,
+                    createdAt: r.createdAt,
+                    lastJob: r.lastCompletedJobAt
+                })),
+                recentTransactions: ledgerEntries.slice(0, 15)
             }
         });
     } catch (error: any) {

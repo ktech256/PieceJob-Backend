@@ -73,21 +73,6 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         return;
     }
 
-    // Determine Rules (Prioritize Campaign, Fallback to System Settings)
-    const minJobs = campaign?.minCompletedJobs ?? settings?.referralMinCompletedJobs ?? 1;
-    const maxRewards = campaign?.maxRewardsPerReferral ?? settings?.referralMaxRewardsPerUser ?? 5;
-    const rewardDelay = campaign?.rewardDelayDays ?? settings?.referralRewardDelayDays ?? 0;
-    const expiryDays = settings?.referralExpiryDays ?? 0;
-
-    // ISSUE 3: Configurable Referral Commission Rules (Role-based)
-    let baseRewardAmount = 0;
-    if (user.role === UserRole.CUSTOMER) baseRewardAmount = settings?.referralRewardCustomer ?? 10;
-    else if (user.role === UserRole.PROVIDER) baseRewardAmount = settings?.referralRewardProvider ?? 20;
-    else baseRewardAmount = settings?.referralRewardBusiness ?? 50;
-
-    const currency = (campaign?.currency ?? settings?.countryCode) || 'USD';
-    const rewardType = settings?.referralRewardType || 'REFERRAL_BALANCE';
-
     // Get or Create Referral Record
     let record = await ReferralRecord.findOne({
         referrerId: user.referredBy,
@@ -124,15 +109,6 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
 
     if (record.isDisabled) return;
 
-    // EXPIRY CHECK: If referral expired, no reward.
-    if (expiryDays > 0) {
-        const expiryDate = new Date(record.createdAt.getTime() + (expiryDays * 24 * 60 * 60 * 1000));
-        if (new Date() > expiryDate) {
-            logger.info(`Referral expired for user ${user._id}. Created at ${record.createdAt}, Expired at ${expiryDate}`);
-            return;
-        }
-    }
-
     // ISSUE 8: IDEMPOTENCY / Duplicate Protection
     const existingReward = await ReferralReward.findOne({
         referredId: user._id,
@@ -145,38 +121,84 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
     }
 
     const jobPrice = job.agreedPrice || ((job.serviceFee || 0) + (job.bookingFee || 0));
+    const platformRevenue = jobPrice * ((job.serviceFeeRateSnapshot || 15) / 100);
 
     // ISSUE 4: Increment Counters (Update before eligibility check)
     record.jobsCompletedCount += 1;
     record.lifetimeJobValue += jobPrice;
-    record.totalSpend += jobPrice;
+    record.lifetimePlatformRevenue += platformRevenue;
+
+    // Track spend/earnings based on role
+    if (user.role === UserRole.CUSTOMER) {
+        record.totalSpend += jobPrice;
+    } else if (user.role === UserRole.PROVIDER) {
+        record.lifetimeEarnings += (jobPrice - platformRevenue);
+    }
+
     record.lastCompletedJobAt = new Date();
 
-    // ISSUE 3: Maximum Rewardable Jobs Enforcement
-    const isEligibleForReward = record.jobsCompletedCount >= minJobs && record.rewardsIssuedCount < maxRewards;
+    // Determine Rules (Prioritize Partner Settings if referrer is a Partner)
+    let minJobs = campaign?.minCompletedJobs ?? settings?.referralMinCompletedJobs ?? 1;
+    let maxRewards = campaign?.maxRewardsPerReferral ?? settings?.referralMaxRewardsPerUser ?? 5;
+    let rewardDelay = campaign?.rewardDelayDays ?? settings?.referralRewardDelayDays ?? 0;
+    const expiryDays = settings?.referralExpiryDays ?? 0;
 
-    if (isEligibleForReward) {
-        // Calculate Reward Amount for Partners vs Users
-        let finalRewardAmount = baseRewardAmount;
-        if (record.referrerType === 'PARTNER') {
-            const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
-            if (partner) {
-                if (partner.commissionModel === 'PERCENTAGE') {
-                    finalRewardAmount = (jobPrice) * (partner.commissionValue / 100);
-                } else {
-                    finalRewardAmount = partner.commissionValue;
-                }
+    // EXPIRY CHECK: If referral expired, no reward.
+    if (expiryDays > 0) {
+        const expiryDate = new Date(record.createdAt.getTime() + (expiryDays * 24 * 60 * 60 * 1000));
+        if (new Date() > expiryDate) {
+            logger.info(`Referral expired for user ${user._id}. Created at ${record.createdAt}, Expired at ${expiryDate}`);
+            await record.save({ session });
+            return;
+        }
+    }
+
+    let baseRewardAmount = 0;
+    let isRewardEnabled = true;
+
+    if (record.referrerType === 'PARTNER') {
+        const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
+        if (partner && partner.commissionSettings) {
+            maxRewards = partner.commissionSettings.maxRewardableJobs ?? maxRewards;
+
+            if (user.role === UserRole.CUSTOMER) {
+                baseRewardAmount = partner.commissionSettings.customerReward;
+                isRewardEnabled = partner.commissionSettings.customerEnabled;
+            } else if (user.role === UserRole.PROVIDER) {
+                baseRewardAmount = partner.commissionSettings.providerReward;
+                isRewardEnabled = partner.commissionSettings.providerEnabled;
+            } else {
+                baseRewardAmount = partner.commissionSettings.businessReward;
+                isRewardEnabled = partner.commissionSettings.businessEnabled;
+            }
+
+            // Check if partner's custom commission model overrides baseRewardAmount
+            if (partner.commissionModel === 'PERCENTAGE') {
+                baseRewardAmount = (jobPrice) * (partner.commissionValue / 100);
             }
         }
+    } else {
+        // Fallback to global role-based rewards for non-partner referrers
+        if (user.role === UserRole.CUSTOMER) baseRewardAmount = settings?.referralRewardCustomer ?? 10;
+        else if (user.role === UserRole.PROVIDER) baseRewardAmount = settings?.referralRewardProvider ?? 20;
+        else baseRewardAmount = settings?.referralRewardBusiness ?? 50;
+    }
 
-        // ISSUE 7: Create Detailed Audit Reward Event
+    const currency = (campaign?.currency ?? settings?.countryCode) || 'USD';
+    const rewardType = settings?.referralRewardType || 'REFERRAL_BALANCE';
+
+    // ISSUE 3 & 4: Eligibility check using dynamic rules
+    const isEligibleForReward = isRewardEnabled && record.jobsCompletedCount >= minJobs && record.rewardsIssuedCount < maxRewards;
+
+    if (isEligibleForReward) {
+        // Create Reward Event
         const reward = new ReferralReward({
             referrerId: user.referredBy,
             referrerType: record.referrerType,
             referredId: user._id,
             jobId: job._id,
             campaignId: campaign?._id || new mongoose.Types.ObjectId(),
-            amount: finalRewardAmount,
+            amount: baseRewardAmount,
             currency: currency,
             rewardType: rewardType,
             status: ReferralStatus.PENDING,
@@ -198,8 +220,9 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         }
 
         record.rewardsIssuedCount += 1;
-        record.totalCommissionGenerated += finalRewardAmount;
+        record.totalCommissionGenerated += baseRewardAmount;
         record.lastCommissionDate = new Date();
+        record.maxRewardableJobs = maxRewards; // Keep record of what the limit was
 
         if (record.referrerType === 'PARTNER') {
             const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
