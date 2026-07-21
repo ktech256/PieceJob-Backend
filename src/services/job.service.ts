@@ -211,7 +211,7 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
 
                 // Referral Processing (End-to-End Implementation)
                 const referralService = require('./referral.service');
-                referralService.handleJobCompletion(job);
+                await referralService.handleJobCompletion(job);
 
                 // RESET PROVIDER AVAILABILITY (FIX FOR PERSISTENCE ISSUE)
                 const presenceService = require('./provider-presence.service');

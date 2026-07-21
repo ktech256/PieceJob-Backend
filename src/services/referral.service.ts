@@ -158,18 +158,28 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
 
     if (record.referrerType === 'PARTNER') {
         const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
-        if (partner && partner.commissionSettings) {
-            maxRewards = partner.commissionSettings.maxRewardableJobs ?? maxRewards;
+        const partnerSettings = partner?.commissionSettings || {
+            customerReward: settings?.referralRewardCustomer || 10,
+            providerReward: settings?.referralRewardProvider || 20,
+            businessReward: settings?.referralRewardBusiness || 50,
+            maxRewardableJobs: settings?.referralMaxRewardsPerUser || 5,
+            customerEnabled: true,
+            providerEnabled: true,
+            businessEnabled: true
+        };
+
+        if (partner) {
+            maxRewards = partnerSettings.maxRewardableJobs ?? maxRewards;
 
             if (user.role === UserRole.CUSTOMER) {
-                baseRewardAmount = partner.commissionSettings.customerReward;
-                isRewardEnabled = partner.commissionSettings.customerEnabled;
+                baseRewardAmount = partnerSettings.customerReward;
+                isRewardEnabled = partnerSettings.customerEnabled;
             } else if (user.role === UserRole.PROVIDER) {
-                baseRewardAmount = partner.commissionSettings.providerReward;
-                isRewardEnabled = partner.commissionSettings.providerEnabled;
+                baseRewardAmount = partnerSettings.providerReward;
+                isRewardEnabled = partnerSettings.providerEnabled;
             } else {
-                baseRewardAmount = partner.commissionSettings.businessReward;
-                isRewardEnabled = partner.commissionSettings.businessEnabled;
+                baseRewardAmount = partnerSettings.businessReward;
+                isRewardEnabled = partnerSettings.businessEnabled;
             }
 
             // Check if partner's custom commission model overrides baseRewardAmount
