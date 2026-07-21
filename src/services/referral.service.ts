@@ -301,6 +301,7 @@ export const executeRewardPayout = async (reward: any, session?: mongoose.Client
 
             // Partners accumulate balance in their model, not a standard wallet
             partner.balance.available += reward.amount;
+            partner.balance.lifetime += reward.amount;
             partner.stats.rewardedJobs += 1;
             await partner.save({ session });
 

@@ -36,7 +36,18 @@ export interface IAffiliatePartner extends Document {
     balance: {
         pending: number;
         available: number;
+        requested: number;
+        processing: number;
         paid: number;
+        lifetime: number;
+    };
+    bankingDetails?: {
+        bankName: string;
+        accountHolder: string;
+        accountNumber: string;
+        branchCode: string;
+        accountType: string;
+        swiftCode?: string;
     };
     commissionSettings: {
         customerReward: number;
@@ -84,7 +95,18 @@ const AffiliatePartnerSchema: Schema = new Schema({
     balance: {
         pending: { type: Number, default: 0 },
         available: { type: Number, default: 0 },
-        paid: { type: Number, default: 0 }
+        requested: { type: Number, default: 0 },
+        processing: { type: Number, default: 0 },
+        paid: { type: Number, default: 0 },
+        lifetime: { type: Number, default: 0 }
+    },
+    bankingDetails: {
+        bankName: { type: String },
+        accountHolder: { type: String },
+        accountNumber: { type: String },
+        branchCode: { type: String },
+        accountType: { type: String },
+        swiftCode: { type: String }
     },
     commissionSettings: {
         customerReward: { type: Number, default: 10 },

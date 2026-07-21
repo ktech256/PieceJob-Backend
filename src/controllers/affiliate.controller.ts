@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import AffiliatePartner, { AffiliateStatus } from '../models/AffiliatePartner';
+import AffiliateSettlement, { SettlementStatus } from '../models/AffiliateSettlement';
 import ReferralRecord from '../models/ReferralRecord';
 import ReferralReward from '../models/ReferralReward';
 import Ledger, { TransactionType } from '../models/Ledger';
@@ -90,11 +91,12 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
                     registrations: referrals.length
                 },
                 balance: partner.balance,
+                bankingDetails: partner.bankingDetails,
                 earnings: {
                     today: earningsToday,
                     weekly: earningsWeekly,
                     monthly: earningsMonthly,
-                    lifetime: rewards.reduce((acc, r) => acc + r.amount, 0)
+                    lifetime: partner.balance.lifetime
                 },
                 highlights: {
                     latestCommission: latestCommission ? {
@@ -189,13 +191,15 @@ export const getPartnerNotifications = async (req: Request, res: Response) => {
     }
 };
 
-export const updatePartnerProfile = async (req: Request, res: Response) => {
+export const updatePartnerBanking = async (req: Request, res: Response) => {
     try {
         const partnerId = (req as any).user?.partnerId;
-        const { email, phone, name } = req.body;
+        const { bankName, accountHolder, accountNumber, branchCode, accountType, swiftCode } = req.body;
 
         const partner = await AffiliatePartner.findByIdAndUpdate(partnerId, {
-            email, phone, name
+            bankingDetails: {
+                bankName, accountHolder, accountNumber, branchCode, accountType, swiftCode
+            }
         }, { new: true });
 
         res.status(200).json({ success: true, data: partner });
@@ -520,10 +524,12 @@ export const getPartnerAnalytics = async (req: Request, res: Response) => {
                         yesterday: earningsYesterday,
                         weekly: earningsWeekly,
                         monthly: earningsMonthly,
-                        total: rewards.reduce((acc, r) => acc + r.amount, 0),
+                        total: partner.balance.lifetime,
                         paid: partner.balance.paid,
                         available: partner.balance.available,
-                        pending: rewards.filter(r => r.status === 'PENDING').reduce((acc, r) => acc + r.amount, 0)
+                        requested: partner.balance.requested,
+                        processing: partner.balance.processing,
+                        pending: partner.balance.pending
                     }
                 },
                 geoStats,
@@ -545,5 +551,229 @@ export const getPartnerAnalytics = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Partner: Request a new settlement
+ */
+export const requestSettlement = async (req: Request, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const partnerId = (req as any).user?.partnerId;
+        const { amount, notes } = req.body;
+
+        const partner = await AffiliatePartner.findById(partnerId).session(session);
+        if (!partner) throw new Error('Partner not found');
+
+        if (partner.status !== AffiliateStatus.ACTIVE) {
+            throw new Error('Account is not active. Settlement requests are disabled.');
+        }
+
+        const requestedAmount = Number(amount);
+        if (isNaN(requestedAmount) || requestedAmount <= 0) {
+            throw new Error('Invalid settlement amount.');
+        }
+
+        if (requestedAmount > partner.balance.available) {
+            throw new Error('Requested amount exceeds available balance.');
+        }
+
+        // Check for existing pending settlement
+        const pending = await AffiliateSettlement.findOne({
+            partnerId,
+            status: { $in: [SettlementStatus.PENDING, SettlementStatus.APPROVED, SettlementStatus.PROCESSING] }
+        }).session(session);
+
+        if (pending) {
+            throw new Error('You already have a settlement request in progress.');
+        }
+
+        if (!partner.bankingDetails || !partner.bankingDetails.accountNumber) {
+            throw new Error('Please update your banking details before requesting settlement.');
+        }
+
+        const settlementId = `SET-${uuidv4().slice(0, 8).toUpperCase()}`;
+
+        const settlement = new AffiliateSettlement({
+            settlementId,
+            partnerId: partner._id,
+            amount: requestedAmount,
+            currency: 'R', // TODO: Dynamic based on workspace
+            countryCode: partner.countryCode,
+            bankDetails: partner.bankingDetails,
+            partnerNotes: notes,
+            auditLog: [{
+                action: 'REQUEST_SUBMITTED',
+                timestamp: new Date(),
+                newStatus: SettlementStatus.PENDING,
+                note: 'Partner submitted settlement request'
+            }]
+        });
+
+        // Update Partner Balance: Available -> Requested
+        partner.balance.available -= requestedAmount;
+        partner.balance.requested += requestedAmount;
+
+        await settlement.save({ session });
+        await partner.save({ session });
+
+        await session.commitTransaction();
+
+        // Notify Admin
+        notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: 'finance@piecejob.co', // TODO: Target correct finance team
+            templateCode: 'NEW_SETTLEMENT_REQUEST',
+            templateData: {
+                partnerName: partner.name,
+                amount: `${requestedAmount} R`,
+                settlementId
+            },
+            countryCode: partner.countryCode
+        });
+
+        res.status(201).json({ success: true, data: settlement });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(400).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
+    }
+};
+
+/**
+ * Partner: Get own settlement history
+ */
+export const getPartnerSettlements = async (req: Request, res: Response) => {
+    try {
+        const partnerId = (req as any).user?.partnerId;
+        const settlements = await AffiliateSettlement.find({ partnerId }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: settlements });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Admin: Get all settlement requests
+ */
+export const adminGetSettlements = async (req: Request, res: Response) => {
+    try {
+        const { countryCode, status, partnerId } = req.query;
+        const query: any = {};
+        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+        if (status) query.status = status;
+        if (partnerId) query.partnerId = partnerId;
+
+        const settlements = await AffiliateSettlement.find(query)
+            .populate('partnerId', 'name referralCode type countryCode balance stats')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ success: true, data: settlements });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Admin: Update settlement status (Approve, Process, Pay, Reject)
+ */
+export const adminUpdateSettlementStatus = async (req: Request, res: Response) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const { id } = req.params;
+        const { status, note, paymentReference } = req.body;
+        const adminId = (req as any).user?.userId;
+
+        const settlement = await AffiliateSettlement.findById(id).session(session);
+        if (!settlement) throw new Error('Settlement request not found');
+
+        const partner = await AffiliatePartner.findById(settlement.partnerId).session(session);
+        if (!partner) throw new Error('Partner not found');
+
+        const oldStatus = settlement.status;
+        const newStatus = status as SettlementStatus;
+
+        if (oldStatus === newStatus) return res.status(200).json({ success: true, data: settlement });
+
+        // Logic based on status transition
+        switch (newStatus) {
+            case SettlementStatus.PROCESSING:
+                // Move Requested -> Processing
+                partner.balance.requested -= settlement.amount;
+                partner.balance.processing += settlement.amount;
+                settlement.processedAt = new Date();
+                break;
+
+            case SettlementStatus.PAID:
+                // Finalize payment
+                if (oldStatus === SettlementStatus.PROCESSING) {
+                    partner.balance.processing -= settlement.amount;
+                } else if (oldStatus === SettlementStatus.APPROVED || oldStatus === SettlementStatus.PENDING) {
+                    partner.balance.requested -= settlement.amount;
+                }
+                partner.balance.paid += settlement.amount;
+                settlement.paidAt = new Date();
+                settlement.paymentReference = paymentReference;
+
+                // Create Ledger Entry
+                await Ledger.create([{
+                    transactionId: `PAY-${uuidv4().slice(0, 8).toUpperCase()}`,
+                    toUserId: partner._id,
+                    amount: settlement.amount,
+                    currency: settlement.currency,
+                    countryCode: settlement.countryCode,
+                    type: TransactionType.PAYOUT,
+                    status: 'COMPLETED',
+                    description: `Affiliate Settlement: ${settlement.settlementId}`,
+                    metadata: { settlementId: settlement._id }
+                }], { session });
+                break;
+
+            case SettlementStatus.REJECTED:
+            case SettlementStatus.CANCELLED:
+                // Return funds to Available
+                if (oldStatus === SettlementStatus.PROCESSING) {
+                    partner.balance.processing -= settlement.amount;
+                } else {
+                    partner.balance.requested -= settlement.amount;
+                }
+                partner.balance.available += settlement.amount;
+                break;
+        }
+
+        settlement.status = newStatus;
+        settlement.auditLog.push({
+            action: `ADMIN_${newStatus}`,
+            adminId,
+            timestamp: new Date(),
+            oldStatus,
+            newStatus,
+            note
+        });
+
+        await settlement.save({ session });
+        await partner.save({ session });
+
+        await session.commitTransaction();
+
+        // Notification to Partner
+        notificationQueue.addNotificationToQueue({
+            type: 'NOTIFICATION',
+            userId: partner._id.toString(),
+            title: `Settlement Update: ${newStatus}`,
+            body: `Your settlement request ${settlement.settlementId} is now ${newStatus.toLowerCase()}. ${note || ''}`,
+            countryCode: partner.countryCode
+        });
+
+        res.status(200).json({ success: true, data: settlement });
+    } catch (error: any) {
+        await session.abortTransaction();
+        res.status(400).json({ success: false, message: error.message });
+    } finally {
+        session.endSession();
     }
 };
