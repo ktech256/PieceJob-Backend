@@ -147,22 +147,51 @@ export const updatePartnerProfile = async (req: Request, res: Response) => {
 };
 
 export const createPartner = async (req: Request, res: Response) => {
+    logger.info(`[AFFILIATE] Onboarding Request Received: ${req.body.email}`);
     try {
-        const { name, email, phone, type, countryCode, commissionModel, commissionValue, password } = req.body;
+        const { name, email, phone, type, contactPerson, countryCode, commissionModel, commissionValue, password } = req.body;
+
+        // 1. Structural Validation
+        if (!name || !email || !phone || !type || !contactPerson || !countryCode || !commissionValue) {
+            logger.warn(`[AFFILIATE] Validation Failed: Missing required fields in request`);
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields: Partner Name, Email, Phone, Type, Contact Person, and Commission Value are mandatory.'
+            });
+        }
+
+        // 2. Duplicate Check
+        const existing = await AffiliatePartner.findOne({
+            $or: [
+                { email: email.toLowerCase() },
+                { phone }
+            ]
+        });
+
+        if (existing) {
+            const field = existing.email === email.toLowerCase() ? 'Email' : 'Phone';
+            logger.warn(`[AFFILIATE] Onboarding Failed: Duplicate ${field} (${existing.email}/${existing.phone})`);
+            return res.status(409).json({
+                success: false,
+                message: `This ${field.toLowerCase()} is already associated with an existing partner.`
+            });
+        }
 
         const passwordHash = await bcrypt.hash(password || 'PJPartner2024!', 10);
         const referralCode = Math.random().toString(36).substring(2, 10).toUpperCase();
 
         const partner = new AffiliatePartner({
             ...req.body,
+            email: email.toLowerCase(),
             passwordHash,
             referralCode
         });
 
         await partner.save();
+        logger.info(`[AFFILIATE] Partner Entity Created: ${partner._id} | Code: ${referralCode}`);
 
-        // Dispatch Welcome Partner Email
-        await notificationQueue.addNotificationToQueue({
+        // 3. Dispatch Welcome Partner Email (Fire and forget, don't block response)
+        notificationQueue.addNotificationToQueue({
             type: 'EMAIL',
             email: partner.email,
             templateCode: 'WELCOME_PARTNER',
@@ -172,11 +201,14 @@ export const createPartner = async (req: Request, res: Response) => {
                 password: password || 'PJPartner2024!'
             },
             countryCode: partner.countryCode
+        }).catch(err => {
+            logger.error(`[AFFILIATE] Welcome Email Dispatch Failed for ${partner.email}`, err);
         });
 
         res.status(201).json({ success: true, data: partner });
     } catch (error: any) {
-        res.status(500).json({ success: false, message: error.message });
+        logger.error(`[AFFILIATE] Onboarding Execution Error`, error);
+        res.status(500).json({ success: false, message: error.message || 'An unexpected error occurred during partner onboarding.' });
     }
 };
 
