@@ -214,12 +214,128 @@ export const createPartner = async (req: Request, res: Response) => {
 
 export const getPartners = async (req: Request, res: Response) => {
     try {
-        const { countryCode } = req.query;
+        const { countryCode, search, status } = req.query;
         const query: any = {};
         if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode;
+        if (status) query.status = status;
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { referralCode: { $regex: search, $options: 'i' } }
+            ];
+        }
 
-        const partners = await AffiliatePartner.find(query).sort({ createdAt: -1 });
+        // Aggregate performance for each partner
+        const partners = await AffiliatePartner.aggregate([
+            { $match: query },
+            {
+                $lookup: {
+                    from: 'referralrecords',
+                    localField: '_id',
+                    foreignField: 'referrerId',
+                    as: 'referralDocs'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'referralrewards',
+                    localField: '_id',
+                    foreignField: 'referrerId',
+                    as: 'rewardDocs'
+                }
+            },
+            {
+                $addFields: {
+                    totalReferrals: { $size: "$referralDocs" },
+                    activeReferrals: {
+                        $size: {
+                            $filter: {
+                                input: "$referralDocs",
+                                as: "r",
+                                cond: { $eq: ["$$r.isDisabled", false] }
+                            }
+                        }
+                    },
+                    earningsLifetime: { $sum: "$rewardDocs.amount" },
+                    pendingCommission: {
+                        $sum: {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: "$rewardDocs",
+                                        as: "rw",
+                                        cond: { $eq: ["$$rw.status", 'PENDING'] }
+                                    }
+                                },
+                                as: "p",
+                                in: "$$p.amount"
+                            }
+                        }
+                    }
+                }
+            },
+            { $sort: { createdAt: -1 } }
+        ]);
+
         res.status(200).json({ success: true, data: partners });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getPartnerAnalytics = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const partner = await AffiliatePartner.findById(id);
+        if (!partner) return res.status(404).json({ success: false, message: 'Partner not found' });
+
+        const [referrals, rewards, ledgerEntries] = await Promise.all([
+            ReferralRecord.find({ referrerId: id }).populate('referredId', 'firstName lastName email profilePhoto role createdAt'),
+            ReferralReward.find({ referrerId: id }),
+            Ledger.find({ toUserId: id, type: TransactionType.REFERRAL_REWARD }).sort({ createdAt: -1 })
+        ]);
+
+        // Geographic mapping (Province-based)
+        const geoStats = await mongoose.model('User').aggregate([
+            { $match: { _id: { $in: referrals.map(r => r.referredId) } } },
+            { $group: { _id: "$province", count: { $sum: 1 } } }
+        ]);
+
+        // Monthly Trend
+        const monthlyTrend = await ReferralReward.aggregate([
+            { $match: { referrerId: new mongoose.Types.ObjectId(id), status: 'REWARDED' } },
+            {
+                $group: {
+                    _id: { month: { $month: "$createdAt" }, year: { $year: "$createdAt" } },
+                    amount: { $sum: "$amount" }
+                }
+            },
+            { $sort: { "_id.year": 1, "_id.month": 1 } }
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                partner,
+                metrics: {
+                    totalReferrals: referrals.length,
+                    customerSignups: referrals.filter((r: any) => r.referredId?.role === 'CUSTOMER').length,
+                    providerSignups: referrals.filter((r: any) => r.referredId?.role === 'PROVIDER').length,
+                    conversionRate: referrals.length > 0 ? (referrals.filter(r => r.jobsCompletedCount > 0).length / referrals.length) * 100 : 0,
+                    earnings: {
+                        total: rewards.reduce((acc, r) => acc + r.amount, 0),
+                        paid: partner.balance.paid,
+                        available: partner.balance.available,
+                        pending: rewards.filter(r => r.status === 'PENDING').reduce((acc, r) => acc + r.amount, 0)
+                    }
+                },
+                geoStats,
+                monthlyTrend,
+                recentReferrals: referrals.slice(0, 10),
+                recentTransactions: ledgerEntries.slice(0, 10)
+            }
+        });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
