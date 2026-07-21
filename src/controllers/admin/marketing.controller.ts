@@ -197,6 +197,43 @@ export const toggleReferralPrivileges = async (req: AuthRequest, res: Response) 
     }
 };
 
+import * as settingsService from '../../services/settings.service';
+
+// --- AFFILIATE SETTINGS ---
+
+export const getAffiliateSettings = async (req: AuthRequest, res: Response) => {
+    try {
+        const countryCode = req.query.countryCode as string || 'GLOBAL';
+        const settings = await settingsService.getSettings(countryCode);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                referralRewardCustomer: settings.referralRewardCustomer || 10,
+                referralRewardProvider: settings.referralRewardProvider || 20,
+                referralRewardBusiness: settings.referralRewardBusiness || 50,
+                referralMaxRewardsPerUser: settings.referralMaxRewardsPerUser || 5,
+                referralMinCompletedJobs: settings.referralMinCompletedJobs || 1,
+                referralProgramEnabled: settings.referralProgramEnabled
+            }
+        });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateAffiliateSettings = async (req: AuthRequest, res: Response) => {
+    try {
+        const { countryCode } = req.body;
+        if (!countryCode) return res.status(400).json({ success: false, message: 'Country code required' });
+
+        const updated = await settingsService.updateSettings(countryCode, req.body);
+        res.status(200).json({ success: true, data: updated });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // --- CUSTOM PUSH NOTIFICATIONS ---
 
 export const sendCustomPush = async (req: AuthRequest, res: Response) => {

@@ -18,6 +18,9 @@ router.delete('/referrals/:id', authenticate, authorize([UserRole.ADMIN, UserRol
 router.get('/referrals/analytics', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.getReferralAnalytics);
 router.post('/referrals/toggle-privileges', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.toggleReferralPrivileges);
 
+router.get('/affiliate/settings', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.getAffiliateSettings);
+router.patch('/affiliate/settings', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.updateAffiliateSettings);
+
 router.post('/notifications/push', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN]), marketingController.sendCustomPush);
 
 export default router;

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import Provider, { VerificationStatus } from '../models/Provider';
 import User from '../models/User';
+import AffiliatePartner from '../models/AffiliatePartner';
 import * as notificationQueue from '../services/notification.queue';
 import PanicAlert from '../models/PanicAlert';
 import Job from '../models/Job';
@@ -71,6 +72,18 @@ export const verifyProvider = async (req: AuthRequest, res: Response) => {
     }
 
     await provider.save();
+
+    // ISSUE 5: Track Verified Registration for Partner
+    if (status === VerificationStatus.APPROVED) {
+        const user = await User.findById(provider.userId);
+        if (user && user.referredBy) {
+            const partner = await AffiliatePartner.findById(user.referredBy);
+            if (partner) {
+                partner.stats.verifiedRegistrations += 1;
+                await partner.save();
+            }
+        }
+    }
 
     // Send Verification Email
     const user = await User.findById(provider.userId);

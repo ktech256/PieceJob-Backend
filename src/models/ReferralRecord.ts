@@ -8,6 +8,11 @@ export interface IReferralRecord extends Document {
     countryCode: string;
     jobsCompletedCount: number;
     rewardsIssuedCount: number;
+    totalCommissionGenerated: number;
+    lifetimeJobValue: number;
+    totalSpend: number;
+    lastCompletedJobAt?: Date;
+    lastCommissionDate?: Date;
     isFraudSuspicious: boolean;
     isDisabled: boolean;
     createdAt: Date;
@@ -22,6 +27,11 @@ const ReferralRecordSchema: Schema = new Schema({
     countryCode: { type: String, required: true },
     jobsCompletedCount: { type: Number, default: 0 },
     rewardsIssuedCount: { type: Number, default: 0 },
+    totalCommissionGenerated: { type: Number, default: 0 },
+    lifetimeJobValue: { type: Number, default: 0 },
+    totalSpend: { type: Number, default: 0 },
+    lastCompletedJobAt: { type: Date },
+    lastCommissionDate: { type: Date },
     isFraudSuspicious: { type: Boolean, default: false },
     isDisabled: { type: Boolean, default: false }
 }, { timestamps: true });

@@ -15,6 +15,7 @@ router.put('/profile', authenticate, affiliateController.updatePartnerProfile);
 
 // Admin Routes for Managing Partners
 router.post('/admin', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.createPartner);
+router.patch('/admin/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.updatePartner);
 router.get('/admin', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.getPartners);
 router.get('/admin/:id/analytics', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.getPartnerAnalytics);
 

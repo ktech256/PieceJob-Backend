@@ -24,6 +24,7 @@ export interface IReferralReward extends Document {
     scheduledAt: Date;
     processedAt?: Date;
     rejectionReason?: string;
+    metadata?: any;
     manualAudit?: {
         action: string;
         adminId: mongoose.Types.ObjectId;
@@ -48,6 +49,7 @@ const ReferralRewardSchema: Schema = new Schema({
     scheduledAt: { type: Date, required: true },
     processedAt: { type: Date },
     rejectionReason: { type: String },
+    metadata: { type: Schema.Types.Mixed },
     manualAudit: [{
         action: { type: String },
         adminId: { type: Schema.Types.ObjectId, ref: 'User' },

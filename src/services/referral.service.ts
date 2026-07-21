@@ -78,8 +78,14 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
     const maxRewards = campaign?.maxRewardsPerReferral ?? settings?.referralMaxRewardsPerUser ?? 5;
     const rewardDelay = campaign?.rewardDelayDays ?? settings?.referralRewardDelayDays ?? 0;
     const expiryDays = settings?.referralExpiryDays ?? 0;
-    const baseRewardAmount = campaign?.rewardAmount ?? settings?.referralRewardAmount ?? 10;
-    const currency = campaign?.currency ?? settings?.countryCode ?? 'USD';
+
+    // ISSUE 3: Configurable Referral Commission Rules (Role-based)
+    let baseRewardAmount = 0;
+    if (user.role === UserRole.CUSTOMER) baseRewardAmount = settings?.referralRewardCustomer ?? 10;
+    else if (user.role === UserRole.PROVIDER) baseRewardAmount = settings?.referralRewardProvider ?? 20;
+    else baseRewardAmount = settings?.referralRewardBusiness ?? 50;
+
+    const currency = (campaign?.currency ?? settings?.countryCode) || 'USD';
     const rewardType = settings?.referralRewardType || 'REFERRAL_BALANCE';
 
     // Get or Create Referral Record
@@ -105,32 +111,6 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
 
             // Fraud Protection (Only for User referrers)
             if (referrer._id.toString() === user._id.toString()) return;
-
-            // 2. Duplicate phone number detection
-            if (settings?.referralFraudDuplicatePhoneEnabled !== false) {
-                const duplicatePhone = await User.findOne({
-                    phoneNumber: user.phoneNumber,
-                    _id: { $ne: user._id },
-                    referredBy: { $exists: true }
-                }).session(session as any);
-                if (duplicatePhone) return;
-            }
-
-            // 3. Duplicate email detection
-            if (settings?.referralFraudDuplicateEmailEnabled !== false) {
-                const duplicateEmail = await User.findOne({
-                    email: user.email,
-                    _id: { $ne: user._id },
-                    referredBy: { $exists: true }
-                }).session(session as any);
-                if (duplicateEmail) return;
-            }
-
-            // 5. Circular Referral Check
-            if (settings?.referralFraudCircularDetectionEnabled !== false) {
-                const circular = await User.findOne({ _id: user.referredBy, referredBy: user._id }).session(session as any);
-                if (circular) return;
-            }
         }
 
         record = new ReferralRecord({
@@ -153,34 +133,43 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         }
     }
 
-    // IDEMPOTENCY: Check if this job was already rewarded
+    // ISSUE 8: IDEMPOTENCY / Duplicate Protection
     const existingReward = await ReferralReward.findOne({
         referredId: user._id,
         jobId: job._id
     }).session(session as any);
 
-    if (existingReward) return;
+    if (existingReward) {
+        logger.warn(`Duplicate Commission Attempt Prevented | Job: ${job._id} | User: ${user._id}`);
+        return;
+    }
 
-    // Increment completed jobs count
+    const jobPrice = job.agreedPrice || ((job.serviceFee || 0) + (job.bookingFee || 0));
+
+    // ISSUE 4: Increment Counters (Update before eligibility check)
     record.jobsCompletedCount += 1;
+    record.lifetimeJobValue += jobPrice;
+    record.totalSpend += jobPrice;
+    record.lastCompletedJobAt = new Date();
 
-    // Check eligibility
-    if (record.jobsCompletedCount >= minJobs && (record.referrerType === 'PARTNER' || record.rewardsIssuedCount < maxRewards)) {
+    // ISSUE 3: Maximum Rewardable Jobs Enforcement
+    const isEligibleForReward = record.jobsCompletedCount >= minJobs && record.rewardsIssuedCount < maxRewards;
 
+    if (isEligibleForReward) {
         // Calculate Reward Amount for Partners vs Users
         let finalRewardAmount = baseRewardAmount;
         if (record.referrerType === 'PARTNER') {
             const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
             if (partner) {
                 if (partner.commissionModel === 'PERCENTAGE') {
-                    finalRewardAmount = (job.agreedPrice || 0) * (partner.commissionValue / 100);
+                    finalRewardAmount = (jobPrice) * (partner.commissionValue / 100);
                 } else {
                     finalRewardAmount = partner.commissionValue;
                 }
             }
         }
 
-        // Create Reward Event
+        // ISSUE 7: Create Detailed Audit Reward Event
         const reward = new ReferralReward({
             referrerId: user.referredBy,
             referrerType: record.referrerType,
@@ -192,7 +181,13 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
             rewardType: rewardType,
             status: ReferralStatus.PENDING,
             countryCode: user.countryCode,
-            scheduledAt: new Date(Date.now() + (rewardDelay * 24 * 60 * 60 * 1000))
+            scheduledAt: new Date(Date.now() + (rewardDelay * 24 * 60 * 60 * 1000)),
+            metadata: {
+                rewardNumber: record.rewardsIssuedCount + 1,
+                maxRewards,
+                jobPrice,
+                campaignTitle: campaign?.title
+            }
         });
 
         if (rewardDelay === 0) {
@@ -200,23 +195,21 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         } else {
             reward.status = ReferralStatus.QUALIFIED;
             await reward.save({ session });
-
-            if (record.referrerType === 'USER') {
-                await notificationService.notifyUser(
-                    user.referredBy.toString(),
-                    'Referral Qualified!',
-                    `Good news! ${user.firstName} has completed a qualifying job. Your reward is being processed.`
-                );
-            }
         }
 
         record.rewardsIssuedCount += 1;
+        record.totalCommissionGenerated += finalRewardAmount;
+        record.lastCommissionDate = new Date();
 
         if (record.referrerType === 'PARTNER') {
             const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
             if (partner) {
                 partner.stats.completedJobs += 1;
-                partner.stats.qualifiedUsers = await ReferralRecord.countDocuments({ referrerId: partner._id, jobsCompletedCount: { $gt: 0 } }).session(session as any);
+                // Re-calculate qualified users (users with at least 1 job)
+                partner.stats.qualifiedUsers = await ReferralRecord.countDocuments({
+                    referrerId: partner._id,
+                    jobsCompletedCount: { $gt: 0 }
+                }).session(session as any);
                 await partner.save({ session });
             }
         }

@@ -12,6 +12,9 @@ export interface ISystemSettings extends Document {
   maintenanceMode: boolean;
   sosAlertRadiusKm: number;
   referralRewardAmount: number;
+  referralRewardCustomer: number;
+  referralRewardProvider: number;
+  referralRewardBusiness: number;
 
   // PAGE 15: REFERRAL MANAGEMENT CENTRE
   referralProgramEnabled: boolean;
@@ -97,6 +100,9 @@ const SystemSettingsSchema: Schema = new Schema({
   maintenanceMode: { type: Boolean, default: false },
   sosAlertRadiusKm: { type: Number, default: 5 },
   referralRewardAmount: { type: Number, default: 10 },
+  referralRewardCustomer: { type: Number, default: 10 },
+  referralRewardProvider: { type: Number, default: 20 },
+  referralRewardBusiness: { type: Number, default: 50 },
 
   // PAGE 15: REFERRAL MANAGEMENT CENTRE
   referralProgramEnabled: { type: Boolean, default: true },

@@ -25,7 +25,11 @@ export interface IAffiliatePartner extends Document {
     stats: {
         clicks: number;
         registrations: number;
+        verifiedRegistrations: number;
         qualifiedUsers: number;
+        customerSignups: number;
+        providerSignups: number;
+        businessSignups: number;
         completedJobs: number;
     };
     balance: {
@@ -56,7 +60,11 @@ const AffiliatePartnerSchema: Schema = new Schema({
     stats: {
         clicks: { type: Number, default: 0 },
         registrations: { type: Number, default: 0 },
+        verifiedRegistrations: { type: Number, default: 0 },
         qualifiedUsers: { type: Number, default: 0 },
+        customerSignups: { type: Number, default: 0 },
+        providerSignups: { type: Number, default: 0 },
+        businessSignups: { type: Number, default: 0 },
         completedJobs: { type: Number, default: 0 }
     },
     balance: {

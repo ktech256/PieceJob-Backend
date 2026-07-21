@@ -157,8 +157,9 @@ export const registerCustomer = async (req: Request, res: Response) => {
           if (partner) {
               referredBy = partner._id;
               referrerType = 'PARTNER';
-              // Track registration
+              // Track registration (ISSUE 5)
               partner.stats.registrations += 1;
+              partner.stats.customerSignups += 1;
               await partner.save({ session });
           }
       }
@@ -318,8 +319,9 @@ export const registerProvider = async (req: Request, res: Response) => {
           if (partner) {
               referredBy = partner._id;
               referrerType = 'PARTNER';
-              // Track registration
+              // Track registration (ISSUE 5)
               partner.stats.registrations += 1;
+              partner.stats.providerSignups += 1;
               await partner.save({ session });
           }
       }

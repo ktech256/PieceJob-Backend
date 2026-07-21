@@ -56,11 +56,44 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
         const partner = await AffiliatePartner.findById(partnerId);
         if (!partner) return res.status(404).json({ success: false, message: 'Partner not found' });
 
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+        const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        // Fetch reward history for trend and stats
+        const rewards = await ReferralReward.find({ referrerId: partnerId });
+        const referrals = await ReferralRecord.find({ referrerId: partnerId });
+
+        const earningsToday = rewards.filter(r => r.createdAt >= startOfDay).reduce((acc, r) => acc + r.amount, 0);
+        const earningsWeekly = rewards.filter(r => r.createdAt >= startOfWeek).reduce((acc, r) => acc + r.amount, 0);
+        const earningsMonthly = rewards.filter(r => r.createdAt >= startOfMonth).reduce((acc, r) => acc + r.amount, 0);
+
         res.status(200).json({
             success: true,
             data: {
-                stats: partner.stats,
+                stats: {
+                    ...partner.stats,
+                    completedJobs: referrals.reduce((acc, r) => acc + r.jobsCompletedCount, 0),
+                    conversionRate: referrals.length > 0 ? (referrals.filter(r => r.jobsCompletedCount > 0).length / referrals.length) * 100 : 0,
+                    // ISSUE 5 counters
+                    lifetimeJobValue: referrals.reduce((acc, r) => acc + (r.lifetimeJobValue || 0), 0),
+                    averageCommissionPerReferral: rewards.length > 0 ? (rewards.reduce((acc, r) => acc + r.amount, 0) / referrals.length) : 0,
+                },
                 balance: partner.balance,
+                earnings: {
+                    today: earningsToday,
+                    weekly: earningsWeekly,
+                    monthly: earningsMonthly,
+                    lifetime: rewards.reduce((acc, r) => acc + r.amount, 0)
+                },
+                recentActivity: rewards.slice(0, 10).map(r => ({
+                    id: r._id,
+                    amount: r.amount,
+                    status: r.status,
+                    timestamp: r.createdAt,
+                    referredUserId: r.referredId
+                })),
                 referralCode: partner.referralCode,
                 name: partner.name,
                 status: partner.status,
@@ -226,7 +259,12 @@ export const getPartners = async (req: Request, res: Response) => {
             ];
         }
 
-        // Aggregate performance for each partner
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+        const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        // Enterprise Analytics Aggregation (ISSUE 6)
         const partners = await AffiliatePartner.aggregate([
             { $match: query },
             {
@@ -257,7 +295,18 @@ export const getPartners = async (req: Request, res: Response) => {
                             }
                         }
                     },
+                    jobsLifetime: { $sum: "$referralDocs.jobsCompletedCount" },
+                    jobsToday: {
+                        $size: {
+                            $filter: {
+                                input: "$rewardDocs",
+                                as: "rw",
+                                cond: { $gte: ["$$rw.createdAt", startOfDay] }
+                            }
+                        }
+                    },
                     earningsLifetime: { $sum: "$rewardDocs.amount" },
+                    paidCommission: "$balance.paid",
                     pendingCommission: {
                         $sum: {
                             $map: {
@@ -272,6 +321,14 @@ export const getPartners = async (req: Request, res: Response) => {
                                 in: "$$p.amount"
                             }
                         }
+                    },
+                    revenueGenerated: { $sum: "$referralDocs.lifetimeJobValue" },
+                    conversionRate: {
+                        $cond: [
+                            { $gt: [{ $size: "$referralDocs" }, 0] },
+                            { $multiply: [{ $divide: [{ $size: { $filter: { input: "$referralDocs", as: "r", cond: { $gt: ["$$r.jobsCompletedCount", 0] } } } }, { $size: "$referralDocs" }] }, 100] },
+                            0
+                        ]
                     }
                 }
             },
@@ -280,6 +337,56 @@ export const getPartners = async (req: Request, res: Response) => {
 
         res.status(200).json({ success: true, data: partners });
     } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updatePartner = async (req: Request, res: Response) => {
+    const { id } = req.params;
+    logger.info(`[AFFILIATE] Update Request Received for Partner: ${id}`);
+    try {
+        const { email, phone, name, type, contactPerson, countryCode, commissionModel, commissionValue, status } = req.body;
+
+        const partner = await AffiliatePartner.findById(id);
+        if (!partner) {
+            return res.status(404).json({ success: false, message: 'Partner not found.' });
+        }
+
+        // 1. Duplicate Check for Email/Phone (excluding current partner)
+        if (email || phone) {
+            const duplicate = await AffiliatePartner.findOne({
+                _id: { $ne: id },
+                $or: [
+                    ...(email ? [{ email: email.toLowerCase() }] : []),
+                    ...(phone ? [{ phone }] : [])
+                ]
+            });
+
+            if (duplicate) {
+                const field = duplicate.email === email?.toLowerCase() ? 'Email' : 'Phone';
+                return res.status(409).json({
+                    success: false,
+                    message: `Another partner is already using this ${field.toLowerCase()}.`
+                });
+            }
+        }
+
+        // 2. Update fields
+        const updateData: any = { ...req.body };
+        if (email) updateData.email = email.toLowerCase();
+
+        // Remove sensitive or read-only fields from updateData
+        delete updateData.passwordHash;
+        delete updateData.referralCode;
+        delete updateData.stats;
+        delete updateData.balance;
+
+        const updatedPartner = await AffiliatePartner.findByIdAndUpdate(id, updateData, { new: true });
+
+        logger.info(`[AFFILIATE] Partner Entity Updated: ${id}`);
+        res.status(200).json({ success: true, data: updatedPartner });
+    } catch (error: any) {
+        logger.error(`[AFFILIATE] Update Execution Error for Partner ${id}`, error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
