@@ -88,7 +88,6 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
                     businessSignups: referrals.filter((r: any) => r.referredId?.role === 'BUSINESS' || r.referredId?.role === 'CORPORATE_EMPLOYEE').length,
                     verifiedRegistrations: referrals.filter((r: any) => r.referredId?.isVerified).length,
                     registrations: referrals.length
-                    verifiedRegistrations: referrals.filter((r: any) => r.referredId?.isVerified).length
                 },
                 balance: partner.balance,
                 earnings: {
