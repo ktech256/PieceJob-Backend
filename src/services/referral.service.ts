@@ -14,18 +14,20 @@ import * as notificationQueue from './notification.queue';
 import { logger } from '../utils/logger';
 import { IJob } from '../models/Job';
 import { v4 as uuidv4 } from 'uuid';
+import { emitToUser, emitAdminUpdate } from '../socket/socket.service';
 
 /**
  * Triggered when a job is completed.
  * Checks if the customer or provider was referred and issues rewards if applicable.
  */
 export const handleJobCompletion = async (job: IJob, session?: mongoose.ClientSession) => {
+    logger.info(`[REFERRAL_ENGINE] Processing completion for Job: ${job._id}`);
+
     const internalSession = !session ? await mongoose.startSession() : null;
     if (internalSession) internalSession.startTransaction();
 
     try {
         const activeSession = session || internalSession;
-        logger.info(`Processing referrals for completed job ${job._id}`);
 
         // 1. Check if Customer was referred
         await processReferralForUser(job.customerId.toString(), job, 'CUSTOMER', activeSession as any);
@@ -35,10 +37,16 @@ export const handleJobCompletion = async (job: IJob, session?: mongoose.ClientSe
             await processReferralForUser(job.providerId.toString(), job, 'PROVIDER', activeSession as any);
         }
 
-        if (internalSession) await internalSession.commitTransaction();
+        if (internalSession) {
+            await internalSession.commitTransaction();
+            logger.info(`[REFERRAL_ENGINE] Transaction committed for Job: ${job._id}`);
+        }
     } catch (error: any) {
-        if (internalSession) await internalSession.abortTransaction();
-        logger.error(`Referral handleJobCompletion failed: ${error.message}`);
+        if (internalSession) {
+            await internalSession.abortTransaction();
+            logger.error(`[REFERRAL_ENGINE] Transaction aborted: ${error.message}`);
+        }
+        logger.error(`[REFERRAL_ENGINE] handleJobCompletion failed: ${error.message}`);
     } finally {
         if (internalSession) internalSession.endSession();
     }
@@ -46,18 +54,22 @@ export const handleJobCompletion = async (job: IJob, session?: mongoose.ClientSe
 
 const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER' | 'PROVIDER', session?: mongoose.ClientSession) => {
     const user = await User.findById(userId).session(session as any);
-    if (!user || !user.referredBy) return;
+    if (!user || !user.referredBy) {
+        logger.debug(`[REFERRAL_ENGINE] Skipped: User ${userId} has no referrer.`);
+        return;
+    }
+
+    logger.info(`[REFERRAL_ENGINE] Processing Referral | User: ${user._id} | Referrer: ${user.referredBy} | Job: ${job._id}`);
 
     // Admin Control: Per-Workspace Referral Switch
     const settings = await SystemSettings.findOne({ countryCode: user.countryCode }).session(session as any);
     if (settings && !settings.referralProgramEnabled) {
-        logger.info(`Referral ignored: Program is disabled for workspace ${user.countryCode}`);
+        logger.info(`[REFERRAL_ENGINE] Stopped: Program disabled for workspace ${user.countryCode}`);
         return;
     }
 
-    // Admin control: Check if referral privileges are disabled for this account
     if (user.isReferralDisabled) {
-        logger.warn(`Referral ignored: User ${user._id} has referral privileges disabled.`);
+        logger.warn(`[REFERRAL_ENGINE] Stopped: User ${user._id} referral privileges disabled.`);
         return;
     }
 
@@ -68,11 +80,6 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         endDate: { $gte: new Date() }
     }).session(session as any);
 
-    if (!campaign && !settings) {
-        logger.info(`No active referral campaign or settings for workspace ${user.countryCode}`);
-        return;
-    }
-
     // Get or Create Referral Record
     let record = await ReferralRecord.findOne({
         referrerId: user.referredBy,
@@ -80,6 +87,7 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
     }).session(session as any);
 
     if (!record) {
+        logger.info(`[REFERRAL_ENGINE] ReferralRecord missing for ${user._id}. Attempting lazy creation.`);
         // Find referrer type
         let referrerType: 'USER' | 'PARTNER' = 'USER';
         let partner = await AffiliatePartner.findById(user.referredBy).session(session as any);
@@ -87,14 +95,15 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         if (partner) {
             referrerType = 'PARTNER';
             if (partner.status !== AffiliateStatus.ACTIVE) {
-                logger.warn(`Referral ignored: Partner ${partner._id} is not active.`);
+                logger.warn(`[REFERRAL_ENGINE] Aborted: Referrer Partner ${partner._id} is NOT ACTIVE.`);
                 return;
             }
         } else {
             const referrer = await User.findById(user.referredBy).session(session as any);
-            if (!referrer) return;
-
-            // Fraud Protection (Only for User referrers)
+            if (!referrer) {
+                logger.error(`[REFERRAL_ENGINE] Error: Referrer ${user.referredBy} not found in DB.`);
+                return;
+            }
             if (referrer._id.toString() === user._id.toString()) return;
         }
 
@@ -105,49 +114,53 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
             campaignId: campaign?._id,
             countryCode: user.countryCode
         });
+        await record.save({ session });
+        logger.info(`[REFERRAL_ENGINE] Lazy created ReferralRecord: ${record._id}`);
     }
 
-    if (record.isDisabled) return;
+    if (record.isDisabled) {
+        logger.debug(`[REFERRAL_ENGINE] Skipped: Record ${record._id} is disabled.`);
+        return;
+    }
 
-    // ISSUE 8: IDEMPOTENCY / Duplicate Protection
+    // IDEMPOTENCY / Duplicate Protection
     const existingReward = await ReferralReward.findOne({
         referredId: user._id,
         jobId: job._id
     }).session(session as any);
 
     if (existingReward) {
-        logger.warn(`Duplicate Commission Attempt Prevented | Job: ${job._id} | User: ${user._id}`);
+        logger.warn(`[REFERRAL_ENGINE] DUPLICATE blocked | Job: ${job._id} | User: ${user._id}`);
         return;
     }
 
     const jobPrice = job.agreedPrice || ((job.serviceFee || 0) + (job.bookingFee || 0));
     const platformRevenue = jobPrice * ((job.serviceFeeRateSnapshot || 15) / 100);
 
-    // ISSUE 4: Increment Counters (Update before eligibility check)
+    // Increment Counters (Update regardless of eligibility)
     record.jobsCompletedCount += 1;
     record.lifetimeJobValue += jobPrice;
     record.lifetimePlatformRevenue += platformRevenue;
 
-    // Track spend/earnings based on role
     if (user.role === UserRole.CUSTOMER) {
         record.totalSpend += jobPrice;
     } else if (user.role === UserRole.PROVIDER) {
         record.lifetimeEarnings += (jobPrice - platformRevenue);
     }
-
     record.lastCompletedJobAt = new Date();
 
-    // Determine Rules (Prioritize Partner Settings if referrer is a Partner)
+    // Determine Rules
     let minJobs = campaign?.minCompletedJobs ?? settings?.referralMinCompletedJobs ?? 1;
     let maxRewards = campaign?.maxRewardsPerReferral ?? settings?.referralMaxRewardsPerUser ?? 5;
     let rewardDelay = campaign?.rewardDelayDays ?? settings?.referralRewardDelayDays ?? 0;
     const expiryDays = settings?.referralExpiryDays ?? 0;
 
-    // EXPIRY CHECK: If referral expired, no reward.
+    // Expiry Logic
     if (expiryDays > 0) {
         const expiryDate = new Date(record.createdAt.getTime() + (expiryDays * 24 * 60 * 60 * 1000));
         if (new Date() > expiryDate) {
-            logger.info(`Referral expired for user ${user._id}. Created at ${record.createdAt}, Expired at ${expiryDate}`);
+            logger.info(`[REFERRAL_ENGINE] Expired: Record ${record._id} created ${record.createdAt}, Expired ${expiryDate}`);
+            record.status = 'EXPIRED';
             await record.save({ session });
             return;
         }
@@ -158,37 +171,33 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
 
     if (record.referrerType === 'PARTNER') {
         const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
-        const partnerSettings = partner?.commissionSettings || {
-            customerReward: settings?.referralRewardCustomer || 10,
-            providerReward: settings?.referralRewardProvider || 20,
-            businessReward: settings?.referralRewardBusiness || 50,
-            maxRewardableJobs: settings?.referralMaxRewardsPerUser || 5,
-            customerEnabled: true,
-            providerEnabled: true,
-            businessEnabled: true
-        };
+        const pSettings = partner?.commissionSettings;
 
-        if (partner) {
-            maxRewards = partnerSettings.maxRewardableJobs ?? maxRewards;
-
+        if (partner && pSettings) {
+            logger.debug(`[REFERRAL_ENGINE] Using Partner custom rules for ${partner.name}`);
+            maxRewards = pSettings.maxRewardableJobs ?? maxRewards;
             if (user.role === UserRole.CUSTOMER) {
-                baseRewardAmount = partnerSettings.customerReward;
-                isRewardEnabled = partnerSettings.customerEnabled;
+                baseRewardAmount = pSettings.customerReward;
+                isRewardEnabled = pSettings.customerEnabled;
             } else if (user.role === UserRole.PROVIDER) {
-                baseRewardAmount = partnerSettings.providerReward;
-                isRewardEnabled = partnerSettings.providerEnabled;
+                baseRewardAmount = pSettings.providerReward;
+                isRewardEnabled = pSettings.providerEnabled;
             } else {
-                baseRewardAmount = partnerSettings.businessReward;
-                isRewardEnabled = partnerSettings.businessEnabled;
+                baseRewardAmount = pSettings.businessReward;
+                isRewardEnabled = pSettings.businessEnabled;
             }
 
-            // Check if partner's custom commission model overrides baseRewardAmount
             if (partner.commissionModel === 'PERCENTAGE') {
-                baseRewardAmount = (jobPrice) * (partner.commissionValue / 100);
+                baseRewardAmount = jobPrice * (partner.commissionValue / 100);
             }
+        } else {
+            logger.debug(`[REFERRAL_ENGINE] Partner found but missing custom settings. Falling back to global.`);
+            if (user.role === UserRole.CUSTOMER) baseRewardAmount = settings?.referralRewardCustomer ?? 10;
+            else if (user.role === UserRole.PROVIDER) baseRewardAmount = settings?.referralRewardProvider ?? 20;
+            else baseRewardAmount = settings?.referralRewardBusiness ?? 50;
         }
     } else {
-        // Fallback to global role-based rewards for non-partner referrers
+        logger.debug(`[REFERRAL_ENGINE] Using global User referral rules.`);
         if (user.role === UserRole.CUSTOMER) baseRewardAmount = settings?.referralRewardCustomer ?? 10;
         else if (user.role === UserRole.PROVIDER) baseRewardAmount = settings?.referralRewardProvider ?? 20;
         else baseRewardAmount = settings?.referralRewardBusiness ?? 50;
@@ -197,17 +206,20 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
     const currency = (campaign?.currency ?? settings?.countryCode) || 'USD';
     const rewardType = settings?.referralRewardType || 'REFERRAL_BALANCE';
 
-    // ISSUE 3 & 4: Eligibility check using dynamic rules
+    // Eligibility check
     const isEligibleForReward = isRewardEnabled && record.jobsCompletedCount >= minJobs && record.rewardsIssuedCount < maxRewards;
 
+    logger.info(`[REFERRAL_ENGINE] Eligibility: ${isEligibleForReward} | Completed: ${record.jobsCompletedCount} | Min: ${minJobs} | Rewards: ${record.rewardsIssuedCount} | Max: ${maxRewards}`);
+
     if (isEligibleForReward) {
-        // Create Reward Event
+        logger.info(`[REFERRAL_ENGINE] ACTION: Issuing reward ${baseRewardAmount} ${currency} to ${record.referrerId}`);
+
         const reward = new ReferralReward({
             referrerId: user.referredBy,
             referrerType: record.referrerType,
             referredId: user._id,
             jobId: job._id,
-            campaignId: campaign?._id || new mongoose.Types.ObjectId(),
+            campaignId: campaign?._id,
             amount: baseRewardAmount,
             currency: currency,
             rewardType: rewardType,
@@ -232,23 +244,29 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         record.rewardsIssuedCount += 1;
         record.totalCommissionGenerated += baseRewardAmount;
         record.lastCommissionDate = new Date();
-        record.maxRewardableJobs = maxRewards; // Keep record of what the limit was
-
-        if (record.referrerType === 'PARTNER') {
-            const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
-            if (partner) {
-                partner.stats.completedJobs += 1;
-                // Re-calculate qualified users (users with at least 1 job)
-                partner.stats.qualifiedUsers = await ReferralRecord.countDocuments({
-                    referrerId: partner._id,
-                    jobsCompletedCount: { $gt: 0 }
-                }).session(session as any);
-                await partner.save({ session });
-            }
-        }
     }
 
+    record.maxRewardableJobs = maxRewards;
     await record.save({ session });
+
+    if (record.referrerType === 'PARTNER') {
+        const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
+        if (partner) {
+            partner.stats.completedJobs += 1;
+            partner.stats.qualifiedUsers = await ReferralRecord.countDocuments({
+                referrerId: partner._id,
+                jobsCompletedCount: { $gt: 0 }
+            }).session(session as any);
+            await partner.save({ session });
+            logger.info(`[REFERRAL_ENGINE] Partner stats updated: ${partner.name} | Completed: ${partner.stats.completedJobs}`);
+
+            // REAL-TIME SYNC (Non-blocking)
+            setImmediate(() => {
+                emitToUser(partner._id.toString(), 'AFFILIATE_STATS_UPDATED', { partnerId: partner._id });
+                emitAdminUpdate('affiliate_matrix_updated', { partnerId: partner._id });
+            });
+        }
+    }
 };
 
 export const executeRewardPayout = async (reward: any, session?: mongoose.ClientSession) => {
@@ -283,6 +301,7 @@ export const executeRewardPayout = async (reward: any, session?: mongoose.Client
 
             // Partners accumulate balance in their model, not a standard wallet
             partner.balance.available += reward.amount;
+            partner.stats.rewardedJobs += 1;
             await partner.save({ session });
 
             reward.status = ReferralStatus.REWARDED;

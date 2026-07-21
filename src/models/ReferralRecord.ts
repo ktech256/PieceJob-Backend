@@ -27,7 +27,7 @@ const ReferralRecordSchema: Schema = new Schema({
     referrerId: { type: Schema.Types.ObjectId, required: true },
     referrerType: { type: String, enum: ['USER', 'PARTNER'], default: 'USER', required: true },
     referredId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-    campaignId: { type: Schema.Types.ObjectId, ref: 'ReferralCampaign', required: true },
+    campaignId: { type: Schema.Types.ObjectId, ref: 'ReferralCampaign' },
     countryCode: { type: String, required: true },
     jobsCompletedCount: { type: Number, default: 0 },
     rewardsIssuedCount: { type: Number, default: 0 },

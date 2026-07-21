@@ -31,6 +31,7 @@ export interface IAffiliatePartner extends Document {
         providerSignups: number;
         businessSignups: number;
         completedJobs: number;
+        rewardedJobs: number;
     };
     balance: {
         pending: number;
@@ -77,7 +78,8 @@ const AffiliatePartnerSchema: Schema = new Schema({
         customerSignups: { type: Number, default: 0 },
         providerSignups: { type: Number, default: 0 },
         businessSignups: { type: Number, default: 0 },
-        completedJobs: { type: Number, default: 0 }
+        completedJobs: { type: Number, default: 0 },
+        rewardedJobs: { type: Number, default: 0 }
     },
     balance: {
         pending: { type: Number, default: 0 },

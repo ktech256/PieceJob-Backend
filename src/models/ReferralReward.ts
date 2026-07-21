@@ -40,7 +40,7 @@ const ReferralRewardSchema: Schema = new Schema({
     referrerType: { type: String, enum: ['USER', 'PARTNER'], default: 'USER', required: true },
     referredId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     jobId: { type: Schema.Types.ObjectId, ref: 'Job', required: true },
-    campaignId: { type: Schema.Types.ObjectId, ref: 'ReferralCampaign', required: true },
+    campaignId: { type: Schema.Types.ObjectId, ref: 'ReferralCampaign' },
     amount: { type: Number, required: true },
     currency: { type: String, required: true },
     rewardType: { type: String, enum: ['CASH', 'WALLET_CREDIT', 'REFERRAL_BALANCE'], default: 'REFERRAL_BALANCE' },

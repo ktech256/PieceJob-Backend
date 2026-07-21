@@ -63,27 +63,32 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
 
         // Fetch reward history for trend and stats
         const rewards = await ReferralReward.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName');
-        const referrals = await ReferralRecord.find({ referrerId: partnerId });
-        const records = await ReferralRecord.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName');
+        const referrals = await ReferralRecord.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName role isVerified createdAt');
 
         const earningsToday = rewards.filter(r => r.createdAt >= startOfDay).reduce((acc, r) => acc + r.amount, 0);
         const earningsWeekly = rewards.filter(r => r.createdAt >= startOfWeek).reduce((acc, r) => acc + r.amount, 0);
         const earningsMonthly = rewards.filter(r => r.createdAt >= startOfMonth).reduce((acc, r) => acc + r.amount, 0);
 
         const latestCommission = rewards.length > 0 ? rewards.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] : null;
-        const topReferral = referrals.length > 0 ? referrals.sort((a, b) => b.totalCommissionGenerated - a.totalCommissionGenerated)[0] : null;
-        const latestReferral = records.length > 0 ? records.sort((a, b) => (b.createdAt as any) - (a.createdAt as any))[0] : null;
+        const topReferral = referrals.length > 0 ? referrals.sort((a, b) => (b.totalCommissionGenerated || 0) - (a.totalCommissionGenerated || 0))[0] : null;
+        const latestReferral = referrals.length > 0 ? referrals.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] : null;
 
         res.status(200).json({
             success: true,
             data: {
                 stats: {
                     ...partner.stats,
-                    completedJobs: referrals.reduce((acc, r) => acc + r.jobsCompletedCount, 0),
-                    conversionRate: referrals.length > 0 ? (referrals.filter(r => r.jobsCompletedCount > 0).length / referrals.length) * 100 : 0,
+                    completedJobs: referrals.reduce((acc, r) => acc + (r.jobsCompletedCount || 0), 0),
+                    conversionRate: referrals.length > 0 ? (referrals.filter(r => (r.jobsCompletedCount || 0) > 0).length / referrals.length) * 100 : 0,
                     // ISSUE 5 counters
                     lifetimeJobValue: referrals.reduce((acc, r) => acc + (r.lifetimeJobValue || 0), 0),
-                    averageCommissionPerReferral: rewards.length > 0 ? (rewards.reduce((acc, r) => acc + r.amount, 0) / referrals.length) : 0,
+                    averageCommissionPerReferral: referrals.length > 0 ? (rewards.reduce((acc, r) => acc + r.amount, 0) / referrals.length) : 0,
+                    customerSignups: referrals.filter((r: any) => r.referredId?.role === 'CUSTOMER').length,
+                    providerSignups: referrals.filter((r: any) => r.referredId?.role === 'PROVIDER').length,
+                    businessSignups: referrals.filter((r: any) => r.referredId?.role === 'BUSINESS' || r.referredId?.role === 'CORPORATE_EMPLOYEE').length,
+                    verifiedRegistrations: referrals.filter((r: any) => r.referredId?.isVerified).length,
+                    registrations: referrals.length
+                    verifiedRegistrations: referrals.filter((r: any) => r.referredId?.isVerified).length
                 },
                 balance: partner.balance,
                 earnings: {
@@ -329,6 +334,7 @@ export const getPartners = async (req: Request, res: Response) => {
                             }
                         }
                     },
+                    customerReferrals: { $size: { $filter: { input: "$referralDocs", as: "r", cond: { $eq: ["$$r.referrerType", "PARTNER"] } } } },
                     jobsLifetime: { $sum: "$referralDocs.jobsCompletedCount" },
                     jobsToday: {
                         $size: {
@@ -382,6 +388,7 @@ export const getPartners = async (req: Request, res: Response) => {
                         }
                     },
                     revenueGenerated: { $sum: "$referralDocs.lifetimeJobValue" },
+                    platformRevenue: { $sum: "$referralDocs.lifetimePlatformRevenue" },
                     conversionRate: {
                         $cond: [
                             { $gt: [{ $size: "$referralDocs" }, 0] },

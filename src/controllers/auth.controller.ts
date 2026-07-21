@@ -5,6 +5,8 @@ import Provider from '../models/Provider';
 import Service, { GenderRule } from '../models/Service';
 import OtpRequest from '../models/OtpRequest';
 import LoginLog from '../models/LoginLog';
+import ReferralRecord from '../models/ReferralRecord';
+import ReferralCampaign from '../models/ReferralCampaign';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
@@ -189,30 +191,28 @@ export const registerCustomer = async (req: Request, res: Response) => {
 
     // Create Referral Record if referred
     if (referredBy) {
-        const campaign = await mongoose.model('ReferralCampaign').findOne({
+        const campaign = await ReferralCampaign.findOne({
             countryCode,
             isActive: true,
             startDate: { $lte: new Date() },
             endDate: { $gte: new Date() }
         }).session(session);
 
-        if (campaign) {
-            await mongoose.model('ReferralRecord').create([{
-                referrerId: referredBy,
-                referrerType: referrerType,
-                referredId: user._id,
-                campaignId: campaign._id,
-                countryCode
-            }], { session });
+        await ReferralRecord.create([{
+            referrerId: referredBy,
+            referrerType: referrerType,
+            referredId: user._id,
+            campaignId: campaign?._id,
+            countryCode
+        }], { session });
 
-            if (referrerType === 'USER') {
-                // Notification: Referral Registered
-                await notificationService.notifyUser(
-                    referredBy.toString(),
-                    'New Referral Joined!',
-                    `${user.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
-                );
-            }
+        if (referrerType === 'USER') {
+            // Notification: Referral Registered
+            await notificationService.notifyUser(
+                referredBy.toString(),
+                'New Referral Joined!',
+                `${user.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
+            );
         }
     }
 
@@ -350,30 +350,28 @@ export const registerProvider = async (req: Request, res: Response) => {
 
     // Create Referral Record if referred
     if (referredBy) {
-        const campaign = await mongoose.model('ReferralCampaign').findOne({
+        const campaign = await ReferralCampaign.findOne({
             countryCode,
             isActive: true,
             startDate: { $lte: new Date() },
             endDate: { $gte: new Date() }
         }).session(session);
 
-        if (campaign) {
-            await mongoose.model('ReferralRecord').create([{
-                referrerId: referredBy,
-                referrerType: referrerType,
-                referredId: savedUser._id,
-                campaignId: campaign._id,
-                countryCode
-            }], { session });
+        await ReferralRecord.create([{
+            referrerId: referredBy,
+            referrerType: referrerType,
+            referredId: savedUser._id,
+            campaignId: campaign?._id,
+            countryCode
+        }], { session });
 
-            if (referrerType === 'USER') {
-                // Notification: Referral Registered
-                await notificationService.notifyUser(
-                    referredBy.toString(),
-                    'New Referral Joined!',
-                    `${savedUser.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
-                );
-            }
+        if (referrerType === 'USER') {
+            // Notification: Referral Registered
+            await notificationService.notifyUser(
+                referredBy.toString(),
+                'New Referral Joined!',
+                `${savedUser.firstName} has joined PieceJob using your code. You will earn a reward once they complete a qualifying job.`
+            );
         }
     }
 
