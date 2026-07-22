@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import * as notificationQueue from '../services/notification.queue';
+import * as settingsService from '../services/settings.service';
 import { logger } from '../utils/logger';
 import mongoose from 'mongoose';
 
@@ -146,6 +147,9 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
                     processing: processingAmount,
                     paid: paidAmount,
                     lifetime: lifetimeEarnings
+                },
+                settings: {
+                    minimumWithdrawalAmount: (await settingsService.getSettings(partner.countryCode)).minimumWithdrawalAmount || 50
                 },
                 bankingDetails: partner.bankingDetails,
                 earnings: {
@@ -646,6 +650,13 @@ export const requestSettlement = async (req: Request, res: Response) => {
         const requestedAmount = Number(amount);
         if (isNaN(requestedAmount) || requestedAmount <= 0) {
             throw new Error('Invalid settlement amount.');
+        }
+
+        // Enforce Minimum Withdrawal Amount
+        const settings = await settingsService.getSettings(partner.countryCode);
+        const minWithdrawal = settings.minimumWithdrawalAmount || 50;
+        if (requestedAmount < minWithdrawal) {
+            throw new Error(`The minimum withdrawal amount is R${minWithdrawal.toFixed(2)}.`);
         }
 
         if (requestedAmount > partner.balance.available) {

@@ -214,7 +214,10 @@ export const getAffiliateSettings = async (req: AuthRequest, res: Response) => {
                 referralRewardBusiness: settings.referralRewardBusiness || 50,
                 referralMaxRewardsPerUser: settings.referralMaxRewardsPerUser || 5,
                 referralMinCompletedJobs: settings.referralMinCompletedJobs || 1,
-                referralProgramEnabled: settings.referralProgramEnabled
+                referralProgramEnabled: settings.referralProgramEnabled,
+                referralRewardDelayDays: settings.referralRewardDelayDays || 0,
+                referralExpiryDays: settings.referralExpiryDays || 0,
+                minimumWithdrawalAmount: settings.minimumWithdrawalAmount || 50
             }
         });
     } catch (error: any) {

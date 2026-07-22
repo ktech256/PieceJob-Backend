@@ -37,6 +37,7 @@ export interface ISystemSettings extends Document {
   serviceFeeSuspensionThreshold: number;
   autoSuspendEnabled: boolean;
   autoUnsuspendEnabled: boolean;
+  minimumWithdrawalAmount: number;
   voucherVendors: {
       name: string;
       code: string;
@@ -128,6 +129,7 @@ const SystemSettingsSchema: Schema = new Schema({
   serviceFeeSuspensionThreshold: { type: Number, default: 100, alias: 'commissionSuspensionThreshold' },
   autoSuspendEnabled: { type: Boolean, default: true },
   autoUnsuspendEnabled: { type: Boolean, default: true },
+  minimumWithdrawalAmount: { type: Number, default: 50 },
   voucherVendors: [{
       name: { type: String },
       code: { type: String },
