@@ -7,6 +7,8 @@ const router = Router();
 
 // Partner Portal Routes
 router.post('/login', affiliateController.loginPartner);
+router.post('/forgot-password', affiliateController.forgotPartnerPassword);
+router.post('/reset-password', affiliateController.resetPartnerPassword);
 router.get('/dashboard', authenticate, affiliateController.getPartnerDashboard);
 router.get('/statements', authenticate, affiliateController.getPartnerStatements);
 router.get('/reports', authenticate, affiliateController.getPartnerReports);

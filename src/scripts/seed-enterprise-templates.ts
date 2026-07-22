@@ -87,6 +87,21 @@ const templates: any[] = [
     isFutureReady: true
   },
   {
+    templateCode: 'PARTNER_PASSWORD_RESET',
+    channel: 'EMAIL',
+    category: 'ACCOUNT',
+    description: 'Password reset link for Affiliate Partners.',
+    trigger: 'Partner Forgot Password',
+    recipient: 'Partner',
+    priority: 'HIGH',
+    language: 'EN',
+    subject: 'Reset Your PieceJob Partner Password',
+    body: '<h1>Password Recovery</h1><p>Hi {{name}},</p><p>A password reset has been initiated for your PieceJob Partner Protocol account. To establish a new access pass, please click the secure link below:</p><div style="text-align: center; margin: 40px 0;"><a href="{{resetLink}}" class="button">Reset Password</a></div><p><b>This link will expire in {{expiry}}.</b></p><p>If you did not initiate this recovery signal, please ignore this transmission and ensure your security sectors are secure.</p>',
+    plainTextBody: 'Hi {{name}}, reset your PieceJob Partner password here: {{resetLink}}. Expires in {{expiry}}.',
+    placeholders: ['name', 'resetLink', 'expiry'],
+    countryCode: 'GLOBAL'
+  },
+  {
     templateCode: 'ACCOUNT_LOCKED',
     channel: 'EMAIL',
     category: 'ACCOUNT',

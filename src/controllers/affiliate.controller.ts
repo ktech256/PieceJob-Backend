@@ -7,6 +7,7 @@ import Ledger, { TransactionType } from '../models/Ledger';
 import Notification from '../models/Notification';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import * as notificationQueue from '../services/notification.queue';
 import * as settingsService from '../services/settings.service';
@@ -50,6 +51,99 @@ export const loginPartner = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const forgotPartnerPassword = async (req: Request, res: Response) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+
+        const partner = await AffiliatePartner.findOne({ email: email.toLowerCase() });
+
+        // Security: Prevent email enumeration by returning success even if email not found
+        if (!partner || partner.status === AffiliateStatus.SUSPENDED) {
+            logger.info(`AFFILIATE | FORGOT_PASSWORD | Not found or suspended: ${email}`);
+            return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+        }
+
+        // Generate 64-character hex token
+        const token = crypto.randomBytes(32).toString('hex');
+
+        partner.resetPasswordToken = token;
+        partner.resetPasswordExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 mins
+        await partner.save();
+
+        const resetLink = `${process.env.PARTNER_PORTAL_URL || 'https://partner.piecejob.co'}/reset-password?token=${token}`;
+
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: partner.email,
+            templateCode: 'PARTNER_PASSWORD_RESET',
+            templateData: {
+                name: partner.name,
+                resetLink,
+                expiry: '30 minutes'
+            },
+            countryCode: partner.countryCode
+        });
+
+        logger.info(`AFFILIATE | FORGOT_PASSWORD | Token generated for ${email}`);
+        res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+
+    } catch (error: any) {
+        logger.error(`AFFILIATE | FORGOT_PASSWORD_FAILED | Error: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Error processing password reset' });
+    }
+};
+
+export const resetPartnerPassword = async (req: Request, res: Response) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        if (!token || !newPassword) {
+            return res.status(400).json({ success: false, message: 'Token and new password are required' });
+        }
+
+        if (newPassword.length < 8) {
+            return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long' });
+        }
+
+        const partner = await AffiliatePartner.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: new Date() }
+        });
+
+        if (!partner) {
+            return res.status(400).json({ success: false, message: 'Password reset token is invalid or has expired' });
+        }
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(12);
+        partner.passwordHash = await bcrypt.hash(newPassword, salt);
+
+        // Invalidate token
+        partner.resetPasswordToken = undefined;
+        partner.resetPasswordExpires = undefined;
+        await partner.save();
+
+        // Notify of success
+        await notificationQueue.addNotificationToQueue({
+            type: 'EMAIL',
+            email: partner.email,
+            templateCode: 'PASSWORD_RESET_SUCCESS',
+            templateData: {
+                firstName: partner.name.split(' ')[0]
+            },
+            countryCode: partner.countryCode
+        });
+
+        logger.info(`AFFILIATE | RESET_PASSWORD | Success for ${partner.email}`);
+        res.status(200).json({ success: true, message: 'Password has been reset successfully' });
+
+    } catch (error: any) {
+        logger.error(`AFFILIATE | RESET_PASSWORD_FAILED | Error: ${error.message}`);
+        res.status(500).json({ success: false, message: 'Error resetting password' });
     }
 };
 

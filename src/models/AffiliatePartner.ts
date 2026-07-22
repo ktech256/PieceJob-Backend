@@ -20,6 +20,8 @@ export interface IAffiliatePartner extends Document {
     commissionValue: number; // % or Fixed Amount
     status: AffiliateStatus;
     passwordHash: string;
+    resetPasswordToken?: string;
+    resetPasswordExpires?: Date;
     campaign?: string;
     notes?: string;
     stats: {
@@ -79,6 +81,8 @@ const AffiliatePartnerSchema: Schema = new Schema({
     commissionValue: { type: Number, required: true },
     status: { type: String, enum: Object.values(AffiliateStatus), default: AffiliateStatus.ACTIVE },
     passwordHash: { type: String, required: true },
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
     campaign: { type: String },
     notes: { type: String },
     stats: {
