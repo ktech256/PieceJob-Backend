@@ -14,6 +14,8 @@ export interface IEmailLog extends Document {
   openedAt?: Date;
   clickedAt?: Date;
   sentAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const EmailLogSchema: Schema = new Schema({
