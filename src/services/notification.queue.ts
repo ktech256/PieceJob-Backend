@@ -50,7 +50,7 @@ export interface NotificationJobData {
 
 export const addNotificationToQueue = async (data: NotificationJobData, eventId?: string) => {
     try {
-        await notificationQueue.add('send-notification', data, {
+        const job = await notificationQueue.add('send-notification', data, {
             jobId: eventId, // BullMQ deduplication
             attempts: 3,
             backoff: {
@@ -58,9 +58,10 @@ export const addNotificationToQueue = async (data: NotificationJobData, eventId?
                 delay: 1000,
             },
         });
-    } catch (e) {
+        return { success: true, jobId: job.id };
+    } catch (e: any) {
         console.error('Failed to add to notification queue (Redis might be down):', e);
-        // Fallback or just ignore for now to prevent crash
+        return { success: false, error: e.message };
     }
 };
 

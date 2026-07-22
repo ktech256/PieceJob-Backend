@@ -73,7 +73,7 @@ const AffiliatePartnerSchema: Schema = new Schema({
     type: { type: String, required: true },
     contactPerson: { type: String, required: true },
     phone: { type: String, required: true, unique: true },
-    email: { type: String, required: true, unique: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     website: { type: String },
     countryCode: { type: String, required: true },
     referralCode: { type: String, required: true, unique: true },

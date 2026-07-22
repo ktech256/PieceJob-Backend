@@ -60,16 +60,17 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
-        const partner = await AffiliatePartner.findOne({ email: email.toLowerCase() });
+        const trimmedEmail = email.trim().toLowerCase();
+        const partner = await AffiliatePartner.findOne({ email: trimmedEmail });
 
         // Security: Prevent email enumeration by returning success even if email not found
         if (!partner) {
-            logger.warn(`AFFILIATE | FORGOT_PASSWORD | No partner found with email: ${email}`);
+            logger.warn(`AFFILIATE | FORGOT_PASSWORD | No partner found with email: ${trimmedEmail}`);
             return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
         }
 
         if (partner.status === AffiliateStatus.SUSPENDED) {
-            logger.warn(`AFFILIATE | FORGOT_PASSWORD | Partner account suspended: ${email}`);
+            logger.warn(`AFFILIATE | FORGOT_PASSWORD | Partner account suspended: ${trimmedEmail}`);
             return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
         }
 
@@ -98,7 +99,7 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
 
         logger.info(`AFFILIATE | FORGOT_PASSWORD | Queueing email | Partner: ${partner.name} | Link: ${resetLink}`);
 
-        await notificationQueue.addNotificationToQueue({
+        const queueResult = await notificationQueue.addNotificationToQueue({
             type: 'EMAIL',
             email: partner.email,
             templateCode: 'PARTNER_PASSWORD_RESET',
@@ -109,6 +110,11 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
             },
             countryCode: partner.countryCode || 'GLOBAL'
         });
+
+        if (!queueResult.success) {
+            logger.error(`AFFILIATE | FORGOT_PASSWORD | Queue failed for ${email}: ${queueResult.error}`);
+            return res.status(500).json({ success: false, message: 'Internal security protocol error. Please contact support.' });
+        }
 
         res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
 
