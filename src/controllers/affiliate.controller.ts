@@ -3,6 +3,7 @@ import AffiliatePartner, { AffiliateStatus } from '../models/AffiliatePartner';
 import AffiliateSettlement, { SettlementStatus } from '../models/AffiliateSettlement';
 import ReferralRecord from '../models/ReferralRecord';
 import ReferralReward from '../models/ReferralReward';
+import NotificationTemplate from '../models/NotificationTemplate';
 import Ledger, { TransactionType } from '../models/Ledger';
 import Notification from '../models/Notification';
 import bcrypt from 'bcryptjs';
@@ -62,9 +63,27 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
         const partner = await AffiliatePartner.findOne({ email: email.toLowerCase() });
 
         // Security: Prevent email enumeration by returning success even if email not found
-        if (!partner || partner.status === AffiliateStatus.SUSPENDED) {
-            logger.info(`AFFILIATE | FORGOT_PASSWORD | Not found or suspended: ${email}`);
+        if (!partner) {
+            logger.warn(`AFFILIATE | FORGOT_PASSWORD | No partner found with email: ${email}`);
             return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+        }
+
+        if (partner.status === AffiliateStatus.SUSPENDED) {
+            logger.warn(`AFFILIATE | FORGOT_PASSWORD | Partner account suspended: ${email}`);
+            return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
+        }
+
+        // Forensic Check: Verify template existence before queueing
+        const template = await NotificationTemplate.findOne({
+            templateCode: 'PARTNER_PASSWORD_RESET',
+            channel: 'EMAIL',
+            active: true
+        });
+
+        if (!template) {
+            logger.error(`AFFILIATE | FORGOT_PASSWORD | CRITICAL: Template 'PARTNER_PASSWORD_RESET' missing from database.`);
+        } else {
+            logger.info(`AFFILIATE | FORGOT_PASSWORD | Template 'PARTNER_PASSWORD_RESET' found. Proceeding to queue email for: ${partner.email}`);
         }
 
         // Generate 64-character hex token
@@ -74,7 +93,10 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
         partner.resetPasswordExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 mins
         await partner.save();
 
-        const resetLink = `${process.env.PARTNER_PORTAL_URL || 'https://partner.piecejob.co'}/reset-password?token=${token}`;
+        const portalUrl = process.env.PARTNER_PORTAL_URL || 'https://partner.piecejob.co';
+        const resetLink = `${portalUrl}/reset-password?token=${token}`;
+
+        logger.info(`AFFILIATE | FORGOT_PASSWORD | Queueing email | Partner: ${partner.name} | Link: ${resetLink}`);
 
         await notificationQueue.addNotificationToQueue({
             type: 'EMAIL',
@@ -85,10 +107,9 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
                 resetLink,
                 expiry: '30 minutes'
             },
-            countryCode: partner.countryCode
+            countryCode: partner.countryCode || 'GLOBAL'
         });
 
-        logger.info(`AFFILIATE | FORGOT_PASSWORD | Token generated for ${email}`);
         res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
 
     } catch (error: any) {
