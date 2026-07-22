@@ -61,11 +61,18 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
 
     logger.info(`[REFERRAL_ENGINE] Processing Referral | User: ${user._id} | Referrer: ${user.referredBy} | Job: ${job._id}`);
 
-    // Admin Control: Per-Workspace Referral Switch
     const settings = await SystemSettings.findOne({ countryCode: user.countryCode }).session(session as any);
-    if (settings && !settings.referralProgramEnabled) {
-        logger.info(`[REFERRAL_ENGINE] Stopped: Program disabled for workspace ${user.countryCode}`);
-        return;
+
+    // EXEMPT PARTNERS FROM GLOBAL KILL-SWITCH
+    const partner = await AffiliatePartner.findById(user.referredBy).session(session as any);
+    const isPartner = !!partner;
+
+    if (!isPartner) {
+        // Admin Control: Per-Workspace Referral Switch (Only applies to Standard Users)
+        if (settings && !settings.referralProgramEnabled) {
+            logger.info(`[REFERRAL_ENGINE] Stopped: Global Program disabled for workspace ${user.countryCode}`);
+            return;
+        }
     }
 
     if (user.isReferralDisabled) {
@@ -89,11 +96,9 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
     if (!record) {
         logger.info(`[REFERRAL_ENGINE] ReferralRecord missing for ${user._id}. Attempting lazy creation.`);
         // Find referrer type
-        let referrerType: 'USER' | 'PARTNER' = 'USER';
-        let partner = await AffiliatePartner.findById(user.referredBy).session(session as any);
+        let referrerType: 'USER' | 'PARTNER' = isPartner ? 'PARTNER' : 'USER';
 
-        if (partner) {
-            referrerType = 'PARTNER';
+        if (isPartner) {
             if (partner.status !== AffiliateStatus.ACTIVE) {
                 logger.warn(`[REFERRAL_ENGINE] Aborted: Referrer Partner ${partner._id} is NOT ACTIVE.`);
                 return;
@@ -239,6 +244,13 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
         } else {
             reward.status = ReferralStatus.QUALIFIED;
             await reward.save({ session });
+
+            // Update Partner Pending Balance (Atomic)
+            if (record.referrerType === 'PARTNER') {
+                await AffiliatePartner.findByIdAndUpdate(record.referrerId, {
+                    $inc: { 'balance.pending': reward.amount }
+                }, { session });
+            }
         }
 
         record.rewardsIssuedCount += 1;
@@ -249,47 +261,37 @@ const processReferralForUser = async (userId: string, job: IJob, role: 'CUSTOMER
     record.maxRewardableJobs = maxRewards;
     await record.save({ session });
 
+    // Update Partner/Admin stats (Use atomic updates to avoid clobbering balance updates from executeRewardPayout)
     if (record.referrerType === 'PARTNER') {
-        const partner = await AffiliatePartner.findById(record.referrerId).session(session as any);
-        if (partner) {
-            partner.stats.completedJobs += 1;
-            partner.stats.qualifiedUsers = await ReferralRecord.countDocuments({
-                referrerId: partner._id,
-                jobsCompletedCount: { $gt: 0 }
-            }).session(session as any);
-            await partner.save({ session });
-            logger.info(`[REFERRAL_ENGINE] Partner stats updated: ${partner.name} | Completed: ${partner.stats.completedJobs}`);
+        const qualifiedCount = await ReferralRecord.countDocuments({
+            referrerId: record.referrerId,
+            jobsCompletedCount: { $gt: 0 }
+        }).session(session as any);
 
-            // REAL-TIME SYNC (Non-blocking)
-            setImmediate(() => {
-                emitToUser(partner._id.toString(), 'AFFILIATE_STATS_UPDATED', { partnerId: partner._id });
-                emitAdminUpdate('affiliate_matrix_updated', { partnerId: partner._id });
-            });
-        }
+        await AffiliatePartner.findByIdAndUpdate(record.referrerId, {
+            $inc: { 'stats.completedJobs': 1 },
+            $set: { 'stats.qualifiedUsers': qualifiedCount }
+        }, { session });
+
+        logger.info(`[REFERRAL_ENGINE] Partner stats updated (Atomic) | Referrer: ${record.referrerId}`);
+
+        // REAL-TIME SYNC (Non-blocking)
+        setImmediate(() => {
+            emitToUser(record.referrerId.toString(), 'AFFILIATE_STATS_UPDATED', { partnerId: record.referrerId });
+            emitAdminUpdate('affiliate_matrix_updated', { partnerId: record.referrerId });
+        });
     }
 };
 
 export const executeRewardPayout = async (reward: any, session?: mongoose.ClientSession) => {
     try {
         if (reward.referrerType === 'PARTNER') {
-            const partner = await AffiliatePartner.findById(reward.referrerId).session(session as any);
-            if (!partner || partner.status !== AffiliateStatus.ACTIVE) {
-                reward.status = ReferralStatus.REWARDED; // Mark as REWARDED anyway if it's already done but we just logged it?
-                // Actually keep it pending if partner suspended.
-                if (partner?.status === AffiliateStatus.SUSPENDED) {
-                     reward.status = ReferralStatus.REJECTED;
-                     reward.rejectionReason = 'Partner suspended.';
-                     await reward.save({ session });
-                     return;
-                }
-                return;
-            }
+            const transactionId = `TRX-${uuidv4().slice(0, 8).toUpperCase()}`;
 
             // Create Ledger Entry for Audit
-            const transactionId = `TRX-${uuidv4().slice(0, 8).toUpperCase()}`;
             await Ledger.create([{
                 transactionId,
-                toUserId: partner._id, // Using toUserId for partner too, though they are in different collection
+                toUserId: reward.referrerId,
                 amount: reward.amount,
                 currency: reward.currency,
                 countryCode: reward.countryCode,
@@ -299,17 +301,35 @@ export const executeRewardPayout = async (reward: any, session?: mongoose.Client
                 metadata: { rewardId: reward._id, referrerType: 'PARTNER' }
             }], { session });
 
-            // Partners accumulate balance in their model, not a standard wallet
-            partner.balance.available += reward.amount;
-            partner.balance.lifetime += reward.amount;
-            partner.stats.rewardedJobs += 1;
-            await partner.save({ session });
+            // Partners accumulate balance in their model.
+            // USE ATOMIC UPDATE to prevent state clobbering from concurrent processReferralForUser calls.
+            const partner = await AffiliatePartner.findOneAndUpdate(
+                { _id: reward.referrerId, status: AffiliateStatus.ACTIVE },
+                {
+                    $inc: {
+                        'balance.available': reward.amount,
+                        'balance.lifetime': reward.amount,
+                        'stats.rewardedJobs': 1,
+                        // Decrement pending if it was previously qualified/pending
+                        'balance.pending': reward.status === ReferralStatus.QUALIFIED || reward.status === ReferralStatus.PENDING ? -reward.amount : 0
+                    }
+                },
+                { session, new: true }
+            );
+
+            if (!partner) {
+                logger.error(`[REFERRAL_ENGINE] Payout failed: Partner ${reward.referrerId} not found or NOT ACTIVE.`);
+                reward.status = ReferralStatus.REJECTED;
+                reward.rejectionReason = 'Partner not found or inactive during payout.';
+                await reward.save({ session });
+                return;
+            }
 
             reward.status = ReferralStatus.REWARDED;
             reward.processedAt = new Date();
             await reward.save({ session });
 
-            logger.info(`Affiliate Payout successful: ${reward.amount} to partner ${partner.name}`);
+            logger.info(`[REFERRAL_ENGINE] Affiliate Payout successful: ${reward.amount} to partner ${partner.name}`);
         } else {
             const referrer = await User.findById(reward.referrerId).session(session as any);
             const referred = await User.findById(reward.referredId).session(session as any);

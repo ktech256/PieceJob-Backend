@@ -59,21 +59,68 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
         if (!partner) return res.status(404).json({ success: false, message: 'Partner not found' });
 
         const now = new Date();
-        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
-        const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // Fetch reward history for trend and stats
-        const rewards = await ReferralReward.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName');
-        const referrals = await ReferralRecord.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName role isVerified createdAt');
+        const pId = new mongoose.Types.ObjectId(partnerId);
 
-        const earningsToday = rewards.filter(r => r.createdAt >= startOfDay).reduce((acc, r) => acc + r.amount, 0);
-        const earningsWeekly = rewards.filter(r => r.createdAt >= startOfWeek).reduce((acc, r) => acc + r.amount, 0);
-        const earningsMonthly = rewards.filter(r => r.createdAt >= startOfMonth).reduce((acc, r) => acc + r.amount, 0);
+        // FORENSIC RECONCILIATION: Live Aggregation from Source Collections
+        const [referrals, rewards, settlements] = await Promise.all([
+            ReferralRecord.find({ referrerId: pId }).populate('referredId', 'firstName lastName role isVerified createdAt'),
+            ReferralReward.find({ referrerId: pId }),
+            AffiliateSettlement.find({ partnerId: pId })
+        ]);
 
-        const latestCommission = rewards.length > 0 ? rewards.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] : null;
-        const topReferral = referrals.length > 0 ? referrals.sort((a, b) => (b.totalCommissionGenerated || 0) - (a.totalCommissionGenerated || 0))[0] : null;
-        const latestReferral = referrals.length > 0 ? referrals.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] : null;
+        // 1. Earnings Breakdown
+        const earningsToday = rewards
+            .filter(r => r.status === 'REWARDED' && r.createdAt >= startOfDay)
+            .reduce((acc, r) => acc + r.amount, 0);
+
+        const earningsWeekly = rewards
+            .filter(r => r.status === 'REWARDED' && r.createdAt >= startOfWeek)
+            .reduce((acc, r) => acc + r.amount, 0);
+
+        const earningsMonthly = rewards
+            .filter(r => r.status === 'REWARDED' && r.createdAt >= startOfMonth)
+            .reduce((acc, r) => acc + r.amount, 0);
+
+        // 2. Balance Matrix Reconciliation (THE TRUTH)
+        const pendingRewards = rewards
+            .filter(r => r.status === 'PENDING' || r.status === 'QUALIFIED')
+            .reduce((acc, r) => acc + r.amount, 0);
+
+        const requestedAmount = settlements
+            .filter(s => s.status === 'PENDING' || s.status === 'APPROVED')
+            .reduce((acc, s) => acc + s.amount, 0);
+
+        const processingAmount = settlements
+            .filter(s => s.status === 'PROCESSING')
+            .reduce((acc, s) => acc + s.amount, 0);
+
+        const paidAmount = settlements
+            .filter(s => s.status === 'PAID')
+            .reduce((acc, s) => acc + s.amount, 0);
+
+        const lifetimeEarnings = rewards
+            .filter(r => r.status === 'REWARDED')
+            .reduce((acc, r) => acc + r.amount, 0);
+
+        // 3. Highlights
+        const latestCommission = rewards.length > 0
+            ? rewards.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+            : null;
+
+        const topReferral = referrals.length > 0
+            ? referrals.sort((a, b) => (b.totalCommissionGenerated || 0) - (a.totalCommissionGenerated || 0))[0]
+            : null;
+
+        const latestReferral = referrals.length > 0
+            ? referrals.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+            : null;
 
         res.status(200).json({
             success: true,
@@ -81,23 +128,32 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
                 stats: {
                     ...partner.stats,
                     completedJobs: referrals.reduce((acc, r) => acc + (r.jobsCompletedCount || 0), 0),
+                    rewardedJobs: referrals.reduce((acc, r) => acc + (r.rewardsIssuedCount || 0), 0),
                     conversionRate: referrals.length > 0 ? (referrals.filter(r => (r.jobsCompletedCount || 0) > 0).length / referrals.length) * 100 : 0,
-                    // ISSUE 5 counters
-                    lifetimeJobValue: referrals.reduce((acc, r) => acc + (r.lifetimeJobValue || 0), 0),
-                    averageCommissionPerReferral: referrals.length > 0 ? (rewards.reduce((acc, r) => acc + r.amount, 0) / referrals.length) : 0,
+                    // REMOVED lifetimeJobValue (Volume) as it is confidential business info
+                    averageCommissionPerReferral: referrals.length > 0 ? (lifetimeEarnings / referrals.length) : 0,
                     customerSignups: referrals.filter((r: any) => r.referredId?.role === 'CUSTOMER').length,
                     providerSignups: referrals.filter((r: any) => r.referredId?.role === 'PROVIDER').length,
                     businessSignups: referrals.filter((r: any) => r.referredId?.role === 'BUSINESS' || r.referredId?.role === 'CORPORATE_EMPLOYEE').length,
                     verifiedRegistrations: referrals.filter((r: any) => r.referredId?.isVerified).length,
                     registrations: referrals.length
                 },
-                balance: partner.balance,
+                balance: {
+                    ...partner.balance,
+                    pending: pendingRewards,
+                    available: partner.balance.available,
+                    requested: requestedAmount,
+                    processing: processingAmount,
+                    paid: paidAmount,
+                    lifetime: lifetimeEarnings
+                },
                 bankingDetails: partner.bankingDetails,
                 earnings: {
                     today: earningsToday,
                     weekly: earningsWeekly,
                     monthly: earningsMonthly,
-                    lifetime: partner.balance.lifetime
+                    lifetime: lifetimeEarnings,
+                    pending: pendingRewards // Added for UI visibility
                 },
                 highlights: {
                     latestCommission: latestCommission ? {
@@ -111,7 +167,7 @@ export const getPartnerDashboard = async (req: Request, res: Response) => {
                         jobs: topReferral.jobsCompletedCount
                     } : null,
                     latestReferral: latestReferral ? {
-                        name: `${(latestReferral.referredId as any).firstName} ${(latestReferral.referredId as any).lastName}`,
+                        name: latestReferral.referredId ? `${(latestReferral.referredId as any).firstName} ${(latestReferral.referredId as any).lastName}` : 'Unknown',
                         date: latestReferral.createdAt
                     } : null
                 },
@@ -151,10 +207,10 @@ export const getPartnerStatements = async (req: Request, res: Response) => {
 export const getPartnerReports = async (req: Request, res: Response) => {
     try {
         const partnerId = (req as any).user?.partnerId;
+        const pId = new mongoose.Types.ObjectId(partnerId);
 
         // Aggregate stats per campaign or period
-        const records = await ReferralRecord.find({ referrerId: partnerId }).populate('referredId', 'firstName lastName role createdAt');
-        const rewards = await ReferralReward.find({ referrerId: partnerId });
+        const records = await ReferralRecord.find({ referrerId: pId }).populate('referredId', 'firstName lastName role createdAt');
 
         res.status(200).json({
             success: true,
@@ -171,7 +227,7 @@ export const getPartnerReports = async (req: Request, res: Response) => {
                     jobsCompleted: r.jobsCompletedCount,
                     rewardsIssued: r.rewardsIssuedCount,
                     commissionGenerated: r.totalCommissionGenerated,
-                    lifetimeSpend: r.totalSpend,
+                    // REMOVED lifetimeSpend (Volume) as it is confidential business info
                     status: r.status,
                     lastActivity: r.lastCompletedJobAt
                 }))
