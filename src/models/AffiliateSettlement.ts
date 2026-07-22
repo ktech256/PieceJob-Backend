@@ -21,6 +21,7 @@ export interface IAffiliateSettlement extends Document {
     processedAt?: Date;
     paidAt?: Date;
     paymentReference?: string;
+    evidenceUrl?: string;
     bankDetails: {
         bankName: string;
         accountHolder: string;
@@ -54,6 +55,7 @@ const AffiliateSettlementSchema: Schema = new Schema({
     processedAt: { type: Date },
     paidAt: { type: Date },
     paymentReference: { type: String },
+    evidenceUrl: { type: String },
     bankDetails: {
         bankName: { type: String, required: true },
         accountHolder: { type: String, required: true },

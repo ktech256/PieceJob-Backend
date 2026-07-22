@@ -21,11 +21,13 @@ router.get('/settlements', authenticate, affiliateController.getPartnerSettlemen
 // Admin Routes for Managing Partners
 router.post('/admin', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.createPartner);
 router.patch('/admin/:id', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.updatePartner);
+router.patch('/admin/:id/status', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.updatePartnerLifecycleStatus);
 router.get('/admin', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.getPartners);
 router.get('/admin/:id/analytics', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.getPartnerAnalytics);
 
 // Admin Settlement Management
 router.get('/admin/settlements', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.adminGetSettlements);
+router.get('/admin/settlements/stats', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.getAdminSettlementStats);
 router.patch('/admin/settlements/:id/status', authenticate, authorize([UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.FINANCE_ADMIN]), affiliateController.adminUpdateSettlementStatus);
 
 export default router;

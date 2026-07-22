@@ -3,6 +3,9 @@ import mongoose, { Schema, Document } from 'mongoose';
 export enum AffiliateStatus {
     ACTIVE = 'ACTIVE',
     SUSPENDED = 'SUSPENDED',
+    BANNED = 'BANNED',
+    ARCHIVED = 'ARCHIVED',
+    DELETED = 'DELETED',
     DORMANT = 'DORMANT'
 }
 
@@ -22,6 +25,12 @@ export interface IAffiliatePartner extends Document {
     passwordHash: string;
     resetPasswordToken?: string;
     resetPasswordExpires?: Date;
+    suspendedAt?: Date;
+    suspendedUntil?: Date;
+    suspendedReason?: string;
+    bannedAt?: Date;
+    bannedReason?: string;
+    archivedAt?: Date;
     campaign?: string;
     notes?: string;
     stats: {
@@ -83,6 +92,12 @@ const AffiliatePartnerSchema: Schema = new Schema({
     passwordHash: { type: String, required: true },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+    suspendedAt: { type: Date },
+    suspendedUntil: { type: Date },
+    suspendedReason: { type: String },
+    bannedAt: { type: Date },
+    bannedReason: { type: String },
+    archivedAt: { type: Date },
     campaign: { type: String },
     notes: { type: String },
     stats: {

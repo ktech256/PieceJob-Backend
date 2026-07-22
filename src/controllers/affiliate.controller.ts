@@ -6,6 +6,7 @@ import ReferralReward from '../models/ReferralReward';
 import NotificationTemplate from '../models/NotificationTemplate';
 import Ledger, { TransactionType } from '../models/Ledger';
 import Notification from '../models/Notification';
+import AuditLog, { AuditType } from '../models/AuditLog';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -25,8 +26,12 @@ export const loginPartner = async (req: Request, res: Response) => {
             ]
         });
 
-        if (!partner || partner.status === AffiliateStatus.SUSPENDED) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials or account suspended' });
+        if (!partner || [AffiliateStatus.SUSPENDED, AffiliateStatus.BANNED, AffiliateStatus.DELETED, AffiliateStatus.ARCHIVED].includes(partner.status)) {
+            let msg = 'Invalid credentials';
+            if (partner?.status === AffiliateStatus.SUSPENDED) msg = 'Account suspended. Please contact support.';
+            if (partner?.status === AffiliateStatus.BANNED) msg = 'Account permanently banned.';
+            if (partner?.status === AffiliateStatus.DELETED || partner?.status === AffiliateStatus.ARCHIVED) msg = 'Account no longer accessible.';
+            return res.status(401).json({ success: false, message: msg });
         }
 
         const isMatch = await bcrypt.compare(password, partner.passwordHash);
@@ -69,8 +74,8 @@ export const forgotPartnerPassword = async (req: Request, res: Response) => {
             return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
         }
 
-        if (partner.status === AffiliateStatus.SUSPENDED) {
-            logger.warn(`AFFILIATE | FORGOT_PASSWORD | Partner account suspended: ${trimmedEmail}`);
+        if (partner.status !== AffiliateStatus.ACTIVE && partner.status !== AffiliateStatus.DORMANT) {
+            logger.warn(`AFFILIATE | FORGOT_PASSWORD | Partner account restricted (Status: ${partner.status}): ${trimmedEmail}`);
             return res.status(200).json({ success: true, message: 'If an account exists with that email, a reset link has been sent.' });
         }
 
@@ -388,22 +393,8 @@ export const updatePartnerProfile = async (req: Request, res: Response) => {
     }
 };
 
+
 export const updatePartnerBanking = async (req: Request, res: Response) => {
-    try {
-        const partnerId = (req as any).user?.partnerId;
-        const { bankName, accountHolder, accountNumber, branchCode, accountType, swiftCode } = req.body;
-
-        const partner = await AffiliatePartner.findByIdAndUpdate(partnerId, {
-            bankingDetails: {
-                bankName, accountHolder, accountNumber, branchCode, accountType, swiftCode
-            }
-        }, { new: true });
-
-        res.status(200).json({ success: true, data: partner });
-    } catch (error: any) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
 
 export const createPartner = async (req: Request, res: Response) => {
     logger.info(`[AFFILIATE] Onboarding Request Received: ${req.body.email}`);
@@ -889,7 +880,7 @@ export const adminUpdateSettlementStatus = async (req: Request, res: Response) =
     session.startTransaction();
     try {
         const { id } = req.params;
-        const { status, note, paymentReference } = req.body;
+        const { status, note, paymentReference, evidenceUrl } = req.body;
         const adminId = (req as any).user?.userId;
 
         const settlement = await AffiliateSettlement.findById(id).session(session);
@@ -922,6 +913,7 @@ export const adminUpdateSettlementStatus = async (req: Request, res: Response) =
                 partner.balance.paid += settlement.amount;
                 settlement.paidAt = new Date();
                 settlement.paymentReference = paymentReference;
+                if (evidenceUrl) settlement.evidenceUrl = evidenceUrl;
 
                 // Create Ledger Entry
                 await Ledger.create([{
@@ -942,10 +934,35 @@ export const adminUpdateSettlementStatus = async (req: Request, res: Response) =
                 // Return funds to Available
                 if (oldStatus === SettlementStatus.PROCESSING) {
                     partner.balance.processing -= settlement.amount;
+                } else if (oldStatus === SettlementStatus.PAID) {
+                    // This is a REVERSAL of a paid settlement
+                    partner.balance.paid -= settlement.amount;
                 } else {
                     partner.balance.requested -= settlement.amount;
                 }
                 partner.balance.available += settlement.amount;
+                break;
+
+            case SettlementStatus.RETURNED:
+                // This is specifically for REVERSAL of PAID settlements
+                if (oldStatus !== SettlementStatus.PAID) {
+                    throw new Error('Only paid settlements can be marked as returned/reversed.');
+                }
+                partner.balance.paid -= settlement.amount;
+                partner.balance.available += settlement.amount;
+
+                // Create Reversing Ledger Entry
+                await Ledger.create([{
+                    transactionId: `REV-${uuidv4().slice(0, 8).toUpperCase()}`,
+                    toUserId: partner._id,
+                    amount: -settlement.amount,
+                    currency: settlement.currency,
+                    countryCode: settlement.countryCode,
+                    type: TransactionType.PAYOUT, // Or a new type like PAYOUT_REVERSAL
+                    status: 'COMPLETED',
+                    description: `REVERSAL of Settlement: ${settlement.settlementId}`,
+                    metadata: { settlementId: settlement._id, originalReference: settlement.paymentReference }
+                }], { session });
                 break;
         }
 
@@ -981,3 +998,109 @@ export const adminUpdateSettlementStatus = async (req: Request, res: Response) =
         session.endSession();
     }
 };
+
+/**
+ * Admin: Update Partner Status (Lifecycle Management)
+ */
+export const updatePartnerLifecycleStatus = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { status, reason, notes, suspendUntil, permanent, confirmText } = req.body;
+        const adminId = (req as any).user?.userId;
+        const ipAddress = req.ip;
+
+        const partner = await AffiliatePartner.findById(id);
+        if (!partner) return res.status(404).json({ success: false, message: 'Partner not found' });
+
+        const oldStatus = partner.status;
+        const newStatus = status as AffiliateStatus;
+
+        // PERMANENT DELETE PROTECTION
+        if (newStatus === AffiliateStatus.DELETED && permanent === true) {
+             if (confirmText !== 'DELETE') {
+                 return res.status(400).json({ success: false, message: 'Please type DELETE to confirm permanent deletion.' });
+             }
+             // Check for pending items
+             const pendingSettlement = await AffiliateSettlement.findOne({
+                 partnerId: id,
+                 status: { $in: [SettlementStatus.PENDING, SettlementStatus.PROCESSING, SettlementStatus.APPROVED] }
+             });
+             if (pendingSettlement) {
+                 return res.status(400).json({ success: false, message: 'Cannot permanently delete partner with pending settlement requests.' });
+             }
+
+             // If everything clear, we can delete
+             await AffiliatePartner.findByIdAndDelete(id);
+
+             // Log Audit
+             await AuditLog.create({
+                 countryCode: partner.countryCode,
+                 auditType: AuditType.ADMIN_ACTION,
+                 adminId,
+                 entityType: 'AffiliatePartner',
+                 entityId: id,
+                 action: 'PERMANENT_DELETE_PARTNER',
+                 beforeState: partner.toObject(),
+                 afterState: null,
+                 ipAddress,
+                 systemSource: 'ADMIN_DASHBOARD'
+             });
+             return res.status(200).json({ success: true, message: 'Partner permanently deleted.' });
+        }
+
+        if (oldStatus === newStatus && newStatus !== AffiliateStatus.SUSPENDED) return res.status(200).json({ success: true, data: partner });
+
+        partner.status = newStatus;
+
+        // Handle specific metadata for lifecycle actions
+        if (newStatus === AffiliateStatus.SUSPENDED) {
+            partner.suspendedAt = new Date();
+            partner.suspendedReason = reason;
+            if (suspendUntil) partner.suspendedUntil = new Date(suspendUntil);
+        } else if (newStatus === AffiliateStatus.BANNED) {
+            partner.bannedAt = new Date();
+            partner.bannedReason = reason;
+        } else if (newStatus === AffiliateStatus.ARCHIVED) {
+            partner.archivedAt = new Date();
+        } else if (newStatus === AffiliateStatus.ACTIVE) {
+            // Restore/Unsuspend/Unban
+            partner.suspendedAt = undefined;
+            partner.suspendedUntil = undefined;
+            partner.suspendedReason = undefined;
+            partner.bannedAt = undefined;
+            partner.bannedReason = undefined;
+            partner.archivedAt = undefined;
+        }
+
+        if (reason) partner.notes = (partner.notes ? partner.notes + '\n' : '') + `[${new Date().toISOString()}] Status Change from ${oldStatus} to ${newStatus}. Reason: ${reason}. Notes: ${notes || ''}`;
+
+        await partner.save();
+
+        // Audit Log (Detailed for Lifecycle)
+        await AuditLog.create({
+            countryCode: partner.countryCode,
+            auditType: AuditType.ADMIN_ACTION,
+            adminId,
+            entityType: 'AffiliatePartner',
+            entityId: id,
+            action: `PARTNER_${newStatus}`,
+            beforeState: { status: oldStatus },
+            afterState: {
+                status: newStatus,
+                reason,
+                notes,
+                suspendUntil,
+                suspendedAt: partner.suspendedAt,
+                bannedAt: partner.bannedAt,
+                archivedAt: partner.archivedAt
+            },
+            ipAddress,
+            systemSource: 'ADMIN_DASHBOARD'
+        });
+
+        res.status(200).json({ success: true, data: partner });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
