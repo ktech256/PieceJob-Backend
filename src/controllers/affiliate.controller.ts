@@ -393,52 +393,6 @@ export const updatePartnerProfile = async (req: Request, res: Response) => {
     }
 };
 
-/**
- * Admin: Get Settlement Statistics
- */
-export const getAdminSettlementStats = async (req: Request, res: Response) => {
-    try {
-        const { countryCode } = req.query;
-        const query: any = {};
-        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode as string;
-
-        const settlements = await AffiliateSettlement.find(query);
-
-        const now = new Date();
-        const startOfDay = new Date(new Date().setHours(0, 0, 0, 0));
-        const startOfWeek = new Date(new Date().setDate(now.getDate() - now.getDay()));
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const stats = {
-            count: {
-                pending: settlements.filter(s => s.status === SettlementStatus.PENDING).length,
-                approved: settlements.filter(s => s.status === SettlementStatus.APPROVED).length,
-                rejected: settlements.filter(s => s.status === SettlementStatus.REJECTED).length,
-                paid: settlements.filter(s => s.status === SettlementStatus.PAID).length,
-                processing: settlements.filter(s => s.status === SettlementStatus.PROCESSING).length,
-                cancelled: settlements.filter(s => s.status === SettlementStatus.CANCELLED).length,
-            },
-            financials: {
-                totalRequested: settlements.reduce((acc, s) => acc + s.amount, 0),
-                totalPaid: settlements.filter(s => s.status === SettlementStatus.PAID).reduce((acc, s) => acc + s.amount, 0),
-                outstandingLiability: settlements.filter(s => [SettlementStatus.PENDING, SettlementStatus.APPROVED, SettlementStatus.PROCESSING].includes(s.status)).reduce((acc, s) => acc + s.amount, 0),
-                averageSettlement: settlements.length > 0 ? settlements.reduce((acc, s) => acc + s.amount, 0) / settlements.length : 0,
-                largestSettlement: settlements.length > 0 ? Math.max(...settlements.map(s => s.amount)) : 0,
-            },
-            volume: {
-                today: settlements.filter(s => s.createdAt >= startOfDay).length,
-                thisWeek: settlements.filter(s => s.createdAt >= startOfWeek).length,
-                thisMonth: settlements.filter(s => s.createdAt >= startOfMonth).length,
-                lifetime: settlements.length
-            }
-        };
-
-        res.status(200).json({ success: true, data: stats });
-    } catch (error: any) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
 
 export const updatePartnerBanking = async (req: Request, res: Response) => {
     try {
@@ -450,52 +404,6 @@ export const updatePartnerBanking = async (req: Request, res: Response) => {
         }, { new: true });
 
         res.status(200).json({ success: true, data: partner });
-    } catch (error: any) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-/**
- * Admin: Get Settlement Statistics
- */
-export const getAdminSettlementStats = async (req: Request, res: Response) => {
-    try {
-        const { countryCode } = req.query;
-        const query: any = {};
-        if (countryCode && countryCode !== 'GLOBAL') query.countryCode = countryCode as string;
-
-        const settlements = await AffiliateSettlement.find(query);
-
-        const now = new Date();
-        const startOfDay = new Date(new Date().setHours(0, 0, 0, 0));
-        const startOfWeek = new Date(new Date().setDate(now.getDate() - now.getDay()));
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const stats = {
-            count: {
-                pending: settlements.filter(s => s.status === SettlementStatus.PENDING).length,
-                approved: settlements.filter(s => s.status === SettlementStatus.APPROVED).length,
-                rejected: settlements.filter(s => s.status === SettlementStatus.REJECTED).length,
-                paid: settlements.filter(s => s.status === SettlementStatus.PAID).length,
-                processing: settlements.filter(s => s.status === SettlementStatus.PROCESSING).length,
-                cancelled: settlements.filter(s => s.status === SettlementStatus.CANCELLED).length,
-            },
-            financials: {
-                totalRequested: settlements.reduce((acc, s) => acc + s.amount, 0),
-                totalPaid: settlements.filter(s => s.status === SettlementStatus.PAID).reduce((acc, s) => acc + s.amount, 0),
-                outstandingLiability: settlements.filter(s => [SettlementStatus.PENDING, SettlementStatus.APPROVED, SettlementStatus.PROCESSING].includes(s.status)).reduce((acc, s) => acc + s.amount, 0),
-                averageSettlement: settlements.length > 0 ? settlements.reduce((acc, s) => acc + s.amount, 0) / settlements.length : 0,
-                largestSettlement: settlements.length > 0 ? Math.max(...settlements.map(s => s.amount)) : 0,
-            },
-            volume: {
-                today: settlements.filter(s => s.createdAt >= startOfDay).length,
-                thisWeek: settlements.filter(s => s.createdAt >= startOfWeek).length,
-                thisMonth: settlements.filter(s => s.createdAt >= startOfMonth).length,
-                lifetime: settlements.length
-            }
-        };
-
-        res.status(200).json({ success: true, data: stats });
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
