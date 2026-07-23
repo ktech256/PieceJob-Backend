@@ -307,6 +307,31 @@ export const deleteEmergencyContact = async (req: AuthRequest, res: Response) =>
     }
 };
 
+// --- SAVED RECIPIENTS ---
+export const getSavedRecipients = async (req: AuthRequest, res: Response) => {
+    try {
+        const user = await User.findById(req.user?.userId).select('savedRecipients');
+        res.status(200).json({ success: true, data: user?.savedRecipients || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to fetch recipients', error });
+    }
+};
+
+export const deleteRecipient = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(req.user?.userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        user.savedRecipients = user.savedRecipients?.filter(r => (r as any)._id.toString() !== id);
+        await user.save();
+
+        res.status(200).json({ success: true, data: user.savedRecipients });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Failed to delete recipient', error });
+    }
+};
+
 // --- PREFERENCES & SETTINGS ---
 export const updatePreferences = async (req: AuthRequest, res: Response) => {
     try {

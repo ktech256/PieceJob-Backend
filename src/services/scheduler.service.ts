@@ -64,8 +64,9 @@ export const initSchedulers = () => {
 
     // 9. Provider Reliability Monitoring (Every 1 minute)
     setInterval(async () => {
-        const { monitorProviderReliability } = require('./job.service');
+        const { monitorProviderReliability, monitorRecipientNotifications } = require('./job.service');
         await monitorProviderReliability();
+        await monitorRecipientNotifications();
     }, 60 * 1000);
 
     // 10. Performance Score Recovery (Every 24 hours)

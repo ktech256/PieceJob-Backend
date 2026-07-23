@@ -33,6 +33,10 @@ router.post('/emergency-contacts', authenticate, userController.addEmergencyCont
 router.put('/emergency-contacts/:contactId', authenticate, userController.updateEmergencyContact);
 router.delete('/emergency-contacts/:contactId', authenticate, userController.deleteEmergencyContact);
 
+// Saved Recipients
+router.get('/recipients', authenticate, userController.getSavedRecipients);
+router.delete('/recipients/:id', authenticate, userController.deleteRecipient);
+
 // Preferences & Privacy
 router.patch('/preferences', authenticate, userController.updatePreferences);
 router.patch('/privacy', authenticate, userController.updatePrivacySettings);

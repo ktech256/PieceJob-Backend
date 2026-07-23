@@ -83,6 +83,12 @@ export interface IUser extends Document {
     phone: string;
     relationship: string;
   }[];
+  savedRecipients?: {
+    name: string;
+    phone: string;
+    relationship?: string;
+    createdAt?: Date;
+  }[];
   language?: string;
   country?: string;
   privacySettings?: {
@@ -164,6 +170,12 @@ const UserSchema: Schema = new Schema({
     name: { type: String },
     phone: { type: String },
     relationship: { type: String }
+  }],
+  savedRecipients: [{
+    name: { type: String },
+    phone: { type: String },
+    relationship: { type: String },
+    createdAt: { type: Date, default: Date.now }
   }],
   language: { type: String, default: 'en' },
   country: { type: String },
