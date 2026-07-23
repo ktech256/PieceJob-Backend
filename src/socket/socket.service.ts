@@ -28,6 +28,23 @@ export const initSocket = (server: any) => {
       logger.socket('JOIN_ROOM', socket.id, `Room: job_${jobId}`);
     });
 
+    socket.on('join_tracking', async (token: string) => {
+        try {
+            const job = await Job.findOne({
+                trackingToken: token,
+                trackingTokenExpiresAt: { $gt: new Date() }
+            });
+            if (job) {
+                const jobId = job._id.toString();
+                socket.join(`job_${jobId}`);
+                console.log(`[SOCKET_TRACE] JOIN_TRACKING | Socket: ${socket.id} | Token: ${token} | Room: job_${jobId}`);
+                logger.socket('JOIN_ROOM', socket.id, `Room: job_${jobId} via Token`);
+            }
+        } catch (error) {
+            console.error('[SOCKET_ERROR] join_tracking failed:', error);
+        }
+    });
+
     socket.on('monitor_job_chat', (jobId: string) => {
         // Only allow if the socket user is an admin
         // For simplicity in Phase 1, we trust the join request if it comes from the dashboard
