@@ -27,7 +27,61 @@ import { calculateDistance } from '../utils/location';
  * Forensic helper to recover missing countryCode and currency from any associated participant.
  */
 const recoverJobMetadata = async (job: IJob, session: mongoose.ClientSession) => {
-    // ... logic ...
+    const User = mongoose.model('User');
+    const Provider = mongoose.model('Provider');
+
+    let recoveredCountry = job.countryCode;
+    let recoveredCurrency = job.pricingSnapshot?.currencyCode;
+
+    // 1. Try Provider Profile
+    if (!recoveredCountry && job.providerId) {
+        const provider = await Provider.findOne({ userId: job.providerId }).session(session);
+        if (provider?.countryCode) recoveredCountry = provider.countryCode;
+
+        if (!recoveredCountry) {
+            const providerUser = await User.findById(job.providerId).session(session);
+            if (providerUser?.countryCode) recoveredCountry = providerUser.countryCode;
+        }
+    }
+
+    // 2. Try Customer User Profile
+    if (!recoveredCountry && job.customerId) {
+        const customerUser = await User.findById(job.customerId).session(session);
+        if (customerUser?.countryCode) recoveredCountry = customerUser.countryCode;
+    }
+
+    // 3. Fallback to System Settings / First Active Country if still missing
+    if (!recoveredCountry) {
+        const Country = mongoose.model('Country');
+        const activeCountry = await Country.findOne({ isActive: true }).session(session);
+        if (activeCountry) {
+            recoveredCountry = activeCountry.code;
+            recoveredCurrency = recoveredCurrency || activeCountry.currency;
+        }
+    }
+
+    // Apply repairs to the document
+    if (recoveredCountry && !job.countryCode) {
+        logger.info(`JOB_COMPLETION | Repairing missing countryCode for Job: ${job._id} -> ${recoveredCountry}`);
+        job.countryCode = recoveredCountry;
+    }
+
+    if (recoveredCurrency && !job.pricingSnapshot?.currencyCode) {
+        if (!job.pricingSnapshot) {
+            job.pricingSnapshot = {
+                basePrice: 0,
+                hourlyPrice: 0,
+                bookingFee: job.bookingFee,
+                taxPercentage: 0,
+                currencyCode: recoveredCurrency || 'USD',
+                surcharges: []
+            };
+        } else {
+            job.pricingSnapshot.currencyCode = recoveredCurrency || 'USD';
+        }
+    }
+
+    return { countryCode: recoveredCountry, currency: recoveredCurrency || 'USD' };
 };
 
 export const generateTrackingToken = (jobId: string): string => {

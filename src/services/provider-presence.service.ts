@@ -129,7 +129,7 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
                     // PHASE 7: Recipient SMS Trigger
                     if (activeJob.isForSomeoneElse && activeJob.recipientPhone) {
                         const { sendRecipientSms } = require('./job.service');
-                        sendRecipientSms(activeJob, 'NEARBY').catch(err => logger.error(`RECIPIENT_NEARBY_SMS_ERROR | Job: ${activeJob._id} | ${err}`));
+                        sendRecipientSms(activeJob, 'NEARBY').catch((err: any) => logger.error(`RECIPIENT_NEARBY_SMS_ERROR | Job: ${activeJob._id} | ${err}`));
                     }
                 }
                 else if (distance <= 5000 && distance > 4500 && !sent.includes('TEN_MINUTES')) {
