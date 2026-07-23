@@ -1501,6 +1501,43 @@ export const markTaskPhotosSeen = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const getJobByTrackingToken = async (req: Request, res: Response) => {
+    try {
+        const { token } = req.params;
+
+        const job = await Job.findOne({
+            trackingToken: token,
+            trackingTokenExpiresAt: { $gt: new Date() }
+        }).populate('providerId', 'firstName lastName profilePhoto');
+
+        if (!job) {
+            return res.status(404).json({ success: false, message: 'Tracking session has expired or is invalid.' });
+        }
+
+        // Security: Never expose customer/payment info in public tracking
+        const providerProfile = await Provider.findOne({ userId: job.providerId }).select('location ratingAvg jobsCompleted');
+
+        const trackingData = {
+            status: job.status,
+            serviceName: job.serviceName,
+            destination: job.location, // Location B
+            provider: job.providerId ? {
+                firstName: (job.providerId as any).firstName,
+                profilePicture: (job.providerId as any).profilePhoto,
+                location: providerProfile?.location,
+                ratingAvg: providerProfile?.ratingAvg,
+                jobsCompleted: providerProfile?.jobsCompleted
+            } : null,
+            recipientName: job.recipientName,
+            updatedAt: job.updatedAt
+        };
+
+        res.status(200).json({ success: true, data: trackingData });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 export const confirmDispatch = async (req: AuthRequest, res: Response) => {
     try {
         const { jobId } = req.params;

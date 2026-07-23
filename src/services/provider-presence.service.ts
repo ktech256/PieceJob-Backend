@@ -125,6 +125,12 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
                     // ~5 mins away
                     await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is almost there', 'Your provider is approximately 5 minutes away.');
                     activeJob.notificationsSent = [...sent, 'ALMOST_THERE'];
+
+                    // PHASE 7: Recipient SMS Trigger
+                    if (activeJob.isForSomeoneElse && activeJob.recipientPhone) {
+                        const { sendRecipientSms } = require('./job.service');
+                        sendRecipientSms(activeJob, 'NEARBY').catch(err => logger.error(`RECIPIENT_NEARBY_SMS_ERROR | Job: ${activeJob._id} | ${err}`));
+                    }
                 }
                 else if (distance <= 5000 && distance > 4500 && !sent.includes('TEN_MINUTES')) {
                     // ~10 mins away

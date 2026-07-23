@@ -27,5 +27,6 @@ router.post('/:jobId/upload-photos', authenticate, authorize([UserRole.CUSTOMER]
 router.post('/:jobId/confirm-dispatch', authenticate, authorize([UserRole.PROVIDER]), jobController.confirmDispatch);
 router.post('/:jobId/unable-to-locate', authenticate, authorize([UserRole.PROVIDER]), jobController.reportUnableToLocate);
 router.get('/:jobId/receipt/download', jobController.downloadReceipt);
+router.get('/track/:token', jobController.getJobByTrackingToken);
 
 export default router;
