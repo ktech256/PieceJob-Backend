@@ -97,7 +97,7 @@ export const sendRecipientSms = async (job: IJob, type: 'ACCEPTED' | 'NEARBY') =
         await job.save();
     }
 
-    const trackingLink = `https://track.piecejob.co/${job.trackingToken}`;
+    const trackingLink = `https://piecejob.co/track/${job.trackingToken}`;
     let message = "";
 
     if (type === 'ACCEPTED') {
@@ -208,6 +208,7 @@ export const completeJob = async (jobId: string, adminOverride: boolean = false)
                         completedAt: completedAt,
                         updatedAt: completedAt,
                         countryCode: jobData.countryCode || metadata.countryCode,
+                        trackingToken: null, // Clear tracking on completion
                         ...fraudUpdate
                     }
                 },

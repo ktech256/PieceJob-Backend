@@ -1079,6 +1079,7 @@ export const cancelJob = async (req: AuthRequest, res: Response) => {
           job.cancelledAt = now;
           job.cancelledBy = new mongoose.Types.ObjectId(userId);
           job.cancellationReason = reason || 'Cancelled by customer';
+          job.trackingToken = undefined; // Clear tracking on cancel
 
           if (refundEligible) {
               await financialService.refundJob(job._id.toString(), 'Customer cancellation within refund window');

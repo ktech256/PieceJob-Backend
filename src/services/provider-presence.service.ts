@@ -121,8 +121,8 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
                     const { syncJobStatus } = require('../socket/socket.service');
                     syncJobStatus(activeJob);
                 }
-                else if (distance <= 1000 && distance > 500 && !sent.includes('ALMOST_THERE')) {
-                    // ~5 mins away
+                else if (distance <= 3000 && distance > 2500 && !sent.includes('ALMOST_THERE')) {
+                    // ~5 mins away (approx 3km)
                     await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is almost there', 'Your provider is approximately 5 minutes away.');
                     activeJob.notificationsSent = [...sent, 'ALMOST_THERE'];
 
