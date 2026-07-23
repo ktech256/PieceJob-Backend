@@ -88,13 +88,28 @@ export const generateTrackingToken = (jobId: string): string => {
     return crypto.createHash('sha256').update(jobId + Date.now().toString() + process.env.JWT_SECRET).digest('hex').slice(0, 16);
 };
 
-export const sendRecipientSms = async (job: IJob, type: 'ACCEPTED' | 'NEARBY') => {
+export const sendRecipientSms = async (job: IJob, type: 'ACCEPTED' | 'NEARBY' | 'ARRIVED', session?: mongoose.ClientSession) => {
     if (!job.isForSomeoneElse || !job.recipientPhone) return;
 
+    let hasUpdate = false;
     if (!job.trackingToken) {
         job.trackingToken = generateTrackingToken(job._id.toString());
         job.trackingTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await job.save();
+        hasUpdate = true;
+    }
+
+    if (type === 'NEARBY' && !job.recipientNearbySmsSent) {
+        job.recipientNearbySmsSent = true;
+        hasUpdate = true;
+    }
+
+    if (type === 'ARRIVED' && !job.recipientArrivedSmsSent) {
+        job.recipientArrivedSmsSent = true;
+        hasUpdate = true;
+    }
+
+    if (hasUpdate) {
+        await job.save({ session });
     }
 
     const trackingLink = `https://piecejob.co/track/${job.trackingToken}`;
@@ -104,10 +119,16 @@ export const sendRecipientSms = async (job: IJob, type: 'ACCEPTED' | 'NEARBY') =
         message = `PieceJob Update: A provider has accepted the service request. Track their live location here: ${trackingLink}`;
     } else if (type === 'NEARBY') {
         message = `PieceJob Update: Your PieceJob provider is approximately 5 minutes away. Track them live: ${trackingLink}`;
+    } else if (type === 'ARRIVED') {
+        message = `PieceJob Update: Your service provider has arrived at your location. Please be ready to meet them. If you cannot locate the provider, please contact them using the PieceJob platform.`;
     }
 
     if (message) {
-        await sendSms(job.recipientPhone, message);
+        logger.info(`SMS | TRIGGER | type=${type} | to=${job.recipientPhone} | job=${job._id}`);
+        const success = await sendSms(job.recipientPhone, message);
+        if (!success) {
+            logger.error(`SMS | FAILED | type=${type} | to=${job.recipientPhone} | job=${job._id}`);
+        }
     }
 };
 
@@ -800,7 +821,7 @@ export const acceptJob = async (jobId: string, providerId: string) => {
 
       // PHASE 7: Recipient Notification
       if (job.isForSomeoneElse && job.recipientPhone) {
-          sendRecipientSms(job, 'ACCEPTED').catch(err => logger.error(`RECIPIENT_SMS_ERROR | Job: ${job._id} | ${err}`));
+          sendRecipientSms(job, 'ACCEPTED', session).catch(err => logger.error(`RECIPIENT_SMS_ERROR | Job: ${job._id} | ${err}`));
       }
 
       // Stop every remaining broadcast wave for this job

@@ -178,6 +178,12 @@ export const syncJobStatus = (job: any, event: string = 'status_updated', additi
 
     console.log(`[SOCKET_SYNC] Syncing Status | Job: ${jobId} | Status: ${job.status} | Event: ${event}`);
 
+    // PHASE 7: Recipient ARRIVED SMS Trigger (on status change to ARRIVED)
+    if (job.status === JobStatus.ARRIVED && job.isForSomeoneElse && job.recipientPhone && !job.recipientArrivedSmsSent) {
+        const { sendRecipientSms } = require('../services/job.service');
+        sendRecipientSms(job, 'ARRIVED').catch((err: any) => console.error(`RECIPIENT_ARRIVED_SMS_ERROR | Job: ${jobId} | ${err}`));
+    }
+
     // 1. Emit to Job Room (Tracking Screens)
     io.to(`job_${jobId}`).emit(event, statusPayload);
 

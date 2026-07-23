@@ -53,6 +53,7 @@ export interface IJob extends Document {
   trackingToken?: string;
   trackingTokenExpiresAt?: Date;
   recipientNearbySmsSent?: boolean;
+  recipientArrivedSmsSent?: boolean;
 
   paymentStatus: 'PENDING' | 'PAID' | 'REFUNDED';
   paymentReference?: string;
@@ -160,6 +161,7 @@ const JobSchema: Schema = new Schema({
   trackingToken: { type: String },
   trackingTokenExpiresAt: { type: Date },
   recipientNearbySmsSent: { type: Boolean, default: false },
+  recipientArrivedSmsSent: { type: Boolean, default: false },
   paymentStatus: { type: String, enum: ['PENDING', 'PAID', 'REFUNDED'], default: 'PENDING' },
   paymentReference: { type: String },
   escrowStatus: { type: String, enum: ['PENDING', 'HELD', 'ESCROW_HOLD_REVIEW', 'RELEASED', 'REFUNDED'], default: 'PENDING' },

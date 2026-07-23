@@ -111,6 +111,14 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
             const sent = activeJob.notificationsSent || [];
 
             if (activeJob.status === JobStatus.EN_ROUTE) {
+                // SMS #2 Trigger (100m)
+                if (distance <= 100 && !activeJob.recipientArrivedSmsSent) {
+                    if (activeJob.isForSomeoneElse && activeJob.recipientPhone) {
+                        const { sendRecipientSms } = require('./job.service');
+                        sendRecipientSms(activeJob, 'ARRIVED').catch((err: any) => logger.error(`RECIPIENT_ARRIVED_SMS_ERROR | Job: ${activeJob._id} | ${err}`));
+                    }
+                }
+
                 if (distance <= 50 && !sent.includes('ARRIVED')) {
                     await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider has arrived', 'Your provider is at the location.');
                     activeJob.status = JobStatus.ARRIVED;
@@ -121,14 +129,15 @@ export const handleHeartbeat = async (userId: string, coordinates: number[], har
                     const { syncJobStatus } = require('../socket/socket.service');
                     syncJobStatus(activeJob);
                 }
-                else if (distance <= 3000 && distance > 2500 && !sent.includes('ALMOST_THERE')) {
+                else if (distance <= 3000 && distance > 2500 && !activeJob.recipientNearbySmsSent) {
                     // ~5 mins away (approx 3km)
                     await notificationService.notifyUser(activeJob.customerId.toString(), 'Provider is almost there', 'Your provider is approximately 5 minutes away.');
-                    activeJob.notificationsSent = [...sent, 'ALMOST_THERE'];
 
                     // PHASE 7: Recipient SMS Trigger
                     if (activeJob.isForSomeoneElse && activeJob.recipientPhone) {
                         const { sendRecipientSms } = require('./job.service');
+                        // Note: We don't await this to keep the heartbeat response fast,
+                        // but it handles its own internal save safely now.
                         sendRecipientSms(activeJob, 'NEARBY').catch((err: any) => logger.error(`RECIPIENT_NEARBY_SMS_ERROR | Job: ${activeJob._id} | ${err}`));
                     }
                 }
