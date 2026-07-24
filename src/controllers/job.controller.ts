@@ -63,7 +63,7 @@ export const sanitizeJobForMobile = async (job: any) => {
     const country = await Country.findOne({ code: jobObj.countryCode });
     const tz = country?.timezone || 'UTC';
 
-    const sanitized = {
+    const sanitized: any = {
         ...jobObj,
         id: (jobObj._id || jobObj.id).toString(),
         customerId: customerId ? customerId.toString() : null,
@@ -83,8 +83,19 @@ export const sanitizeJobForMobile = async (job: any) => {
         cancelledAt: formatToWorkspaceTime(jobObj.cancelledAt, tz),
         acceptedAt: formatToWorkspaceTime(jobObj.acceptedAt, tz),
         arrivedAt: formatToWorkspaceTime(jobObj.arrivedAt, tz),
-        scheduledAt: formatToWorkspaceTime(jobObj.scheduledAt, tz)
+        scheduledAt: formatToWorkspaceTime(jobObj.scheduledAt, tz),
+
+        // Raw UTC for live calculations (live timer, etc.)
+        startedAtUtc: jobObj.startedAt ? jobObj.startedAt.toISOString() : null,
+        createdAtUtc: jobObj.createdAt ? jobObj.createdAt.toISOString() : null
     };
+
+    // Financial Transparency (ISSUE FIX)
+    // serviceFee in DTO should be the PieceJob Commission for Provider app
+    const commissionRate = jobObj.serviceFeeRateSnapshot || 15;
+    const currentAgreedPrice = jobObj.agreedPrice || ((jobObj.serviceFee || 0) + jobObj.bookingFee);
+    sanitized.serviceFee = currentAgreedPrice * (commissionRate / 100);
+    sanitized.agreedPrice = currentAgreedPrice;
 
     if (jobObj.negotiationTimeline && Array.isArray(jobObj.negotiationTimeline)) {
         sanitized.negotiationTimeline = jobObj.negotiationTimeline.map((item: any) => ({

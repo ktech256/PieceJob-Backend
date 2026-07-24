@@ -145,6 +145,7 @@ export const getCustomerDashboard = async (req: AuthRequest, res: Response) => {
                 completedAt: j.completedAt,
                 cancelledAt: j.cancelledAt,
                 cancelledBy: j.cancelledBy,
+                cancelledByName: j.cancelledByName,
                 createdAt: j.createdAt,
                 currency: j.currency || walletData.currency
             };
@@ -367,6 +368,7 @@ export const getProviderDashboard = async (req: AuthRequest, res: Response) => {
                 completedAt: j.completedAt,
                 cancelledAt: j.cancelledAt,
                 cancelledBy: j.cancelledBy,
+                cancelledByName: j.cancelledByName,
                 createdAt: j.createdAt
             };
         }));
